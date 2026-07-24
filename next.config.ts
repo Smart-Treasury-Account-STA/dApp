@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-const DOCS_ORIGIN = process.env.DOCS_ORIGIN ?? "https://docs-lendwise.vercel.app";
+const DOCS_ORIGIN = process.env.DOCS_ORIGIN ?? "https://sta-docs.vercel.app";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
