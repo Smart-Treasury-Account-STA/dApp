@@ -495,7 +495,14 @@ export function TreasuryConsole() {
               variant="secondary"
               title="Toggle theme"
             >
-              {resolvedTheme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+              {/*
+                Both icons are rendered and the active one is selected by the
+                `dark` class that next-themes sets on <html> before first paint.
+                Branching on `resolvedTheme` here hydrates mismatched: it is
+                undefined on the server and during the first client render.
+              */}
+              <Sun aria-hidden className="hidden dark:block" size={18} />
+              <Moon aria-hidden className="dark:hidden" size={18} />
             </Button>
             <Button
               disabled={refreshStateMutation.isPending}

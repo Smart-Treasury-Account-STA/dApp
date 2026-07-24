@@ -2,12 +2,17 @@
 
 Operator console for the Smart Treasury Account V1 deployment on Stellar testnet. The app is built for Tranche 2: wallet connection, treasury status inspection, policy preflight, nonce checks, payment simulation, scheduled-payment preparation, protected relayer queueing, and scheduled relayer execution.
 
-The contract integration model follows `/home/mohamed/smart-contracts/docs/DAPP_INTEGRATION_SPEC.md` and the live deployment record in `/home/mohamed/smart-contracts/docs/TESTNET_DEPLOYMENT.md`.
+The contract integration model follows the Smart Treasury Account contract specification and the deployment record published by the contract repository.
 
 ## Documentation
 
-- [`docs/TECHNICAL_DOCUMENTATION.md`](docs/TECHNICAL_DOCUMENTATION.md): architecture, required dApp features, services, APIs, relayer model, data model, and security boundaries.
-- [`docs/DEVELOPER_GUIDE.md`](docs/DEVELOPER_GUIDE.md): setup, environment configuration, local testing, wallet validation, scheduled payment testing, relayer operation, and extension workflow.
+Architecture notes, the developer guide, and the engineering standards this repository follows are maintained outside the public repository, in the workspace `agent/` knowledge base:
+
+- `agent/docs/dapp/technical-documentation.md`: architecture, required dApp features, services, APIs, relayer model, data model, and security boundaries.
+- `agent/docs/dapp/developer-guide.md`: setup, environment configuration, local testing, wallet validation, scheduled payment testing, relayer operation, and extension workflow.
+- `agent/standards/`: engineering, architecture, Next.js, UI, blockchain, deployment, and CI standards.
+
+Operator-facing documentation ships with the production release and will live in this repository.
 
 ## Prerequisites
 
