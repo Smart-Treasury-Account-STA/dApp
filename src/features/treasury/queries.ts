@@ -2,7 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 
-import { loadContextRules, loadTreasurySnapshot } from "@/lib/stellarClient";
+import { STELLAR_CONFIG } from "@/config";
+import { loadContextRules, loadOwner, loadTreasurySnapshot } from "@/lib/stellarClient";
+import type { TreasuryAuthority } from "@/types";
 
 export const treasuryKeys = {
   snapshot: (address: string) => ["treasury", "snapshot", address] as const,
@@ -23,6 +25,18 @@ export function useContextRules(address: string | null) {
   return useQuery({
     queryKey: treasuryKeys.rules(address ?? "disconnected"),
     queryFn: () => loadContextRules(address as string),
+    enabled: address !== null,
+    staleTime: 30_000,
+  });
+}
+
+export function useTreasuryAuthority(address: string | null) {
+  return useQuery<TreasuryAuthority>({
+    queryKey: ["treasury", "authority", address ?? "disconnected"],
+    queryFn: async () => ({
+      owner: await loadOwner(address as string),
+      policyAdminHint: STELLAR_CONFIG.policyAdminHint ?? null,
+    }),
     enabled: address !== null,
     staleTime: 30_000,
   });

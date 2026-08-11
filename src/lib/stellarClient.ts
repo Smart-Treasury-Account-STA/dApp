@@ -419,7 +419,44 @@ function getSignerAddresses(value: SimulationValue) {
   return Array.from(new Set(serialized.match(/G[A-Z2-7]{55}/g) ?? []));
 }
 
-async function signAndSubmitContractInvocation({
+async function submitSignedTransaction(signedTx: Transaction): Promise<TransactionReceipt> {
+  const server = getServer();
+  const sendResponse = await server.sendTransaction(signedTx);
+  if (sendResponse.status === "ERROR") {
+    throw new Error(`Submission failed: ${sendResponse.status}`);
+  }
+  if (sendResponse.status === "TRY_AGAIN_LATER") {
+    throw new Error("RPC asked the dApp to retry submission later.");
+  }
+  if (sendResponse.status === "DUPLICATE") {
+    throw new Error("RPC reported a duplicate transaction submission.");
+  }
+
+  // Testnet usually closes a ledger in ~5s, but inclusion has been observed
+  // taking over two minutes under load. The old 30s ceiling reported such a
+  // transaction as unresolved while it went on to succeed on-chain, so the
+  // wait now covers that case. Timing out is no longer read as a failure —
+  // describeReceipt reports it as still pending.
+  for (let attempt = 0; attempt < 90; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const txResult = await server.getTransaction(sendResponse.hash);
+    if (txResult.status !== "NOT_FOUND") {
+      return {
+        hash: sendResponse.hash,
+        status: txResult.status,
+        latestLedger: txResult.latestLedger,
+      };
+    }
+  }
+
+  return {
+    hash: sendResponse.hash,
+    status: sendResponse.status,
+    latestLedger: sendResponse.latestLedger,
+  };
+}
+
+export async function signAndSubmitContractInvocation({
   args,
   functionName,
   sourceAddress,
@@ -500,40 +537,9 @@ async function signAndSubmitContractInvocation({
     throw new Error("Wallet did not return a signed transaction envelope.");
   }
 
-  const signedTx = new Transaction(signedTxXdr, STELLAR_CONFIG.networkPassphrase);
-  const sendResponse = await server.sendTransaction(signedTx);
-  if (sendResponse.status === "ERROR") {
-    throw new Error(`Submission failed: ${sendResponse.status}`);
-  }
-  if (sendResponse.status === "TRY_AGAIN_LATER") {
-    throw new Error("RPC asked the dApp to retry submission later.");
-  }
-  if (sendResponse.status === "DUPLICATE") {
-    throw new Error("RPC reported a duplicate transaction submission.");
-  }
-
-  // Testnet usually closes a ledger in ~5s, but inclusion has been observed
-  // taking over two minutes under load. The old 30s ceiling reported such a
-  // transaction as unresolved while it went on to succeed on-chain, so the
-  // wait now covers that case. Timing out is no longer read as a failure —
-  // describeReceipt reports it as still pending.
-  for (let attempt = 0; attempt < 90; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    const txResult = await server.getTransaction(sendResponse.hash);
-    if (txResult.status !== "NOT_FOUND") {
-      return {
-        hash: sendResponse.hash,
-        status: txResult.status,
-        latestLedger: txResult.latestLedger,
-      };
-    }
-  }
-
-  return {
-    hash: sendResponse.hash,
-    status: sendResponse.status,
-    latestLedger: sendResponse.latestLedger,
-  };
+  return submitSignedTransaction(
+    new Transaction(signedTxXdr, STELLAR_CONFIG.networkPassphrase),
+  );
 }
 
 function getRecord(value: SimulationValue): Record<string, unknown> {
@@ -615,6 +621,92 @@ export async function loadContextRules(sourceAddress: string): Promise<ContextRu
   }
 
   return rules;
+}
+
+export async function loadOwner(sourceAddress: string): Promise<string | null> {
+  const result = await simulateContractCall(
+    sourceAddress,
+    STELLAR_CONFIG.contracts.smartAccount,
+    "get_owner",
+  );
+  return typeof result.value === "string" ? result.value : null;
+}
+
+export async function loadSignerId(sourceAddress: string, signerAddress: string) {
+  const result = await simulateContractCall(
+    sourceAddress,
+    STELLAR_CONFIG.contracts.smartAccount,
+    "get_signer_id",
+    [signerDelegatedScVal(signerAddress)],
+  );
+  return Number(result.value ?? 0);
+}
+
+/**
+ * Builds the probe function `policyProbe` consumes. Rejects with the raw host
+ * error so `classifyProbeFailure` can read the contract code out of it.
+ */
+export function simulatePolicyProbe(sourceAddress: string) {
+  return async (input: {
+    asset: string;
+    destination: string;
+    operation: string;
+    amount: string;
+    expectedVersion: number;
+  }) => {
+    await simulateContractCall(
+      sourceAddress,
+      STELLAR_CONFIG.contracts.policyEngine,
+      "validate_policy",
+      [
+        structScVal({
+          operation: symbolScVal(input.operation),
+          asset: addressScVal(input.asset),
+          destination: addressScVal(input.destination),
+          amount: i128ScVal(input.amount),
+          expected_version: u32ScVal(input.expectedVersion),
+        }),
+      ],
+    );
+  };
+}
+
+/**
+ * Submits a contract call authorized by the connected wallet as the
+ * transaction source. This is the plain `Address::require_auth()` model that
+ * `policy_engine` uses — no SmartAccount AuthPayload is involved, so the
+ * wallet signs the prepared envelope rather than an authorization entry.
+ */
+export async function submitAsSourceAccount({
+  args,
+  contractId,
+  functionName,
+  wallet,
+}: {
+  args: xdr.ScVal[];
+  contractId: string;
+  functionName: string;
+  wallet: WalletSigning;
+}): Promise<TransactionReceipt> {
+  const server = getServer();
+  const source = await server.getAccount(wallet.address);
+  const tx = new TransactionBuilder(source, {
+    fee: BASE_FEE,
+    networkPassphrase: STELLAR_CONFIG.networkPassphrase,
+  })
+    .addOperation(new Contract(contractId).call(functionName, ...args))
+    .setTimeout(120)
+    .build();
+
+  const prepared = await server.prepareTransaction(tx);
+  const signedTxXdr = await wallet.signTransaction(prepared.toXDR(), wallet.address);
+  if (!signedTxXdr) {
+    throw new Error("Wallet did not return a signed transaction envelope.");
+  }
+
+  return submitSignedTransaction(
+    new Transaction(signedTxXdr, STELLAR_CONFIG.networkPassphrase),
+  );
 }
 
 export async function approveAndSubmitTransfer(

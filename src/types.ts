@@ -92,3 +92,8 @@ export type ProbeInput = {
   amount: string;
   expectedVersion: number;
 };
+
+export type TreasuryAuthority = {
+  owner: string | null;
+  policyAdminHint: string | null;
+};
