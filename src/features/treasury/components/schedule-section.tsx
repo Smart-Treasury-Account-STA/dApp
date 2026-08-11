@@ -4,6 +4,7 @@ import {
   CalendarClock,
   CheckCircle2,
   CircleDashed,
+  Loader2,
   RadioTower,
   RefreshCcw,
   Wallet,
@@ -215,7 +216,11 @@ export function ScheduleSection({
           disabled={!wallet.connected || submitScheduleMutation.isPending}
           onClick={onScheduleSubmit}
         >
-          <Wallet size={18} />
+          {submitScheduleMutation.isPending ? (
+            <Loader2 className="animate-spin" size={18} />
+          ) : (
+            <Wallet size={18} />
+          )}
           Approve & create
         </Button>
         <Button
