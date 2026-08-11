@@ -1,43 +1,26 @@
-export const TESTNET_CONFIG = {
-  rpcUrl:
-    process.env.NEXT_PUBLIC_STELLAR_RPC_URL ?? "https://soroban-testnet.stellar.org",
-  networkPassphrase:
-    process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE ??
-    "Test SDF Network ; September 2015",
-  smartAccountId:
-    process.env.NEXT_PUBLIC_SMART_ACCOUNT_ID ??
-    "CB4KZJ3I4XANE6GWPAMXCNXQ34PTQWPXVKFBBMLNKV25GAOXQC7RQUMS",
-  policyEngineId:
-    process.env.NEXT_PUBLIC_POLICY_ENGINE_ID ??
-    "CC5FSUNWBNH3EIEELHO3A4ZPJZRAZCVMFNP3PVXO2YBWDNNLTFLWBVHC",
-  intentRegistryId:
-    process.env.NEXT_PUBLIC_INTENT_REGISTRY_ID ??
-    "CDHTNPBXUMPCKUJ76HQ767MDRD4IVRRH4H5DOF4JUOO36QKSV4GXFRMR",
-  recoveryManagerId:
-    process.env.NEXT_PUBLIC_RECOVERY_MANAGER_ID ??
-    "CALI5XJASA66LKZPF3ZF7HOLGOFUWZYIHB6SENXCZ5Y7QVT7UQKKR6UM",
-  transferAdapterId:
-    process.env.NEXT_PUBLIC_TRANSFER_ADAPTER_ID ??
-    "CAX766XYR56WO7Y4HFOHYQUO5AIN5QLHAHKJ3DINXM2WUQY5UE7KGE26",
-  splitAdapterId:
-    process.env.NEXT_PUBLIC_SPLIT_ADAPTER_ID ??
-    "CAFTFU2E4MGZT6BLCVN2FAQB6GIBJRR5ICI7C7LZEMACBDUUTQKVHHV3",
-  staAssetContractId:
-    process.env.NEXT_PUBLIC_STA_ASSET_CONTRACT_ID ??
-    "CCOUVA654JH2V6B7LNTKHJP5DF3QA553RS2IIWXSGPDFH2N3QILIVU5L",
-  testRecipient:
-    process.env.NEXT_PUBLIC_TEST_RECIPIENT ??
-    "GAK3XILRBYBMBOCZMSLL2CLR6WPQLEIOC6ZCYYPTE4OIAX3PCFFO2YMU",
-};
+import { readStellarConfig } from "@/lib/env";
+
+export const STELLAR_CONFIG = readStellarConfig({
+  NEXT_PUBLIC_STELLAR_RPC_URL: process.env.NEXT_PUBLIC_STELLAR_RPC_URL,
+  NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE:
+    process.env.NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE,
+  NEXT_PUBLIC_STELLAR_EXPLORER_URL: process.env.NEXT_PUBLIC_STELLAR_EXPLORER_URL,
+  NEXT_PUBLIC_SMART_ACCOUNT_ID: process.env.NEXT_PUBLIC_SMART_ACCOUNT_ID,
+  NEXT_PUBLIC_POLICY_ENGINE_ID: process.env.NEXT_PUBLIC_POLICY_ENGINE_ID,
+  NEXT_PUBLIC_INTENT_REGISTRY_ID: process.env.NEXT_PUBLIC_INTENT_REGISTRY_ID,
+  NEXT_PUBLIC_RECOVERY_MANAGER_ID: process.env.NEXT_PUBLIC_RECOVERY_MANAGER_ID,
+  NEXT_PUBLIC_TRANSFER_ADAPTER_ID: process.env.NEXT_PUBLIC_TRANSFER_ADAPTER_ID,
+  NEXT_PUBLIC_SPLIT_ADAPTER_ID: process.env.NEXT_PUBLIC_SPLIT_ADAPTER_ID,
+  NEXT_PUBLIC_STA_ASSET_CONTRACT_ID: process.env.NEXT_PUBLIC_STA_ASSET_CONTRACT_ID,
+  NEXT_PUBLIC_TEST_RECIPIENT: process.env.NEXT_PUBLIC_TEST_RECIPIENT,
+});
 
 export const CONTRACTS = [
-  ["Smart Account", TESTNET_CONFIG.smartAccountId],
-  ["Policy Engine", TESTNET_CONFIG.policyEngineId],
-  ["Intent Registry", TESTNET_CONFIG.intentRegistryId],
-  ["Recovery Manager", TESTNET_CONFIG.recoveryManagerId],
-  ["Transfer Adapter", TESTNET_CONFIG.transferAdapterId],
-  ["Split Adapter", TESTNET_CONFIG.splitAdapterId],
-  ["STA Test Asset", TESTNET_CONFIG.staAssetContractId],
+  ["Smart Account", STELLAR_CONFIG.contracts.smartAccount],
+  ["Policy Engine", STELLAR_CONFIG.contracts.policyEngine],
+  ["Intent Registry", STELLAR_CONFIG.contracts.intentRegistry],
+  ["Recovery Manager", STELLAR_CONFIG.contracts.recoveryManager],
+  ["Transfer Adapter", STELLAR_CONFIG.contracts.transferAdapter],
+  ["Split Adapter", STELLAR_CONFIG.contracts.splitAdapter],
+  ["STA Test Asset", STELLAR_CONFIG.contracts.staAsset],
 ] as const;
-
-export const LEDGER_CLOSE_SECONDS = 5;

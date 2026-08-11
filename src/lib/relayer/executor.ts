@@ -10,7 +10,7 @@ import {
 } from "@stellar/stellar-sdk";
 import { Buffer } from "buffer";
 
-import { TESTNET_CONFIG } from "@/config";
+import { STELLAR_CONFIG } from "@/config";
 import { getRelayerJob, listRelayerJobs, updateRelayerJob } from "@/lib/relayer/store";
 import type {
   CreateRelayerJobInput,
@@ -71,7 +71,7 @@ async function simulateContractCall(
   const contract = new Contract(contractId);
   const tx = new TransactionBuilder(source, {
     fee: BASE_FEE,
-    networkPassphrase: TESTNET_CONFIG.networkPassphrase,
+    networkPassphrase: STELLAR_CONFIG.networkPassphrase,
   })
     .addOperation(contract.call(method, ...args))
     .setTimeout(60)
@@ -100,7 +100,7 @@ async function readIntentState(
   const intent = (await simulateContractCall(
     server,
     sourceAddress,
-    TESTNET_CONFIG.intentRegistryId,
+    STELLAR_CONFIG.contracts.intentRegistry,
     "get_intent",
     [intentId],
   )) as IntentRegistryState | null;
@@ -108,7 +108,7 @@ async function readIntentState(
     await simulateContractCall(
       server,
       sourceAddress,
-      TESTNET_CONFIG.intentRegistryId,
+      STELLAR_CONFIG.contracts.intentRegistry,
       "is_child_executed",
       [intentId, u32ScVal(job.childSequence)],
     ),
@@ -128,13 +128,13 @@ async function readIntentState(
 export async function readQueueableScheduledIntent(
   intentId: string,
 ): Promise<CreateRelayerJobInput> {
-  const server = new rpc.Server(TESTNET_CONFIG.rpcUrl);
+  const server = new rpc.Server(STELLAR_CONFIG.rpcUrl);
   const executor = getExecutorKeypair();
   const sourceAddress = executor.publicKey();
   const intent = (await simulateContractCall(
     server,
     sourceAddress,
-    TESTNET_CONFIG.intentRegistryId,
+    STELLAR_CONFIG.contracts.intentRegistry,
     "get_intent",
     [bytesN32ScVal(intentId)],
   )) as IntentRegistryState | null;
@@ -159,7 +159,7 @@ function isTerminal(job: RelayerJobRecord) {
 }
 
 export async function executeRelayerJob(job: RelayerJobRecord) {
-  const server = new rpc.Server(TESTNET_CONFIG.rpcUrl);
+  const server = new rpc.Server(STELLAR_CONFIG.rpcUrl);
   const latestLedger = await server.getLatestLedger();
 
   if (job.executionCount >= job.maxExecutions) {
@@ -216,10 +216,10 @@ export async function executeRelayerJob(job: RelayerJobRecord) {
   }));
 
   const source = await server.getAccount(sourceAddress);
-  const contract = new Contract(TESTNET_CONFIG.smartAccountId);
+  const contract = new Contract(STELLAR_CONFIG.contracts.smartAccount);
   const tx = new TransactionBuilder(source, {
     fee: BASE_FEE,
-    networkPassphrase: TESTNET_CONFIG.networkPassphrase,
+    networkPassphrase: STELLAR_CONFIG.networkPassphrase,
   })
     .addOperation(
       contract.call(
@@ -302,7 +302,7 @@ export async function executeRelayerJobById(intentId: string) {
 }
 
 export async function runDueRelayerJobs(limit = 5): Promise<RelayerRunResult> {
-  const server = new rpc.Server(TESTNET_CONFIG.rpcUrl);
+  const server = new rpc.Server(STELLAR_CONFIG.rpcUrl);
   const latestLedger = await server.getLatestLedger();
   const jobs = await listRelayerJobs();
   const dueJobs = jobs

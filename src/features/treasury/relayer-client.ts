@@ -1,12 +1,5 @@
 import type { CreateRelayerJobInput, RelayerJobRecord } from "@/lib/relayer/types";
 
-function relayerHeaders(token: string) {
-  return {
-    "content-type": "application/json",
-    "x-relayer-token": token,
-  };
-}
-
 export async function fetchRelayerJobs() {
   const response = await fetch("/api/relayer/jobs", { cache: "no-store" });
   if (!response.ok) {
@@ -16,10 +9,11 @@ export async function fetchRelayerJobs() {
   return payload.jobs;
 }
 
-export async function queueRelayerJob(input: CreateRelayerJobInput, token: string) {
+export async function queueRelayerJob(input: CreateRelayerJobInput) {
   const response = await fetch("/api/relayer/jobs", {
     method: "POST",
-    headers: relayerHeaders(token),
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
   });
   if (!response.ok) {
@@ -30,10 +24,10 @@ export async function queueRelayerJob(input: CreateRelayerJobInput, token: strin
   return payload.job;
 }
 
-export async function executeRelayerJob(intentId: string, token: string) {
+export async function executeRelayerJob(intentId: string) {
   const response = await fetch(`/api/relayer/jobs/${intentId}/execute`, {
     method: "POST",
-    headers: relayerHeaders(token),
+    credentials: "same-origin",
   });
   if (!response.ok) {
     const payload = (await response.json()) as { error?: string };
@@ -43,10 +37,10 @@ export async function executeRelayerJob(intentId: string, token: string) {
   return payload.job;
 }
 
-export async function runDueRelayerJobs(token: string) {
+export async function runDueRelayerJobs() {
   const response = await fetch("/api/relayer/run", {
     method: "POST",
-    headers: relayerHeaders(token),
+    credentials: "same-origin",
   });
   if (!response.ok) {
     const payload = (await response.json()) as { error?: string };
@@ -54,4 +48,20 @@ export async function runDueRelayerJobs(token: string) {
   }
   const payload = (await response.json()) as { updated: RelayerJobRecord[] };
   return payload.updated;
+}
+
+export async function openRelayerSession(token: string) {
+  const response = await fetch("/api/relayer/session", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  if (!response.ok) {
+    throw new Error("Invalid operator token.");
+  }
+}
+
+export async function closeRelayerSession() {
+  await fetch("/api/relayer/session", { method: "DELETE", credentials: "same-origin" });
 }

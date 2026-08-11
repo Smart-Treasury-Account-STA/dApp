@@ -1,4 +1,4 @@
-import { TESTNET_CONFIG } from "@/config";
+import { STELLAR_CONFIG } from "@/config";
 import type { WalletState } from "@/types";
 
 type WalletOption = {
@@ -103,7 +103,7 @@ export async function signAuthEntry(preimageXdr: string, address: string) {
 
   const result = await kitHandle.kit.signAuthEntry(preimageXdr, {
     address,
-    networkPassphrase: TESTNET_CONFIG.networkPassphrase,
+    networkPassphrase: STELLAR_CONFIG.networkPassphrase,
   });
   return typeof result === "string" ? result : result.signedAuthEntry;
 }
@@ -115,7 +115,7 @@ export async function signTransaction(transactionXdr: string, address: string) {
 
   const result = await kitHandle.kit.signTransaction(transactionXdr, {
     address,
-    networkPassphrase: TESTNET_CONFIG.networkPassphrase,
+    networkPassphrase: STELLAR_CONFIG.networkPassphrase,
   });
   return typeof result === "string"
     ? result

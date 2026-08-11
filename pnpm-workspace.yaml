@@ -1,6 +1,7 @@
 allowBuilds:
   blake-hash: true
   bufferutil: true
+  esbuild: true
   protobufjs: true
   secp256k1: true
   sharp: true
