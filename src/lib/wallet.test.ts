@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { selectWalletThroughModal } from "./wallet";
+import { disconnectWallet, selectWalletThroughModal, signAuthEntry, signTransaction } from "./wallet";
 
 /**
  * Stands in for `StellarWalletsKit`. Its `openModal` reads `this`, exactly as
@@ -39,5 +39,17 @@ describe("selectWalletThroughModal", () => {
 
   it("resolves with no selection when the kit exposes no modal", async () => {
     await expect(selectWalletThroughModal({})).resolves.toBeUndefined();
+  });
+});
+
+describe("disconnectWallet", () => {
+  it("leaves signing unavailable, and says so without blaming the wallet", async () => {
+    disconnectWallet();
+
+    // The old copy read "Connected wallet does not expose signAuthEntry",
+    // which describes a wallet limitation. With nothing connected at all,
+    // that sends the operator looking for the wrong problem.
+    await expect(signAuthEntry("preimage", "GABC")).rejects.toThrow(/No wallet is connected/i);
+    await expect(signTransaction("envelope", "GABC")).rejects.toThrow(/No wallet is connected/i);
   });
 });

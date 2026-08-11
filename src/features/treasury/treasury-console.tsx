@@ -3,6 +3,7 @@
 import {
   Activity,
   CalendarClock,
+  LogOut,
   Moon,
   RadioTower,
   RefreshCcw,
@@ -20,7 +21,7 @@ import { STELLAR_CONFIG } from "@/config";
 import { computeLedgerWindow } from "@/features/treasury/drafts";
 import { makeIntentId, makeNonce, truncateAddress } from "@/lib/format";
 import { buildTransferAuthPlan } from "@/lib/smartAccountAuth";
-import { connectWallet } from "@/lib/wallet";
+import { connectWallet, disconnectWallet } from "@/lib/wallet";
 import type {
   NetworkHealth,
   PaymentDraft,
@@ -144,6 +145,16 @@ export function TreasuryConsole() {
     }
   }
 
+  function onDisconnectWallet() {
+    disconnectWallet();
+    setWallet(initialWallet);
+    setNotice({
+      ok: true,
+      title: "Wallet disconnected",
+      detail: "Treasury reads are paused until a wallet is connected again.",
+    });
+  }
+
   async function onRefreshState() {
     setNotice(null);
     snapshotQuery.refetch();
@@ -176,11 +187,18 @@ export function TreasuryConsole() {
 
         <div className="mt-auto grid gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4 max-lg:mt-0">
           <span className="text-xs font-semibold uppercase text-slate-400">Operator wallet</span>
-          <strong>{truncateAddress(wallet.address)}</strong>
-          <Button onClick={onConnectWallet}>
-            <Wallet size={18} />
-            Connect
-          </Button>
+          <strong className="break-all">{truncateAddress(wallet.address)}</strong>
+          {wallet.connected ? (
+            <Button onClick={onDisconnectWallet}>
+              <LogOut size={18} />
+              Disconnect
+            </Button>
+          ) : (
+            <Button onClick={onConnectWallet}>
+              <Wallet size={18} />
+              Connect
+            </Button>
+          )}
         </div>
       </aside>
 

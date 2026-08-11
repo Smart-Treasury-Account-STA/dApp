@@ -116,8 +116,20 @@ export async function connectWallet(): Promise<WalletState> {
   };
 }
 
+/**
+ * Drops the connected kit so the next connect starts from the wallet chooser
+ * again. Used when the operator needs to switch accounts — a treasury write is
+ * only valid from the registered signer, so switching is a routine action here.
+ */
+export function disconnectWallet() {
+  kitHandle = null;
+}
+
 export async function signAuthEntry(preimageXdr: string, address: string) {
-  if (!kitHandle?.kit || typeof kitHandle.kit.signAuthEntry !== "function") {
+  if (!kitHandle?.kit) {
+    throw new Error("No wallet is connected.");
+  }
+  if (typeof kitHandle.kit.signAuthEntry !== "function") {
     throw new Error("Connected wallet does not expose signAuthEntry.");
   }
 
@@ -129,7 +141,10 @@ export async function signAuthEntry(preimageXdr: string, address: string) {
 }
 
 export async function signTransaction(transactionXdr: string, address: string) {
-  if (!kitHandle?.kit || typeof kitHandle.kit.signTransaction !== "function") {
+  if (!kitHandle?.kit) {
+    throw new Error("No wallet is connected.");
+  }
+  if (typeof kitHandle.kit.signTransaction !== "function") {
     throw new Error("Connected wallet does not expose signTransaction.");
   }
 
