@@ -1,7 +1,7 @@
 import type { SimulationResult } from "@/types";
 
 export type ToastFeedback = {
-  kind: "success" | "error";
+  kind: "success" | "error" | "warning";
   title: string;
   description: string;
   explorerUrl: string | null;
@@ -26,8 +26,12 @@ export function buildToastFeedback(
     ? `${result.detail}\n${diagnosticSummary}`
     : result.detail;
 
+  // A pending submission is neither: green claims a confirmation the network
+  // has not given, red claims a failure that did not happen.
+  const kind = result.pending ? "warning" : result.ok ? "success" : "error";
+
   return {
-    kind: result.ok ? "success" : "error",
+    kind,
     title: result.title,
     description,
     explorerUrl: result.txHash ? `${explorerBaseUrl}/tx/${result.txHash}` : null,

@@ -56,6 +56,24 @@ describe("buildToastFeedback", () => {
     );
   });
 
+  it("shows a still-pending submission as a warning, neither success nor failure", () => {
+    // Rendering it green claims a confirmation the network has not given;
+    // rendering it red claims a failure that did not happen.
+    const feedback = buildToastFeedback(
+      {
+        ok: true,
+        pending: true,
+        title: "Schedule submitted",
+        detail: "Still pending on the network.",
+        txHash: "abc123",
+      },
+      EXPLORER,
+    );
+
+    expect(feedback.kind).toBe("warning");
+    expect(feedback.explorerUrl).toBe(`${EXPLORER}/tx/abc123`);
+  });
+
   it("keeps the description to just the detail when there is no diagnostic", () => {
     const feedback = buildToastFeedback(
       { ok: true, title: "Wallet connected", detail: "GABC…XYZ is connected on Stellar testnet." },
