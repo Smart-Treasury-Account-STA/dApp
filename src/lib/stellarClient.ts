@@ -17,6 +17,8 @@ import { STELLAR_CONFIG } from "@/config";
 import { validatePaymentDraft, validateScheduleDraft } from "@/features/treasury/drafts";
 import { describeSimulationFailure } from "@/lib/format";
 import { structScVal } from "@/lib/scval";
+import { validationFailure } from "@/lib/simulationResult";
+import { selectRuleForSigner } from "@/lib/smartAccountAuth";
 import type {
   ContextRule,
   PaymentDraft,
@@ -335,23 +337,25 @@ async function signAndSubmitContractInvocation({
   const signatureExpirationLedger = latestLedger.sequence + 100;
   const source = await server.getAccount(sourceAddress);
   const rules = await loadContextRules(sourceAddress);
-  const defaultRule = rules.find((rule) =>
-    rule.contextType.toLowerCase().includes("default"),
-  ) ?? rules[0];
+  const matchedRule = selectRuleForSigner(rules, wallet.address);
 
-  if (!defaultRule) {
+  if (!matchedRule) {
     throw new Error("No SmartAccount context rule is available for approval.");
   }
-  if (defaultRule.signerCount > 0 && defaultRule.signerAddresses.length === 0) {
+  if (matchedRule.signerCount > 0 && matchedRule.signerAddresses.length === 0) {
     throw new Error(
       "Could not verify delegated signer addresses for the matched SmartAccount rule.",
     );
   }
   if (
-    defaultRule.signerAddresses.length > 0 &&
-    !defaultRule.signerAddresses.includes(wallet.address)
+    matchedRule.signerAddresses.length > 0 &&
+    !matchedRule.signerAddresses.includes(wallet.address)
   ) {
-    throw new Error("Connected wallet is not registered as a delegated signer.");
+    throw new Error(
+      `Connected wallet is not a delegated signer on any SmartAccount context rule. Rules on-chain: ${rules
+        .map((rule) => `${rule.id} (${rule.name})`)
+        .join(", ")}.`,
+    );
   }
 
   const rootInvocation = contractInvocation(
@@ -360,7 +364,7 @@ async function signAndSubmitContractInvocation({
     args,
   );
   const { entryA, entryB } = buildUnsignedCustomAuthEntries({
-    contextRuleIds: [defaultRule.id],
+    contextRuleIds: [matchedRule.id],
     rootInvocation,
     signerAddress: wallet.address,
     signatureExpirationLedger,
@@ -583,8 +587,10 @@ export async function simulatePolicy(
   sourceAddress: string,
   draft: PaymentDraft,
 ): Promise<SimulationResult> {
+  const invalid = validationFailure(() => validatePaymentDraft(draft));
+  if (invalid) return invalid;
+
   try {
-    validatePaymentDraft(draft);
     await simulateContractCall(
       sourceAddress,
       STELLAR_CONFIG.contracts.policyEngine,
@@ -615,8 +621,10 @@ export async function simulateTransfer(
   sourceAddress: string,
   draft: PaymentDraft,
 ): Promise<SimulationResult> {
+  const invalid = validationFailure(() => validatePaymentDraft(draft));
+  if (invalid) return invalid;
+
   try {
-    validatePaymentDraft(draft);
     const nonceUsed = await checkNonce(sourceAddress, draft.nonce);
     if (nonceUsed) {
       return {
@@ -666,8 +674,10 @@ export async function simulateSchedule(
   sourceAddress: string,
   draft: ScheduleDraft,
 ): Promise<SimulationResult> {
+  const invalid = validationFailure(() => validateScheduleDraft(draft));
+  if (invalid) return invalid;
+
   try {
-    validateScheduleDraft(draft);
     const exists = await checkScheduledIntentExists(sourceAddress, draft.intentId);
     if (exists) {
       return {

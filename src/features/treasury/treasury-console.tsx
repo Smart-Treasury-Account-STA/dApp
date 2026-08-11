@@ -109,6 +109,15 @@ export function TreasuryConsole() {
   // one-shot flag) so reconnecting a different wallet resyncs once, but this
   // never clobbers an in-progress manual edit on subsequent refetches of the
   // same wallet's snapshot.
+  // Bring a freshly-set notice into view. Sticky positioning keeps it on
+  // screen once seen, but a notice raised while the operator is scrolled below
+  // it would otherwise stay above the viewport until they scroll back up.
+  const noticeRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!notice) return;
+    noticeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [notice]);
+
   const syncedPolicyVersionAddressRef = useRef<string | null>(null);
   useEffect(() => {
     if (policyVersion === null || latestLedger === null) return;
@@ -239,7 +248,15 @@ export function TreasuryConsole() {
           </div>
         </header>
 
-        {notice ? <Notice result={notice} /> : null}
+        {/* Sticky: the actions that produce a notice (Approve & submit,
+            Approve & create, Run due jobs) sit far down the page, and a notice
+            rendered only at the top scrolls out of view — an operator clicks,
+            sees nothing happen, and cannot tell a failure from a success. */}
+        {notice ? (
+          <div ref={noticeRef} className="sticky top-2 z-10">
+            <Notice result={notice} />
+          </div>
+        ) : null}
 
         <TreasurySection
           connected={wallet.connected}

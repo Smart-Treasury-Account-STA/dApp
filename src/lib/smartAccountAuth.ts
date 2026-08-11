@@ -9,7 +9,29 @@ export type SmartAccountAuthPlan = {
   steps: ExecutionStep[];
 };
 
-export function selectDefaultRule(rules: ContextRule[]) {
+/**
+ * Picks the context rule to authorize under for a given signer.
+ *
+ * A treasury can carry several rules that are all `Default` — the context type
+ * does not distinguish them — so matching on the type alone always returns the
+ * first one and ignores which rule the connected wallet is actually registered
+ * in. That silently builds an AuthPayload pinned to a rule the signer is not
+ * part of, which the contract then refuses.
+ *
+ * The signer's own rule wins. The type-then-first fallback is kept for the
+ * disconnected case, so the UI still has a rule to describe.
+ */
+export function selectRuleForSigner(
+  rules: ContextRule[],
+  signerAddress: string | null,
+): ContextRule | null {
+  if (signerAddress) {
+    const owned = rules.find((rule) => rule.signerAddresses.includes(signerAddress));
+    if (owned) {
+      return owned;
+    }
+  }
+
   return (
     rules.find((rule) => rule.contextType.toLowerCase().includes("default")) ??
     rules[0] ??
@@ -22,7 +44,7 @@ export function buildTransferAuthPlan(
   wallet: WalletState,
   rules: ContextRule[],
 ): SmartAccountAuthPlan {
-  const selectedRule = selectDefaultRule(rules);
+  const selectedRule = selectRuleForSigner(rules, wallet.address);
   const requiredDelegatedSigners = selectedRule?.signerAddresses ?? [];
   const walletCanApprove =
     Boolean(wallet.address) &&
