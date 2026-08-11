@@ -15,7 +15,8 @@ import { Buffer } from "buffer";
 
 import { STELLAR_CONFIG } from "@/config";
 import { validatePaymentDraft, validateScheduleDraft } from "@/features/treasury/drafts";
-import { explainContractError } from "@/lib/format";
+import { describeSimulationFailure } from "@/lib/format";
+import { structScVal } from "@/lib/scval";
 import type {
   ContextRule,
   PaymentDraft,
@@ -138,37 +139,30 @@ function bytesScVal(bytes: Buffer) {
   return xdr.ScVal.scvBytes(bytes);
 }
 
-function mapEntry(key: string, val: xdr.ScVal) {
-  return new xdr.ScMapEntry({
-    key: symbolScVal(key),
-    val,
+function policyCheckScVal(draft: PaymentDraft | ScheduleDraft, operation = "transfer") {
+  return structScVal({
+    operation: symbolScVal(operation),
+    asset: addressScVal(draft.asset),
+    destination: addressScVal(draft.destination),
+    amount: i128ScVal(draft.amount),
+    expected_version: u32ScVal(draft.expectedPolicyVersion),
   });
 }
 
-function policyCheckScVal(draft: PaymentDraft | ScheduleDraft, operation = "transfer") {
-  return xdr.ScVal.scvMap([
-    mapEntry("operation", symbolScVal(operation)),
-    mapEntry("asset", addressScVal(draft.asset)),
-    mapEntry("destination", addressScVal(draft.destination)),
-    mapEntry("amount", i128ScVal(draft.amount)),
-    mapEntry("expected_version", u32ScVal(draft.expectedPolicyVersion)),
-  ]);
-}
-
 function scheduledIntentScVal(draft: ScheduleDraft) {
-  return xdr.ScVal.scvMap([
-    mapEntry("intent_id", bytesN32ScVal(draft.intentId)),
-    mapEntry("asset", addressScVal(draft.asset)),
-    mapEntry("destination", addressScVal(draft.destination)),
-    mapEntry("amount", i128ScVal(draft.amount)),
-    mapEntry("start_ledger", u32ScVal(draft.startLedger)),
-    mapEntry("end_ledger", u32ScVal(draft.endLedger)),
-    mapEntry("max_executions", u32ScVal(draft.maxExecutions)),
-    mapEntry("execution_count", u32ScVal(0)),
-    mapEntry("policy_version", u32ScVal(draft.expectedPolicyVersion)),
-    mapEntry("adapter", addressScVal(STELLAR_CONFIG.contracts.transferAdapter)),
-    mapEntry("cancelled", boolScVal(false)),
-  ]);
+  return structScVal({
+    intent_id: bytesN32ScVal(draft.intentId),
+    asset: addressScVal(draft.asset),
+    destination: addressScVal(draft.destination),
+    amount: i128ScVal(draft.amount),
+    start_ledger: u32ScVal(draft.startLedger),
+    end_ledger: u32ScVal(draft.endLedger),
+    max_executions: u32ScVal(draft.maxExecutions),
+    execution_count: u32ScVal(0),
+    policy_version: u32ScVal(draft.expectedPolicyVersion),
+    adapter: addressScVal(STELLAR_CONFIG.contracts.transferAdapter),
+    cancelled: boolScVal(false),
+  });
 }
 
 function contractInvocation(contractId: string, functionName: string, args: xdr.ScVal[]) {
@@ -245,10 +239,13 @@ function smartAccountAuthPayload(signerAddress: string, contextRuleIdsScVal: xdr
     }),
   ]);
 
-  return xdr.ScVal.scvMap([
-    mapEntry("context_rule_ids", contextRuleIdsScVal),
-    mapEntry("signers", signersMap),
-  ]);
+  // Routed through structScVal like every other contract struct: these two
+  // keys happen to be in sorted order already, and nothing should depend on
+  // that holding if a field is ever added.
+  return structScVal({
+    context_rule_ids: contextRuleIdsScVal,
+    signers: signersMap,
+  });
 }
 
 function buildUnsignedCustomAuthEntries({
@@ -602,11 +599,13 @@ export async function simulatePolicy(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const failure = describeSimulationFailure(message);
     return {
       ok: false,
-      title: "Policy simulation rejected",
-      detail:
-        explainContractError(message) ?? "The testnet policy engine rejected this payment.",
+      title: failure.rejectedByContract
+        ? "Policy rejected this payment"
+        : "Policy check could not run",
+      detail: failure.detail,
       diagnostic: message,
     };
   }
@@ -648,12 +647,16 @@ export async function simulateTransfer(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const failure = describeSimulationFailure(message);
     return {
       ok: false,
-      title: "Transfer simulation needs auth",
-      detail:
-        explainContractError(message) ??
-        "This call requires the SmartAccount AuthPayload plus delegated signer authorization entries.",
+      title:
+        failure.kind === "authorization"
+          ? "Transfer simulation needs auth"
+          : failure.rejectedByContract
+            ? "Transfer rejected by the contract"
+            : "Transfer simulation could not run",
+      detail: failure.detail,
       diagnostic: message,
     };
   }
@@ -688,12 +691,16 @@ export async function simulateSchedule(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const failure = describeSimulationFailure(message);
     return {
       ok: false,
-      title: "Schedule simulation needs auth",
-      detail:
-        explainContractError(message) ??
-        "Scheduled payment creation uses the same SmartAccount custom authorization flow as transfers.",
+      title:
+        failure.kind === "authorization"
+          ? "Schedule simulation needs auth"
+          : failure.rejectedByContract
+            ? "Schedule rejected by the contract"
+            : "Schedule simulation could not run",
+      detail: failure.detail,
       diagnostic: message,
     };
   }

@@ -48,6 +48,36 @@ type WalletKitHandle = {
 
 let kitHandle: WalletKitHandle | null = null;
 
+type ModalCapableKit = Pick<WalletKit, "openModal" | "setWallet">;
+
+/**
+ * Opens the Wallets Kit selection modal and resolves with the wallet the user
+ * picked, or `undefined` when the kit exposes no modal.
+ */
+export async function selectWalletThroughModal(
+  kit: ModalCapableKit,
+): Promise<string | undefined> {
+  const { openModal } = kit;
+  if (typeof openModal !== "function") {
+    return undefined;
+  }
+
+  return new Promise<string>((resolve) => {
+    // Invoked with `kit` as the receiver. The kit reads `this` (for
+    // `this.modalElement`), and ES modules are strict mode, so calling the
+    // detached reference would leave `this` undefined and throw before the
+    // modal ever renders.
+    openModal.call(kit, {
+      onWalletSelected: async (option: { id: string; name?: string }) => {
+        if (typeof kit.setWallet === "function") {
+          kit.setWallet(option.id);
+        }
+        resolve(option.id);
+      },
+    });
+  });
+}
+
 export async function connectWallet(): Promise<WalletState> {
   const kitModule = (await import(
     "@creit.tech/stellar-wallets-kit"
@@ -68,19 +98,9 @@ export async function connectWallet(): Promise<WalletState> {
 
   kitHandle = { kit, selectedWalletId };
 
-  const openModal = kit.openModal;
-  if (typeof openModal === "function") {
-    await new Promise<void>((resolve) => {
-      openModal({
-        onWalletSelected: async (option: { id: string; name?: string }) => {
-          if (typeof kit.setWallet === "function") {
-            kit.setWallet(option.id);
-          }
-          kitHandle = { kit, selectedWalletId: option.id };
-          resolve();
-        },
-      });
-    });
+  const pickedWalletId = await selectWalletThroughModal(kit);
+  if (pickedWalletId) {
+    kitHandle = { kit, selectedWalletId: pickedWalletId };
   }
 
   const addressResult = await kit.getAddress();
