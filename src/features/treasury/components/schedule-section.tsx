@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { STELLAR_CONFIG } from "@/config";
 import { LEDGER_CLOSE_SECONDS } from "@/lib/constants";
 import { makeIntentId, truncateAddress } from "@/lib/format";
+import { describeReceipt } from "@/lib/receipt";
 import {
   approveAndSubmitSchedule,
   getLatestLedger,
@@ -75,13 +76,12 @@ export function ScheduleSection({
         endLedger: Number(draft.endLedger),
         maxExecutions: Number(draft.maxExecutions),
       };
-      onNotice({
-        ok: receipt.status === "SUCCESS",
-        title:
-          receipt.status === "SUCCESS" ? "Scheduled payment created" : "Schedule submitted",
-        detail: `Transaction status: ${receipt.status}`,
-        txHash: receipt.hash,
-      });
+      onNotice(
+        describeReceipt(receipt, {
+          confirmedTitle: "Scheduled payment created",
+          submittedTitle: "Schedule submitted",
+        }),
+      );
       if (receipt.status === "SUCCESS") {
         setCreatedScheduleJob(relayerJob);
         onDraftChange((current) => ({

@@ -110,7 +110,12 @@ export function TreasuryConsole() {
   useEffect(() => {
     if (!notice) return;
     const feedback = buildToastFeedback(notice, STELLAR_CONFIG.explorerBaseUrl);
-    const show = feedback.kind === "success" ? toast.success : toast.error;
+    const show =
+      feedback.kind === "success"
+        ? toast.success
+        : feedback.kind === "warning"
+          ? toast.warning
+          : toast.error;
     show(feedback.title, {
       description: feedback.description,
       action: feedback.explorerUrl

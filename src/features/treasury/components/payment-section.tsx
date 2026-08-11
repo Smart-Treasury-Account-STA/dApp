@@ -7,6 +7,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { STELLAR_CONFIG } from "@/config";
 import { makeNonce } from "@/lib/format";
+import { describeReceipt } from "@/lib/receipt";
 import {
   approveAndSubmitTransfer,
   checkNonce,
@@ -51,12 +52,12 @@ export function PaymentSection({
       });
     },
     onSuccess: (receipt) => {
-      onNotice({
-        ok: receipt.status === "SUCCESS",
-        title: receipt.status === "SUCCESS" ? "Payment confirmed" : "Payment submitted",
-        detail: `Transaction status: ${receipt.status}`,
-        txHash: receipt.hash,
-      });
+      onNotice(
+        describeReceipt(receipt, {
+          confirmedTitle: "Payment confirmed",
+          submittedTitle: "Payment submitted",
+        }),
+      );
       onDraftChange((current) => ({ ...current, nonce: makeNonce() }));
     },
     onError: (error) => {

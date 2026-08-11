@@ -41,6 +41,11 @@ export type ScheduleDraft = PaymentDraft & {
 
 export type SimulationResult = {
   ok: boolean;
+  /**
+   * The network has neither confirmed nor rejected this yet. Not a failure —
+   * `ok` stays true — but not a confirmation to report either.
+   */
+  pending?: boolean;
   title: string;
   detail: string;
   diagnostic?: string;

@@ -512,8 +512,13 @@ async function signAndSubmitContractInvocation({
     throw new Error("RPC reported a duplicate transaction submission.");
   }
 
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+  // Testnet usually closes a ledger in ~5s, but inclusion has been observed
+  // taking over two minutes under load. The old 30s ceiling reported such a
+  // transaction as unresolved while it went on to succeed on-chain, so the
+  // wait now covers that case. Timing out is no longer read as a failure —
+  // describeReceipt reports it as still pending.
+  for (let attempt = 0; attempt < 90; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
     const txResult = await server.getTransaction(sendResponse.hash);
     if (txResult.status !== "NOT_FOUND") {
       return {
