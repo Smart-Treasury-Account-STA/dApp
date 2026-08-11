@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useTheme } from "next-themes";
+import { toast } from "sonner";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -101,6 +102,17 @@ export function TreasuryConsole() {
     [paymentDraft, rules, wallet],
   );
 
+  // Raise every notice as a toast. The actions that produce one sit far down a
+  // 3000px page while the notice panel renders at the top, so without this an
+  // operator clicks and sees nothing. The panel below stays as the durable
+  // surface — it carries the diagnostic and the explorer link, which a toast
+  // dismisses away.
+  useEffect(() => {
+    if (!notice) return;
+    const show = notice.ok ? toast.success : toast.error;
+    show(notice.title, { description: notice.detail });
+  }, [notice]);
+
   // Seed both drafts' expectedPolicyVersion, and the schedule draft's ledger
   // window, from the live on-chain state the first time it's successfully
   // read for a given wallet, so the operator doesn't have to hand-copy the
@@ -109,15 +121,6 @@ export function TreasuryConsole() {
   // one-shot flag) so reconnecting a different wallet resyncs once, but this
   // never clobbers an in-progress manual edit on subsequent refetches of the
   // same wallet's snapshot.
-  // Bring a freshly-set notice into view. Sticky positioning keeps it on
-  // screen once seen, but a notice raised while the operator is scrolled below
-  // it would otherwise stay above the viewport until they scroll back up.
-  const noticeRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!notice) return;
-    noticeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [notice]);
-
   const syncedPolicyVersionAddressRef = useRef<string | null>(null);
   useEffect(() => {
     if (policyVersion === null || latestLedger === null) return;
@@ -248,15 +251,7 @@ export function TreasuryConsole() {
           </div>
         </header>
 
-        {/* Sticky: the actions that produce a notice (Approve & submit,
-            Approve & create, Run due jobs) sit far down the page, and a notice
-            rendered only at the top scrolls out of view — an operator clicks,
-            sees nothing happen, and cannot tell a failure from a success. */}
-        {notice ? (
-          <div ref={noticeRef} className="sticky top-2 z-10">
-            <Notice result={notice} />
-          </div>
-        ) : null}
+        {notice ? <Notice result={notice} /> : null}
 
         <TreasurySection
           connected={wallet.connected}

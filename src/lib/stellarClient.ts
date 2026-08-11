@@ -1,6 +1,7 @@
 import {
   Address,
   BASE_FEE,
+  authorizeEntry,
   Contract,
   Operation,
   Transaction,
@@ -250,6 +251,44 @@ function smartAccountAuthPayload(signerAddress: string, contextRuleIdsScVal: xdr
   });
 }
 
+/**
+ * Signs entry B — the delegated signer's standard `Address` credentials entry,
+ * which authorizes the nested `require_auth_for_args((auth_digest,))` call that
+ * `smart_account`'s `authenticate()` makes on its own behalf.
+ *
+ * Only entry B goes through here. Entry A carries the contract's own
+ * `AuthPayload` and is hand-built, because no SDK helper models a custom
+ * account's signature shape.
+ */
+export async function signDelegatedAuthEntry(
+  entry: xdr.SorobanAuthorizationEntry,
+  wallet: WalletSigning,
+  signatureExpirationLedger: number,
+): Promise<xdr.SorobanAuthorizationEntry> {
+  // The wallet is handed the HashIdPreimage and returns raw signature bytes.
+  // Passing it the entry itself makes it fail to parse; expecting an entry back
+  // makes the reply fail to decode. authorizeEntry drives both sides correctly
+  // and writes the signature into a copy of the entry.
+  return authorizeEntry(
+    entry,
+    async (preimage) => {
+      const signature = await wallet.signAuthEntry(
+        preimage.toXDR("base64"),
+        wallet.address,
+      );
+      if (!signature) {
+        throw new Error("Wallet did not return a signed authorization entry.");
+      }
+      return {
+        signature: Buffer.from(signature, "base64"),
+        publicKey: wallet.address,
+      };
+    },
+    signatureExpirationLedger,
+    STELLAR_CONFIG.networkPassphrase,
+  );
+}
+
 function buildUnsignedCustomAuthEntries({
   contextRuleIds,
   rootInvocation,
@@ -370,15 +409,12 @@ async function signAndSubmitContractInvocation({
     signatureExpirationLedger,
   });
 
-  const signedEntryBXdr = await wallet.signAuthEntry(entryB.toXDR("base64"), wallet.address);
-  if (!signedEntryBXdr) {
-    throw new Error("Wallet did not return a signed authorization entry.");
-  }
-
-  const signedEntryB = xdr.SorobanAuthorizationEntry.fromXDR(
-    signedEntryBXdr,
-    "base64",
+  const signedEntryB = await signDelegatedAuthEntry(
+    entryB,
+    wallet,
+    signatureExpirationLedger,
   );
+
   const tx = new TransactionBuilder(source, {
     fee: BASE_FEE,
     networkPassphrase: STELLAR_CONFIG.networkPassphrase,
