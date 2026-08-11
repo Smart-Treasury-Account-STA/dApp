@@ -7,6 +7,7 @@ import {
   Moon,
   RadioTower,
   RefreshCcw,
+  ScrollText,
   SendHorizontal,
   ShieldCheck,
   Sun,
@@ -33,6 +34,7 @@ import type {
 } from "@/types";
 import { useContextRules, useTreasurySnapshot } from "@/features/treasury/queries";
 import { PaymentSection } from "@/features/treasury/components/payment-section";
+import { PolicySection } from "@/features/treasury/components/policy-section";
 import { RelayerSection } from "@/features/treasury/components/relayer-section";
 import { ScheduleSection } from "@/features/treasury/components/schedule-section";
 import { SignersSection } from "@/features/treasury/components/signers-section";
@@ -55,6 +57,7 @@ const navItems: {
 }[] = [
   { href: "#treasury", icon: Activity, label: "Treasury" },
   { href: "#signers", icon: ShieldCheck, label: "Signers" },
+  { href: "#policy", icon: ScrollText, label: "Policy" },
   { href: "#payment", icon: SendHorizontal, label: "Payment" },
   { href: "#schedule", icon: CalendarClock, label: "Schedule" },
   { href: "#relayer", icon: RadioTower, label: "Relayer" },
@@ -277,6 +280,8 @@ export function TreasuryConsole() {
         />
 
         <SignersSection onNotice={setNotice} wallet={wallet} />
+
+        <PolicySection onNotice={setNotice} wallet={wallet} />
 
         <section className="grid grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)] gap-5 max-xl:grid-cols-1">
           <PaymentSection
