@@ -782,6 +782,49 @@ export async function checkScheduledIntentExists(sourceAddress: string, intentId
   }
 }
 
+/**
+ * Reads the policy version an intent pinned at creation. Returns null when the
+ * intent cannot be read, so a missing intent never silently reads as "safe".
+ */
+export async function loadIntentPolicyVersion(
+  sourceAddress: string,
+  intentId: string,
+): Promise<number | null> {
+  try {
+    const result = await simulateContractCall(
+      sourceAddress,
+      STELLAR_CONFIG.contracts.intentRegistry,
+      "get_intent",
+      [bytesN32ScVal(intentId)],
+    );
+    const record = getRecord(result.value);
+    const version = record.policy_version;
+    return typeof version === "number" ? version : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Simulates a write before any signature is requested, so a contract-level
+ * rejection surfaces without troubling the wallet.
+ *
+ * This does NOT verify authorization: Soroban's recording auth mode records
+ * `require_auth` rather than enforcing it, so a successful simulation says
+ * nothing about whether the connected key may perform the write.
+ */
+export async function simulateWriteOperation(
+  operation: { args: xdr.ScVal[]; contractId: string; functionName: string },
+  sourceAddress: string,
+): Promise<void> {
+  await simulateContractCall(
+    sourceAddress,
+    operation.contractId,
+    operation.functionName,
+    operation.args,
+  );
+}
+
 export async function simulatePolicy(
   sourceAddress: string,
   draft: PaymentDraft,
