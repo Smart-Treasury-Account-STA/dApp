@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Address, Keypair, hash, xdr } from "@stellar/stellar-sdk";
+import { Buffer } from "buffer";
 
 import { signDelegatedAuthEntry } from "./stellarClient";
 import type { WalletSigning } from "@/types";
@@ -20,8 +21,12 @@ function freighterLikeWallet(keypair: Keypair): WalletSigning {
     address: keypair.publicKey(),
     async signAuthEntry(authEntryXdr: string) {
       const preimage = xdr.HashIdPreimage.fromXDR(authEntryXdr, "base64");
+      const signature = keypair.sign(hash(preimage.toXDR()));
       return {
-        signature: keypair.sign(hash(preimage.toXDR())).toString("base64"),
+        // Double-encoded, exactly as the wallets kit delivers it: it calls
+        // `Buffer.from(signedAuthEntry).toString("base64")` on a value
+        // Freighter already returned as a base64 string.
+        signature: Buffer.from(signature.toString("base64")).toString("base64"),
         signerAddress: keypair.publicKey(),
       };
     },
@@ -47,8 +52,9 @@ function wrongAccountWallet(expectedAddress: string, wrongSigner: Keypair): Wall
     address: expectedAddress,
     async signAuthEntry(authEntryXdr: string) {
       const preimage = xdr.HashIdPreimage.fromXDR(authEntryXdr, "base64");
+      const signature = wrongSigner.sign(hash(preimage.toXDR()));
       return {
-        signature: wrongSigner.sign(hash(preimage.toXDR())).toString("base64"),
+        signature: Buffer.from(signature.toString("base64")).toString("base64"),
         signerAddress: wrongSigner.publicKey(),
       };
     },

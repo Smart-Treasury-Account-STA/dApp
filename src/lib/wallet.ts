@@ -137,22 +137,6 @@ export async function signAuthEntry(preimageXdr: string, address: string) {
     address,
     networkPassphrase: STELLAR_CONFIG.networkPassphrase,
   });
-  // TEMPORARY — diagnosing the "signature doesn't match payload" bug live.
-  // Remove once root-caused.
-  console.debug("[STA-DEBUG] signAuthEntry requested address:", address);
-  console.debug("[STA-DEBUG] signAuthEntry preimageXdr:", preimageXdr);
-  console.debug(
-    "[STA-DEBUG] signAuthEntry raw result:",
-    typeof result,
-    result && typeof result === "object"
-      ? {
-          keys: Object.keys(result),
-          signedAuthEntryType: typeof result.signedAuthEntry,
-          signedAuthEntryValue: result.signedAuthEntry,
-          signerAddress: result.signerAddress,
-        }
-      : result,
-  );
   if (typeof result === "string") {
     return { signature: result };
   }

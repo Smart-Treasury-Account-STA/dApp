@@ -3,7 +3,6 @@ import {
   BASE_FEE,
   authorizeEntry,
   Contract,
-  Keypair,
   Operation,
   Transaction,
   TransactionBuilder,
@@ -21,6 +20,7 @@ import { describeSimulationFailure } from "@/lib/format";
 import { structScVal } from "@/lib/scval";
 import { validationFailure } from "@/lib/simulationResult";
 import { selectRuleForSigner } from "@/lib/smartAccountAuth";
+import { decodeWalletSignature } from "@/lib/walletSignature";
 import type {
   ContextRule,
   PaymentDraft,
@@ -291,27 +291,8 @@ export async function signDelegatedAuthEntry(
           `Wallet signed with ${signerAddress} instead of the expected signer ${wallet.address}. Switch to that account in your wallet and try again.`,
         );
       }
-      const signatureBytes = Buffer.from(result.signature, "base64");
-      // TEMPORARY — diagnosing the "signature doesn't match payload" bug
-      // live. Remove once root-caused.
-      const payload = hash(preimage.toXDR());
-      let manualVerify: boolean | string;
-      try {
-        manualVerify = Keypair.fromPublicKey(signerAddress).verify(payload, signatureBytes);
-      } catch (verifyError) {
-        manualVerify = `threw: ${verifyError instanceof Error ? verifyError.message : String(verifyError)}`;
-      }
-      console.debug("[STA-DEBUG] preimage.toXDR('base64'):", preimage.toXDR("base64"));
-      console.debug("[STA-DEBUG] payload (hash) hex:", payload.toString("hex"));
-      console.debug(
-        "[STA-DEBUG] signatureBytes hex, len:",
-        signatureBytes.toString("hex"),
-        signatureBytes.length,
-      );
-      console.debug("[STA-DEBUG] signerAddress used for verify:", signerAddress);
-      console.debug("[STA-DEBUG] manual Keypair.verify(payload, signature) result:", manualVerify);
       return {
-        signature: signatureBytes,
+        signature: decodeWalletSignature(result.signature),
         publicKey: signerAddress,
       };
     },
