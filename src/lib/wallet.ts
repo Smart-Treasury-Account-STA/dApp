@@ -22,7 +22,7 @@ type WalletKit = {
   signAuthEntry?: (
     preimageXdr: string,
     options: { address: string; networkPassphrase: string },
-  ) => Promise<string | { signedAuthEntry?: string }>;
+  ) => Promise<string | { signedAuthEntry?: string; signerAddress?: string }>;
   signTransaction?: (
     transactionXdr: string,
     options: { address: string; networkPassphrase: string },
@@ -137,7 +137,13 @@ export async function signAuthEntry(preimageXdr: string, address: string) {
     address,
     networkPassphrase: STELLAR_CONFIG.networkPassphrase,
   });
-  return typeof result === "string" ? result : result.signedAuthEntry;
+  if (typeof result === "string") {
+    return { signature: result };
+  }
+  if (!result.signedAuthEntry) {
+    return undefined;
+  }
+  return { signature: result.signedAuthEntry, signerAddress: result.signerAddress };
 }
 
 export async function signTransaction(transactionXdr: string, address: string) {

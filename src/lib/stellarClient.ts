@@ -272,16 +272,27 @@ export async function signDelegatedAuthEntry(
   return authorizeEntry(
     entry,
     async (preimage) => {
-      const signature = await wallet.signAuthEntry(
-        preimage.toXDR("base64"),
-        wallet.address,
-      );
-      if (!signature) {
+      const result = await wallet.signAuthEntry(preimage.toXDR("base64"), wallet.address);
+      if (!result) {
         throw new Error("Wallet did not return a signed authorization entry.");
       }
+      // Freighter reports which account it actually signed with. That can
+      // diverge from the account we asked for (e.g. its active account
+      // didn't match the requested one) — plugging `wallet.address` in as
+      // the verification key regardless produces a valid signature that the
+      // SDK's own crypto check rejects, surfacing only a generic "signature
+      // doesn't match payload". Trust what the wallet reports instead, and
+      // fail with the actual mismatch when it doesn't match the signer this
+      // treasury action needs.
+      const signerAddress = result.signerAddress ?? wallet.address;
+      if (signerAddress !== wallet.address) {
+        throw new Error(
+          `Wallet signed with ${signerAddress} instead of the expected signer ${wallet.address}. Switch to that account in your wallet and try again.`,
+        );
+      }
       return {
-        signature: Buffer.from(signature, "base64"),
-        publicKey: wallet.address,
+        signature: Buffer.from(result.signature, "base64"),
+        publicKey: signerAddress,
       };
     },
     signatureExpirationLedger,

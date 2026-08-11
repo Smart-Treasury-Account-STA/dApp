@@ -20,7 +20,37 @@ function freighterLikeWallet(keypair: Keypair): WalletSigning {
     address: keypair.publicKey(),
     async signAuthEntry(authEntryXdr: string) {
       const preimage = xdr.HashIdPreimage.fromXDR(authEntryXdr, "base64");
-      return keypair.sign(hash(preimage.toXDR())).toString("base64");
+      return {
+        signature: keypair.sign(hash(preimage.toXDR())).toString("base64"),
+        signerAddress: keypair.publicKey(),
+      };
+    },
+    async signTransaction() {
+      throw new Error("signTransaction is not part of this path.");
+    },
+  };
+}
+
+/**
+ * Reproduces the production bug: Freighter reports (via `signerAddress`)
+ * that it actually signed with a different account than the one the wallet
+ * was asked to sign with — e.g. the extension's active account didn't match
+ * the requested `accountToSign`. The signature it returns is real, valid,
+ * and *matches `wrongSigner`* — but plugging `wallet.address` in as the
+ * verification key instead of the account that actually signed makes
+ * `authorizeEntry`'s `Keypair.verify` fail with the SDK's generic
+ * "signature doesn't match payload", which gives no hint that the wrong
+ * account signed.
+ */
+function wrongAccountWallet(expectedAddress: string, wrongSigner: Keypair): WalletSigning {
+  return {
+    address: expectedAddress,
+    async signAuthEntry(authEntryXdr: string) {
+      const preimage = xdr.HashIdPreimage.fromXDR(authEntryXdr, "base64");
+      return {
+        signature: wrongSigner.sign(hash(preimage.toXDR())).toString("base64"),
+        signerAddress: wrongSigner.publicKey(),
+      };
     },
     async signTransaction() {
       throw new Error("signTransaction is not part of this path.");
@@ -109,5 +139,20 @@ describe("signDelegatedAuthEntry", () => {
     await expect(
       signDelegatedAuthEntry(entry, silentWallet, expirationLedger),
     ).rejects.toThrow(/did not return a signed authorization entry/i);
+  });
+
+  it("fails with an actionable message when the wallet signs with a different account", async () => {
+    const entry = unsignedDelegatedEntry(keypair.publicKey(), expirationLedger);
+    const wrongSigner = Keypair.random();
+
+    await expect(
+      signDelegatedAuthEntry(
+        entry,
+        wrongAccountWallet(keypair.publicKey(), wrongSigner),
+        expirationLedger,
+      ),
+    ).rejects.toThrow(
+      new RegExp(`${wrongSigner.publicKey()}.*instead of.*${keypair.publicKey()}`, "i"),
+    );
   });
 });

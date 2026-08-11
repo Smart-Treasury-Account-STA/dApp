@@ -61,6 +61,9 @@ export type TransactionReceipt = {
 
 export type WalletSigning = {
   address: string;
-  signAuthEntry: (authEntryXdr: string, address: string) => Promise<string | undefined>;
+  signAuthEntry: (
+    authEntryXdr: string,
+    address: string,
+  ) => Promise<{ signature: string; signerAddress?: string } | undefined>;
   signTransaction: (transactionXdr: string, address: string) => Promise<string | undefined>;
 };
