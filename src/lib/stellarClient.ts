@@ -16,6 +16,7 @@ import { Buffer } from "buffer";
 
 import { STELLAR_CONFIG } from "@/config";
 import { validatePaymentDraft, validateScheduleDraft } from "@/features/treasury/drafts";
+import { countAuthContexts, selectInvocationForAddress } from "@/lib/authTree";
 import { describeSimulationFailure } from "@/lib/format";
 import { structScVal } from "@/lib/scval";
 import { validationFailure } from "@/lib/simulationResult";
@@ -54,6 +55,52 @@ type CustomAuthInput = {
   signerAddress: string;
   signatureExpirationLedger: number;
 };
+
+/**
+ * Asks the host which invocation tree the treasury has to authorize.
+ *
+ * Building the tree from the entrypoint alone only works when the call moves
+ * no tokens. `execute_transfer_payment` reaches the SAC's `transfer` through
+ * the adapter, and because the adapter — not the treasury — is the SAC's
+ * direct caller, that `transfer` needs its own declared node; without it the
+ * SAC rejects the payment with `Error(Auth, InvalidAction)` /
+ * "Unauthorized function call for address". Simulating with no auth entries
+ * puts the host in recording mode, so it reports that tree itself rather than
+ * the dApp restating each contract's internal call graph.
+ */
+async function discoverTreasuryInvocation(
+  sourceAddress: string,
+  functionName: string,
+  args: xdr.ScVal[],
+): Promise<xdr.SorobanAuthorizedInvocation> {
+  const server = getServer();
+  const source = await server.getAccount(sourceAddress);
+  const contract = new Contract(STELLAR_CONFIG.contracts.smartAccount);
+  const tx = new TransactionBuilder(source, {
+    fee: BASE_FEE,
+    networkPassphrase: STELLAR_CONFIG.networkPassphrase,
+  })
+    .addOperation(contract.call(functionName, ...args))
+    .setTimeout(60)
+    .build();
+
+  const simulation = await server.simulateTransaction(tx);
+  if (isSimulationError(simulation)) {
+    throw new Error(simulation.error);
+  }
+
+  const recorded = selectInvocationForAddress(
+    simulation.result?.auth ?? [],
+    STELLAR_CONFIG.contracts.smartAccount,
+  );
+  if (!recorded) {
+    throw new Error(
+      "Simulation recorded no authorization requirement for the treasury account.",
+    );
+  }
+
+  return recorded;
+}
 
 function getServer() {
   return new rpc.Server(STELLAR_CONFIG.rpcUrl);
@@ -409,13 +456,20 @@ async function signAndSubmitContractInvocation({
     );
   }
 
-  const rootInvocation = contractInvocation(
-    STELLAR_CONFIG.contracts.smartAccount,
+  const rootInvocation = await discoverTreasuryInvocation(
+    sourceAddress,
     functionName,
     args,
   );
+  // One context_rule_id per authorization context the tree produces. The
+  // treasury validates every context against the same rule, so this repeats
+  // the matched rule rather than selecting a different one per node.
+  const contextRuleIds = Array.from(
+    { length: countAuthContexts(rootInvocation) },
+    () => matchedRule.id,
+  );
   const { entryA, entryB } = buildUnsignedCustomAuthEntries({
-    contextRuleIds: [matchedRule.id],
+    contextRuleIds,
     rootInvocation,
     signerAddress: wallet.address,
     signatureExpirationLedger,
