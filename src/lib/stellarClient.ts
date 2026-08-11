@@ -146,7 +146,7 @@ async function simulateContractCall(
   return { value: readSimulationValue(simulation) };
 }
 
-function addressScVal(address: string) {
+export function addressScVal(address: string) {
   return new Address(address).toScVal();
 }
 
@@ -154,15 +154,15 @@ function addressScAddress(address: string) {
   return new Address(address).toScAddress();
 }
 
-function symbolScVal(value: string) {
+export function symbolScVal(value: string) {
   return xdr.ScVal.scvSymbol(value);
 }
 
-function i128ScVal(value: string) {
+export function i128ScVal(value: string) {
   return nativeToScVal(BigInt(value), { type: "i128" });
 }
 
-function u32ScVal(value: number | string) {
+export function u32ScVal(value: number | string) {
   return nativeToScVal(Number(value), { type: "u32" });
 }
 
@@ -170,7 +170,7 @@ function u64ScVal(value: number | string) {
   return nativeToScVal(BigInt(value), { type: "u64" });
 }
 
-function boolScVal(value: boolean) {
+export function boolScVal(value: boolean) {
   return nativeToScVal(value);
 }
 
@@ -278,7 +278,7 @@ function randomAuthNonce() {
   return nonce.toString();
 }
 
-function signerDelegatedScVal(address: string) {
+export function signerDelegatedScVal(address: string) {
   return xdr.ScVal.scvVec([symbolScVal("Delegated"), addressScVal(address)]);
 }
 
