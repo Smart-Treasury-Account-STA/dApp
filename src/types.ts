@@ -72,3 +72,28 @@ export type WalletSigning = {
   ) => Promise<{ signature: string; signerAddress?: string } | undefined>;
   signTransaction: (transactionXdr: string, address: string) => Promise<string | undefined>;
 };
+
+export type PolicyProbeReason =
+  | "operation"
+  | "asset"
+  | "recipient"
+  | "amount"
+  | "version"
+  | "unknown";
+
+export type PolicyProbeVerdict =
+  | { allowed: true }
+  | { allowed: false; reason: PolicyProbeReason; code?: number };
+
+export type ProbeInput = {
+  asset: string;
+  destination: string;
+  operation: string;
+  amount: string;
+  expectedVersion: number;
+};
+
+export type TreasuryAuthority = {
+  owner: string | null;
+  policyAdminHint: string | null;
+};

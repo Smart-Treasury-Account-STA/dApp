@@ -1,6 +1,13 @@
 "use client";
 
-import { ClipboardCheck, KeyRound, RefreshCcw, SendHorizontal, Wallet } from "lucide-react";
+import {
+  ClipboardCheck,
+  KeyRound,
+  Loader2,
+  RefreshCcw,
+  SendHorizontal,
+  Wallet,
+} from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import { useMutation } from "@tanstack/react-query";
 
@@ -168,7 +175,11 @@ export function PaymentSection({
           disabled={!wallet.connected || submitTransferMutation.isPending}
           onClick={() => submitTransferMutation.mutate()}
         >
-          <Wallet size={18} />
+          {submitTransferMutation.isPending ? (
+            <Loader2 className="animate-spin" size={18} />
+          ) : (
+            <Wallet size={18} />
+          )}
           Approve & submit
         </Button>
       </div>

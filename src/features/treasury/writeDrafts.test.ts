@@ -1,0 +1,118 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  isSelfRemoval,
+  signerRemovalBlock,
+  validateAssetRuleDraft,
+  validateOperationDraft,
+  validateRecipientDraft,
+  validateSignerDraft,
+  validateVersionBump,
+} from "./writeDrafts";
+import type { ContextRule } from "@/types";
+
+const SIGNER = "GAK3XILRBYBMBOCZMSLL2CLR6WPQLEIOC6ZCYYPTE4OIAX3PCFFO2YMU";
+const OTHER = "GCWFJKLE45TMVZS42TMIYKAORKGBWE74753YPOSCC5ESJR2G2UMBXBDB";
+const ASSET = "CCOUVA654JH2V6B7LNTKHJP5DF3QA553RS2IIWXSGPDFH2N3QILIVU5L";
+
+function rule(signerAddresses: string[]): ContextRule {
+  return {
+    id: 0,
+    name: "root",
+    contextType: "Default",
+    signerCount: signerAddresses.length,
+    signerAddresses,
+    policyCount: 0,
+  };
+}
+
+describe("validateSignerDraft", () => {
+  it("accepts a valid account address", () => {
+    expect(() => validateSignerDraft({ signerAddress: SIGNER })).not.toThrow();
+  });
+
+  it("rejects a malformed address", () => {
+    expect(() => validateSignerDraft({ signerAddress: "not-an-address" })).toThrow(
+      /valid Stellar/i,
+    );
+  });
+});
+
+describe("validateAssetRuleDraft", () => {
+  it("accepts an enabled rule with a positive cap", () => {
+    expect(() =>
+      validateAssetRuleDraft({ asset: ASSET, enabled: true, maxSingleTransfer: "10" }),
+    ).not.toThrow();
+  });
+
+  it("rejects an enabled rule with a non-positive cap, which the contract also rejects", () => {
+    expect(() =>
+      validateAssetRuleDraft({ asset: ASSET, enabled: true, maxSingleTransfer: "0" }),
+    ).toThrow(/positive/i);
+  });
+
+  it("allows a zero cap when the rule is being disabled", () => {
+    expect(() =>
+      validateAssetRuleDraft({ asset: ASSET, enabled: false, maxSingleTransfer: "0" }),
+    ).not.toThrow();
+  });
+});
+
+describe("validateRecipientDraft", () => {
+  it("rejects a malformed recipient", () => {
+    expect(() => validateRecipientDraft({ recipient: "nope", allowed: true })).toThrow(
+      /valid Stellar/i,
+    );
+  });
+});
+
+describe("validateOperationDraft", () => {
+  it("accepts a short symbol", () => {
+    expect(() => validateOperationDraft({ operation: "transfer", allowed: true })).not.toThrow();
+  });
+
+  it("rejects an operation longer than a Soroban symbol allows", () => {
+    expect(() =>
+      validateOperationDraft({ operation: "a".repeat(33), allowed: true }),
+    ).toThrow(/32 characters/i);
+  });
+
+  it("rejects characters Soroban symbols cannot carry", () => {
+    expect(() => validateOperationDraft({ operation: "trans-fer", allowed: true })).toThrow(
+      /letters, digits/i,
+    );
+  });
+});
+
+describe("validateVersionBump", () => {
+  it("requires the next version to be strictly greater, as the contract does", () => {
+    expect(() => validateVersionBump({ currentVersion: 2, nextVersion: 2 })).toThrow(
+      /greater/i,
+    );
+    expect(() => validateVersionBump({ currentVersion: 2, nextVersion: 1 })).toThrow(
+      /greater/i,
+    );
+    expect(() => validateVersionBump({ currentVersion: 2, nextVersion: 3 })).not.toThrow();
+  });
+});
+
+describe("signerRemovalBlock", () => {
+  it("blocks removing the only signer, which would brick the treasury", () => {
+    expect(signerRemovalBlock(rule([SIGNER]), 0)).toMatch(/only signer/i);
+  });
+
+  it("permits removal when another signer remains", () => {
+    expect(signerRemovalBlock(rule([SIGNER, OTHER]), 0)).toBeNull();
+  });
+});
+
+describe("isSelfRemoval", () => {
+  it("detects that the operator is removing their own key", () => {
+    expect(isSelfRemoval(rule([SIGNER, OTHER]), 0, SIGNER)).toBe(true);
+    expect(isSelfRemoval(rule([SIGNER, OTHER]), 1, SIGNER)).toBe(false);
+  });
+
+  it("is false when no wallet is connected", () => {
+    expect(isSelfRemoval(rule([SIGNER]), 0, null)).toBe(false);
+  });
+});
