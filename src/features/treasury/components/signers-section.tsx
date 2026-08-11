@@ -1,6 +1,6 @@
 "use client";
 
-import { KeyRound, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import { KeyRound, Loader2, ShieldCheck, Trash2, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -48,7 +48,7 @@ export function SignersSection({
         walletSigner(wallet.address),
       );
     },
-    onSuccess: (receipt) => {
+    onSuccess: async (receipt) => {
       onNotice(
         describeReceipt(receipt, {
           confirmedTitle: "Signer added",
@@ -56,6 +56,12 @@ export function SignersSection({
         }),
       );
       setSignerAddress("");
+      // Refetch the two queries this section actually renders directly,
+      // rather than relying on invalidateQueries' prefix match to reach an
+      // active observer — the write already waited for on-chain confirmation
+      // (or its ~3 minute ceiling), so the read that follows should reflect
+      // it immediately, not on the next 30s staleTime tick.
+      await Promise.all([rulesQuery.refetch(), authorityQuery.refetch()]);
       void queryClient.invalidateQueries({ queryKey: ["treasury"] });
     },
     onError: (error) => {
@@ -79,7 +85,7 @@ export function SignersSection({
         walletSigner(wallet.address),
       );
     },
-    onSuccess: (receipt) => {
+    onSuccess: async (receipt) => {
       onNotice(
         describeReceipt(receipt, {
           confirmedTitle: "Signer revoked",
@@ -87,6 +93,7 @@ export function SignersSection({
         }),
       );
       setPendingRemoval(null);
+      await Promise.all([rulesQuery.refetch(), authorityQuery.refetch()]);
       void queryClient.invalidateQueries({ queryKey: ["treasury"] });
     },
     onError: (error) => {
@@ -156,6 +163,9 @@ export function SignersSection({
                               onClick={() => removeMutation.mutate(address)}
                               disabled={removeMutation.isPending}
                             >
+                              {removeMutation.isPending ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : null}
                               {self ? "Remove my own key" : "Confirm revoke"}
                             </Button>
                             <Button onClick={() => setPendingRemoval(null)}>Cancel</Button>
@@ -183,9 +193,18 @@ export function SignersSection({
               onClick={() => addMutation.mutate()}
               disabled={addMutation.isPending || signerAddress.length === 0}
             >
-              <UserPlus className="size-4" />
+              {addMutation.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <UserPlus className="size-4" />
+              )}
               {addMutation.isPending ? "Awaiting wallet…" : "Add signer"}
             </Button>
+            <p className="text-xs text-muted-foreground">
+              {rootRule
+                ? `Joins Rule ${rootRule.id} · ${rootRule.name} — the dApp always adds to the first context rule; there is no picker for a different one yet.`
+                : "No context rule is loaded yet."}
+            </p>
             <p className="text-xs text-muted-foreground">
               Simulation cannot confirm authorization. The wallet signature is what proves it.
             </p>
