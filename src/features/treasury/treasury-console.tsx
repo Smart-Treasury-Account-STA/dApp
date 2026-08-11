@@ -22,6 +22,7 @@ import { STELLAR_CONFIG } from "@/config";
 import { computeLedgerWindow } from "@/features/treasury/drafts";
 import { makeIntentId, makeNonce, truncateAddress } from "@/lib/format";
 import { buildTransferAuthPlan } from "@/lib/smartAccountAuth";
+import { buildToastFeedback } from "@/lib/toastFeedback";
 import { connectWallet, disconnectWallet } from "@/lib/wallet";
 import type {
   NetworkHealth,
@@ -31,7 +32,6 @@ import type {
   WalletState,
 } from "@/types";
 import { useContextRules, useTreasurySnapshot } from "@/features/treasury/queries";
-import { Notice } from "@/features/treasury/components/primitives";
 import { PaymentSection } from "@/features/treasury/components/payment-section";
 import { RelayerSection } from "@/features/treasury/components/relayer-section";
 import { ScheduleSection } from "@/features/treasury/components/schedule-section";
@@ -103,14 +103,23 @@ export function TreasuryConsole() {
   );
 
   // Raise every notice as a toast. The actions that produce one sit far down a
-  // 3000px page while the notice panel renders at the top, so without this an
-  // operator clicks and sees nothing. The panel below stays as the durable
-  // surface — it carries the diagnostic and the explorer link, which a toast
-  // dismisses away.
+  // 3000px page, so a fixed header panel was invisible to whoever just
+  // clicked; the toast follows them wherever they are on the page instead.
+  // buildToastFeedback folds the diagnostic's first line and an explorer link
+  // into it, so removing the header panel does not silently drop that detail.
   useEffect(() => {
     if (!notice) return;
-    const show = notice.ok ? toast.success : toast.error;
-    show(notice.title, { description: notice.detail });
+    const feedback = buildToastFeedback(notice, STELLAR_CONFIG.explorerBaseUrl);
+    const show = feedback.kind === "success" ? toast.success : toast.error;
+    show(feedback.title, {
+      description: feedback.description,
+      action: feedback.explorerUrl
+        ? {
+            label: "View transaction",
+            onClick: () => window.open(feedback.explorerUrl as string, "_blank"),
+          }
+        : undefined,
+    });
   }, [notice]);
 
   // Seed both drafts' expectedPolicyVersion, and the schedule draft's ledger
@@ -250,8 +259,6 @@ export function TreasuryConsole() {
             </Button>
           </div>
         </header>
-
-        {notice ? <Notice result={notice} /> : null}
 
         <TreasurySection
           connected={wallet.connected}
