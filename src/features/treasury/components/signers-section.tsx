@@ -5,6 +5,8 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
 import { truncateAddress } from "@/lib/format";
 import { describeReceipt } from "@/lib/receipt";
 import { loadSignerId } from "@/lib/stellarClient";
@@ -28,12 +30,21 @@ export function SignersSection({
 }) {
   const queryClient = useQueryClient();
   const [signerAddress, setSignerAddress] = useState("");
-  const [pendingRemoval, setPendingRemoval] = useState<number | null>(null);
+  const [selectedRuleId, setSelectedRuleId] = useState<number | null>(null);
+  const [pendingRemoval, setPendingRemoval] = useState<{ ruleId: number; index: number } | null>(
+    null,
+  );
 
   const rulesQuery = useContextRules(wallet.address);
   const authorityQuery = useTreasuryAuthority(wallet.address);
   const rules = rulesQuery.data ?? [];
-  const rootRule: ContextRule | undefined = rules[0];
+  // add_signer's context_rule_id is a required contract argument, not a UI
+  // convenience — there is no default rule, so the target rule must be an id
+  // that actually exists on-chain. Rule ids can have gaps after a removal
+  // (DAPP_INTEGRATION_SPEC.md §4), so this falls back to whichever real rule
+  // sorts first rather than assuming id 0 exists.
+  const targetRule: ContextRule | undefined =
+    rules.find((rule) => rule.id === selectedRuleId) ?? rules[0];
 
   const isOwner =
     authorityQuery.data?.owner != null && authorityQuery.data.owner === wallet.address;
@@ -41,10 +52,10 @@ export function SignersSection({
   const addMutation = useMutation({
     mutationFn: async () => {
       if (!wallet.address) throw new Error("Connect a wallet first.");
-      if (!rootRule) throw new Error("No context rule is available.");
+      if (!targetRule) throw new Error("No context rule is available.");
       validateSignerDraft({ signerAddress });
       return executeWriteOperation(
-        addSignerOperation({ contextRuleId: rootRule.id, signerAddress }),
+        addSignerOperation({ contextRuleId: targetRule.id, signerAddress }),
         walletSigner(wallet.address),
       );
     },
@@ -74,14 +85,13 @@ export function SignersSection({
   });
 
   const removeMutation = useMutation({
-    mutationFn: async (address: string) => {
+    mutationFn: async ({ rule, address }: { rule: ContextRule; address: string }) => {
       if (!wallet.address) throw new Error("Connect a wallet first.");
-      if (!rootRule) throw new Error("No context rule is available.");
       const signerId = await loadSignerId(wallet.address, address);
-      const block = signerRemovalBlock(rootRule, rootRule.signerAddresses.indexOf(address));
+      const block = signerRemovalBlock(rule, rule.signerAddresses.indexOf(address));
       if (block) throw new Error(block);
       return executeWriteOperation(
-        removeSignerOperation({ contextRuleId: rootRule.id, signerId }),
+        removeSignerOperation({ contextRuleId: rule.id, signerId }),
         walletSigner(wallet.address),
       );
     },
@@ -157,10 +167,10 @@ export function SignersSection({
                         </span>
                         {block ? (
                           <span className="text-xs text-muted-foreground">{block}</span>
-                        ) : pendingRemoval === index ? (
+                        ) : pendingRemoval?.ruleId === rule.id && pendingRemoval.index === index ? (
                           <span className="flex gap-2">
                             <Button
-                              onClick={() => removeMutation.mutate(address)}
+                              onClick={() => removeMutation.mutate({ rule, address })}
                               disabled={removeMutation.isPending}
                             >
                               {removeMutation.isPending ? (
@@ -171,7 +181,7 @@ export function SignersSection({
                             <Button onClick={() => setPendingRemoval(null)}>Cancel</Button>
                           </span>
                         ) : (
-                          <Button onClick={() => setPendingRemoval(index)}>
+                          <Button onClick={() => setPendingRemoval({ ruleId: rule.id, index })}>
                             <Trash2 className="size-4" /> Revoke
                           </Button>
                         )}
@@ -184,6 +194,22 @@ export function SignersSection({
           ))}
 
           <div className="grid gap-3">
+            <div className="grid gap-2">
+              <Label>Context rule</Label>
+              <Select
+                value={targetRule ? String(targetRule.id) : ""}
+                onChange={(event) => setSelectedRuleId(Number(event.target.value))}
+                disabled={rules.length === 0}
+              >
+                {rules.length === 0 ? <option value="">No context rule is loaded yet.</option> : null}
+                {rules.map((rule) => (
+                  <option key={rule.id} value={rule.id}>
+                    Rule {rule.id} · {rule.name} ({rule.signerAddresses.length} signer
+                    {rule.signerAddresses.length === 1 ? "" : "s"})
+                  </option>
+                ))}
+              </Select>
+            </div>
             <FormField
               label="New delegated signer"
               onChange={setSignerAddress}
@@ -191,7 +217,7 @@ export function SignersSection({
             />
             <Button
               onClick={() => addMutation.mutate()}
-              disabled={addMutation.isPending || signerAddress.length === 0}
+              disabled={addMutation.isPending || signerAddress.length === 0 || !targetRule}
             >
               {addMutation.isPending ? (
                 <Loader2 className="size-4 animate-spin" />
@@ -200,11 +226,6 @@ export function SignersSection({
               )}
               {addMutation.isPending ? "Awaiting wallet…" : "Add signer"}
             </Button>
-            <p className="text-xs text-muted-foreground">
-              {rootRule
-                ? `Joins Rule ${rootRule.id} · ${rootRule.name} — the dApp always adds to the first context rule; there is no picker for a different one yet.`
-                : "No context rule is loaded yet."}
-            </p>
             <p className="text-xs text-muted-foreground">
               Simulation cannot confirm authorization. The wallet signature is what proves it.
             </p>

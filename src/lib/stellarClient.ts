@@ -601,6 +601,12 @@ export async function loadTreasurySnapshot(sourceAddress: string) {
   };
 }
 
+/**
+ * Rule IDs are `0..count` but not necessarily contiguous once rules have been
+ * removed (DAPP_INTEGRATION_SPEC.md §4) — a missing id makes `get_context_rule`
+ * throw, not return null. So this probes candidate ids one at a time and skips
+ * the gaps, rather than assuming `count` consecutive ids starting at 0.
+ */
 export async function loadContextRules(sourceAddress: string): Promise<ContextRule[]> {
   const countResult = await simulateContractCall(
     sourceAddress,
@@ -609,15 +615,20 @@ export async function loadContextRules(sourceAddress: string): Promise<ContextRu
   );
   const count = Number(countResult.value ?? 0);
   const rules: ContextRule[] = [];
+  const maxId = count + 32;
 
-  for (let id = 0; id < Math.min(count, 8); id += 1) {
-    const result = await simulateContractCall(
-      sourceAddress,
-      STELLAR_CONFIG.contracts.smartAccount,
-      "get_context_rule",
-      [u32ScVal(id)],
-    );
-    rules.push(readContextRule(id, result.value));
+  for (let id = 0; rules.length < count && id < maxId; id += 1) {
+    try {
+      const result = await simulateContractCall(
+        sourceAddress,
+        STELLAR_CONFIG.contracts.smartAccount,
+        "get_context_rule",
+        [u32ScVal(id)],
+      );
+      rules.push(readContextRule(id, result.value));
+    } catch {
+      // No rule at this id — removed or never allocated. Keep scanning.
+    }
   }
 
   return rules;
