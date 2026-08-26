@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
 
 import { Toaster } from "@/components/ui/sonner";
+import { WalletProvider } from "@/providers/wallet-provider";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
@@ -23,8 +24,10 @@ export function AppProviders({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <QueryClientProvider client={queryClient}>
-        {children}
-        <Toaster position="top-center" duration={8000} richColors closeButton />
+        <WalletProvider>
+          {children}
+          <Toaster position="top-center" duration={8000} richColors closeButton />
+        </WalletProvider>
       </QueryClientProvider>
     </ThemeProvider>
   );

@@ -1,7 +1,10 @@
 import type { CreateRelayerJobInput, RelayerJobRecord } from "@/lib/relayer/types";
 
-export async function fetchRelayerJobs() {
-  const response = await fetch("/api/relayer/jobs", { cache: "no-store" });
+export async function fetchRelayerJobs(smartAccountId: string) {
+  const response = await fetch(
+    `/api/relayer/jobs?smartAccountId=${encodeURIComponent(smartAccountId)}`,
+    { cache: "no-store" },
+  );
   if (!response.ok) {
     throw new Error("Could not load relayer jobs.");
   }
@@ -24,11 +27,14 @@ export async function queueRelayerJob(input: CreateRelayerJobInput) {
   return payload.job;
 }
 
-export async function executeRelayerJob(intentId: string) {
-  const response = await fetch(`/api/relayer/jobs/${intentId}/execute`, {
-    method: "POST",
-    credentials: "same-origin",
-  });
+export async function executeRelayerJob(smartAccountId: string, intentId: string) {
+  const response = await fetch(
+    `/api/relayer/jobs/${intentId}/execute?smartAccountId=${encodeURIComponent(smartAccountId)}`,
+    {
+      method: "POST",
+      credentials: "same-origin",
+    },
+  );
   if (!response.ok) {
     const payload = (await response.json()) as { error?: string };
     throw new Error(payload.error ?? "Could not execute relayer job.");

@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { STELLAR_CONFIG } from "@/config";
+import type { ContractSet } from "@/lib/env";
 import { findAmountCap, probePolicy } from "@/lib/policyProbe";
 import { describeReceipt } from "@/lib/receipt";
 import {
@@ -52,26 +53,28 @@ const REASON_LABEL: Record<string, string> = {
 };
 
 export function PolicySection({
+  contracts = STELLAR_CONFIG.contracts,
   onNotice,
   wallet,
 }: {
+  contracts?: ContractSet;
   onNotice: (notice: SimulationResult | null) => void;
   wallet: WalletState;
 }) {
   const queryClient = useQueryClient();
-  const snapshotQuery = useTreasurySnapshot(wallet.address);
-  const authorityQuery = useTreasuryAuthority(wallet.address);
+  const snapshotQuery = useTreasurySnapshot(wallet.address, contracts);
+  const authorityQuery = useTreasuryAuthority(wallet.address, contracts);
   const currentVersion = snapshotQuery.data?.policyVersion ?? 1;
 
   const [rows, setRows] = useState<ProbeRow[]>([
     {
-      asset: STELLAR_CONFIG.contracts.staAsset,
+      asset: contracts.staAsset,
       destination: STELLAR_CONFIG.testRecipient,
       operation: "transfer",
     },
   ]);
   const [assetDraft, setAssetDraft] = useState({
-    asset: STELLAR_CONFIG.contracts.staAsset,
+    asset: contracts.staAsset,
     maxSingleTransfer: "10000000",
   });
   const [recipientDraft, setRecipientDraft] = useState(STELLAR_CONFIG.testRecipient);
@@ -81,7 +84,7 @@ export function PolicySection({
   const probeMutation = useMutation({
     mutationFn: async () => {
       if (!wallet.address) throw new Error("Connect a wallet first.");
-      const simulate = simulatePolicyProbe(wallet.address);
+      const simulate = simulatePolicyProbe(wallet.address, contracts);
       return Promise.all(
         rows.map(async (row) => {
           const verdict = await probePolicy(simulate, {
@@ -126,10 +129,12 @@ export function PolicySection({
       if (!wallet.address) throw new Error("Connect a wallet first.");
       await simulateWriteOperation(operation, wallet.address);
 
-      const jobs = await fetchRelayerJobs().catch(() => []);
+      const jobs = await fetchRelayerJobs(contracts.smartAccount).catch(() => []);
       const pinnedVersions = (
         await Promise.all(
-          jobs.map((job) => loadIntentPolicyVersion(wallet.address as string, job.intentId)),
+          jobs.map((job) =>
+            loadIntentPolicyVersion(wallet.address as string, job.intentId, contracts),
+          ),
         )
       ).filter((version): version is number => version !== null);
 
@@ -155,7 +160,7 @@ export function PolicySection({
   const writeMutation = useMutation({
     mutationFn: async (operation: WriteOperation) => {
       if (!wallet.address) throw new Error("Connect a wallet first.");
-      return executeWriteOperation(operation, walletSigner(wallet.address));
+      return executeWriteOperation(operation, walletSigner(wallet.address), contracts);
     },
     onSuccess: (receipt) => {
       onNotice(
@@ -284,7 +289,7 @@ export function PolicySection({
             onClick={() =>
               submit(() => {
                 validateAssetRuleDraft({ ...assetDraft, enabled: true });
-                return setAssetRuleOperation({ ...assetDraft, enabled: true });
+                return setAssetRuleOperation({ ...assetDraft, enabled: true, contracts });
               })
             }
           >
@@ -294,7 +299,7 @@ export function PolicySection({
             onClick={() =>
               submit(() => {
                 validateAssetRuleDraft({ ...assetDraft, enabled: false });
-                return setAssetRuleOperation({ ...assetDraft, enabled: false });
+                return setAssetRuleOperation({ ...assetDraft, enabled: false, contracts });
               })
             }
           >
@@ -308,7 +313,11 @@ export function PolicySection({
             onClick={() =>
               submit(() => {
                 validateRecipientDraft({ recipient: recipientDraft, allowed: true });
-                return setRecipientAllowedOperation({ recipient: recipientDraft, allowed: true });
+                return setRecipientAllowedOperation({
+                  recipient: recipientDraft,
+                  allowed: true,
+                  contracts,
+                });
               })
             }
           >
@@ -318,7 +327,11 @@ export function PolicySection({
             onClick={() =>
               submit(() => {
                 validateRecipientDraft({ recipient: recipientDraft, allowed: false });
-                return setRecipientAllowedOperation({ recipient: recipientDraft, allowed: false });
+                return setRecipientAllowedOperation({
+                  recipient: recipientDraft,
+                  allowed: false,
+                  contracts,
+                });
               })
             }
           >
@@ -332,7 +345,11 @@ export function PolicySection({
             onClick={() =>
               submit(() => {
                 validateOperationDraft({ operation: operationDraft, allowed: true });
-                return setOperationAllowedOperation({ operation: operationDraft, allowed: true });
+                return setOperationAllowedOperation({
+                  operation: operationDraft,
+                  allowed: true,
+                  contracts,
+                });
               })
             }
           >
@@ -342,7 +359,11 @@ export function PolicySection({
             onClick={() =>
               submit(() => {
                 validateOperationDraft({ operation: operationDraft, allowed: false });
-                return setOperationAllowedOperation({ operation: operationDraft, allowed: false });
+                return setOperationAllowedOperation({
+                  operation: operationDraft,
+                  allowed: false,
+                  contracts,
+                });
               })
             }
           >
@@ -356,7 +377,7 @@ export function PolicySection({
             submit(() => {
               const parsed = Number(nextVersion);
               validateVersionBump({ currentVersion, nextVersion: parsed });
-              return bumpVersionOperation({ nextVersion: parsed });
+              return bumpVersionOperation({ nextVersion: parsed, contracts });
             })
           }
         >

@@ -13,6 +13,7 @@ import { useMutation } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { STELLAR_CONFIG } from "@/config";
+import type { ContractSet } from "@/lib/env";
 import { makeNonce } from "@/lib/format";
 import { describeReceipt } from "@/lib/receipt";
 import {
@@ -26,11 +27,13 @@ import type { PaymentDraft, SimulationResult, WalletState } from "@/types";
 import { FormField, SectionHeader } from "@/features/treasury/components/primitives";
 
 export function PaymentSection({
+  contracts = STELLAR_CONFIG.contracts,
   draft,
   onDraftChange,
   onNotice,
   wallet,
 }: {
+  contracts?: ContractSet;
   draft: PaymentDraft;
   onDraftChange: Dispatch<SetStateAction<PaymentDraft>>;
   onNotice: (notice: SimulationResult | null) => void;
@@ -48,6 +51,7 @@ export function PaymentSection({
           signTransaction,
         },
         draft,
+        contracts,
       );
     },
     onMutate: () => {
@@ -78,18 +82,18 @@ export function PaymentSection({
 
   async function onPolicyCheck() {
     const source = wallet.address ?? STELLAR_CONFIG.testRecipient;
-    onNotice(await simulatePolicy(source, draft));
+    onNotice(await simulatePolicy(source, draft, contracts));
   }
 
   async function onTransferSimulation() {
     const source = wallet.address ?? STELLAR_CONFIG.testRecipient;
-    onNotice(await simulateTransfer(source, draft));
+    onNotice(await simulateTransfer(source, draft, contracts));
   }
 
   async function onNonceCheck() {
     try {
       const source = wallet.address ?? STELLAR_CONFIG.testRecipient;
-      const used = await checkNonce(source, draft.nonce);
+      const used = await checkNonce(source, draft.nonce, contracts);
       onNotice({
         ok: !used,
         title: used ? "Nonce already consumed" : "Nonce is fresh",

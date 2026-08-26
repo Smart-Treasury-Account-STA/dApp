@@ -37,6 +37,17 @@ export type ScheduleDraft = PaymentDraft & {
   startLedger: string;
   endLedger: string;
   maxExecutions: string;
+  /**
+   * Ledger-count spacing between successive executions of a recurring
+   * schedule (`0` = one-shot, the only mode this dApp's UI currently
+   * builds). Required by the current `intent_registry` contract's
+   * `ScheduledIntentArgs` struct shape -- omitting it entirely would fail
+   * `create_scheduled_payment` with a struct arity mismatch, not just
+   * silently default. Optional here only so existing draft-construction
+   * call sites don't all need updating at once; `scheduledIntentScVal`
+   * defaults it to `0` when absent.
+   */
+  intervalLedgers?: string;
 };
 
 export type SimulationResult = {

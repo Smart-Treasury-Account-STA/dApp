@@ -53,6 +53,32 @@ describe("readStellarConfig", () => {
     ).toThrow(/NEXT_PUBLIC_STELLAR_RPC_URL/);
   });
 
+  it("resolves optional accountFactoryId/relayerExecutorAddress to null when absent, without throwing", () => {
+    const config = readStellarConfig(source());
+    expect(config.accountFactoryId).toBeNull();
+    expect(config.relayerExecutorAddress).toBeNull();
+  });
+
+  it("accepts valid optional accountFactoryId/relayerExecutorAddress when present", () => {
+    const config = readStellarConfig(
+      source({
+        NEXT_PUBLIC_ACCOUNT_FACTORY_ID: contract,
+        NEXT_PUBLIC_RELAYER_EXECUTOR_ADDRESS: account,
+      }),
+    );
+    expect(config.accountFactoryId).toBe(contract);
+    expect(config.relayerExecutorAddress).toBe(account);
+  });
+
+  it("rejects a malformed accountFactoryId/relayerExecutorAddress when present", () => {
+    expect(() =>
+      readStellarConfig(source({ NEXT_PUBLIC_ACCOUNT_FACTORY_ID: "not-a-contract" })),
+    ).toThrow(/NEXT_PUBLIC_ACCOUNT_FACTORY_ID/);
+    expect(() =>
+      readStellarConfig(source({ NEXT_PUBLIC_RELAYER_EXECUTOR_ADDRESS: "not-an-account" })),
+    ).toThrow(/NEXT_PUBLIC_RELAYER_EXECUTOR_ADDRESS/);
+  });
+
   it("reports every invalid key at once", () => {
     try {
       readStellarConfig(

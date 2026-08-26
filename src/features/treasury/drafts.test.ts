@@ -59,6 +59,22 @@ describe("validateScheduleDraft", () => {
   it("rejects maxExecutions below one", () => {
     expect(() => validateScheduleDraft({ ...schedule, maxExecutions: "0" })).toThrow(/at least 1/);
   });
+
+  it("accepts a draft with no intervalLedgers set (defaults to one-shot)", () => {
+    expect(() => validateScheduleDraft(schedule)).not.toThrow();
+  });
+
+  it("accepts a valid intervalLedgers value", () => {
+    expect(() =>
+      validateScheduleDraft({ ...schedule, intervalLedgers: "17280" }),
+    ).not.toThrow();
+  });
+
+  it("rejects a malformed intervalLedgers value", () => {
+    expect(() => validateScheduleDraft({ ...schedule, intervalLedgers: "-1" })).toThrow(
+      /Interval ledgers/,
+    );
+  });
 });
 
 describe("computeLedgerWindow", () => {

@@ -4,6 +4,7 @@ out/
 dist/
 coverage/
 .relayer/
+.treasuries/
 .env
 .env*.local
 *.log

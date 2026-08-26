@@ -7,6 +7,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
+import { STELLAR_CONFIG } from "@/config";
+import type { ContractSet } from "@/lib/env";
 import { truncateAddress } from "@/lib/format";
 import { describeReceipt } from "@/lib/receipt";
 import { loadSignerId } from "@/lib/stellarClient";
@@ -22,9 +24,11 @@ import { useContextRules, useTreasuryAuthority } from "@/features/treasury/queri
 import type { ContextRule, SimulationResult, WalletState } from "@/types";
 
 export function SignersSection({
+  contracts = STELLAR_CONFIG.contracts,
   onNotice,
   wallet,
 }: {
+  contracts?: ContractSet;
   onNotice: (notice: SimulationResult | null) => void;
   wallet: WalletState;
 }) {
@@ -35,8 +39,8 @@ export function SignersSection({
     null,
   );
 
-  const rulesQuery = useContextRules(wallet.address);
-  const authorityQuery = useTreasuryAuthority(wallet.address);
+  const rulesQuery = useContextRules(wallet.address, contracts);
+  const authorityQuery = useTreasuryAuthority(wallet.address, contracts);
   const rules = rulesQuery.data ?? [];
   // add_signer's context_rule_id is a required contract argument, not a UI
   // convenience — there is no default rule, so the target rule must be an id
@@ -55,8 +59,9 @@ export function SignersSection({
       if (!targetRule) throw new Error("No context rule is available.");
       validateSignerDraft({ signerAddress });
       return executeWriteOperation(
-        addSignerOperation({ contextRuleId: targetRule.id, signerAddress }),
+        addSignerOperation({ contextRuleId: targetRule.id, signerAddress, contracts }),
         walletSigner(wallet.address),
+        contracts,
       );
     },
     onSuccess: async (receipt) => {
@@ -87,12 +92,13 @@ export function SignersSection({
   const removeMutation = useMutation({
     mutationFn: async ({ rule, address }: { rule: ContextRule; address: string }) => {
       if (!wallet.address) throw new Error("Connect a wallet first.");
-      const signerId = await loadSignerId(wallet.address, address);
+      const signerId = await loadSignerId(wallet.address, address, contracts);
       const block = signerRemovalBlock(rule, rule.signerAddresses.indexOf(address));
       if (block) throw new Error(block);
       return executeWriteOperation(
-        removeSignerOperation({ contextRuleId: rule.id, signerId }),
+        removeSignerOperation({ contextRuleId: rule.id, signerId, contracts }),
         walletSigner(wallet.address),
+        contracts,
       );
     },
     onSuccess: async (receipt) => {

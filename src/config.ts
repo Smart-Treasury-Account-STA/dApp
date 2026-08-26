@@ -1,3 +1,4 @@
+import type { ContractSet } from "@/lib/env";
 import { readStellarConfig } from "@/lib/env";
 
 export const STELLAR_CONFIG = {
@@ -14,6 +15,8 @@ export const STELLAR_CONFIG = {
     NEXT_PUBLIC_SPLIT_ADAPTER_ID: process.env.NEXT_PUBLIC_SPLIT_ADAPTER_ID,
     NEXT_PUBLIC_STA_ASSET_CONTRACT_ID: process.env.NEXT_PUBLIC_STA_ASSET_CONTRACT_ID,
     NEXT_PUBLIC_TEST_RECIPIENT: process.env.NEXT_PUBLIC_TEST_RECIPIENT,
+    NEXT_PUBLIC_ACCOUNT_FACTORY_ID: process.env.NEXT_PUBLIC_ACCOUNT_FACTORY_ID,
+    NEXT_PUBLIC_RELAYER_EXECUTOR_ADDRESS: process.env.NEXT_PUBLIC_RELAYER_EXECUTOR_ADDRESS,
   }),
   // Optional: policy_engine's admin is not readable on-chain (Task 5 of the
   // write-screens plan), so this is only ever a hint for the UI, never
@@ -21,12 +24,16 @@ export const STELLAR_CONFIG = {
   policyAdminHint: process.env.NEXT_PUBLIC_POLICY_ADMIN_HINT ?? null,
 };
 
-export const CONTRACTS = [
-  ["Smart Account", STELLAR_CONFIG.contracts.smartAccount],
-  ["Policy Engine", STELLAR_CONFIG.contracts.policyEngine],
-  ["Intent Registry", STELLAR_CONFIG.contracts.intentRegistry],
-  ["Recovery Manager", STELLAR_CONFIG.contracts.recoveryManager],
-  ["Transfer Adapter", STELLAR_CONFIG.contracts.transferAdapter],
-  ["Split Adapter", STELLAR_CONFIG.contracts.splitAdapter],
-  ["STA Test Asset", STELLAR_CONFIG.contracts.staAsset],
-] as const;
+export function buildContractList(contracts: ContractSet) {
+  return [
+    ["Smart Account", contracts.smartAccount],
+    ["Policy Engine", contracts.policyEngine],
+    ["Intent Registry", contracts.intentRegistry],
+    ["Recovery Manager", contracts.recoveryManager],
+    ["Transfer Adapter", contracts.transferAdapter],
+    ["Split Adapter", contracts.splitAdapter],
+    ["STA Test Asset", contracts.staAsset],
+  ] as const;
+}
+
+export const CONTRACTS = buildContractList(STELLAR_CONFIG.contracts);

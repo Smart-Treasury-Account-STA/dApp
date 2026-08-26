@@ -13,7 +13,14 @@ export async function POST(
   try {
     requireRelayerAdmin(request);
     const { intentId } = await params;
-    const updated = await executeRelayerJobById(intentId);
+    const smartAccountId = new URL(request.url).searchParams.get("smartAccountId");
+    if (!smartAccountId) {
+      return NextResponse.json(
+        { error: "A smartAccountId query parameter is required." },
+        { status: 400 },
+      );
+    }
+    const updated = await executeRelayerJobById(smartAccountId, intentId);
     return NextResponse.json({ job: updated });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

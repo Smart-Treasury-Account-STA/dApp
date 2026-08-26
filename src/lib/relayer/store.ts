@@ -1,5 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 
+import { StrKey } from "@stellar/stellar-sdk";
+
 import type { CreateRelayerJobInput, RelayerJobRecord } from "@/lib/relayer/types";
 
 type RelayerStoreFile = {
@@ -19,6 +21,13 @@ function normalizeIntentId(intentId: string) {
   return intentId.replace(/^0x/i, "").toLowerCase();
 }
 
+// A job's real identity is (smartAccountId, intentId), not intentId alone
+// -- two different treasuries could otherwise pick colliding random intent
+// ids, which a single-key model would silently merge.
+function jobKey(smartAccountId: string, intentId: string) {
+  return `${smartAccountId}:${normalizeIntentId(intentId)}`;
+}
+
 function assertSafeInteger(name: string, value: number) {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error(`${name} must be a non-negative safe integer.`);
@@ -26,6 +35,9 @@ function assertSafeInteger(name: string, value: number) {
 }
 
 export function validateRelayerJobInput(input: CreateRelayerJobInput) {
+  if (!StrKey.isValidContract(input.smartAccountId)) {
+    throw new Error("smartAccountId must be a Stellar contract id starting with C.");
+  }
   if (!INTENT_ID_PATTERN.test(input.intentId)) {
     throw new Error("Intent ID must be 32 bytes encoded as 64 hex characters.");
   }
@@ -87,20 +99,23 @@ export async function listRelayerJobs() {
   return [...store.jobs].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-export async function getRelayerJob(intentId: string) {
-  const normalized = normalizeIntentId(intentId);
+export async function listRelayerJobsForTreasury(smartAccountId: string) {
+  const jobs = await listRelayerJobs();
+  return jobs.filter((job) => job.smartAccountId === smartAccountId);
+}
+
+export async function getRelayerJob(smartAccountId: string, intentId: string) {
+  const key = jobKey(smartAccountId, intentId);
   const store = await readStore();
-  return store.jobs.find((job) => normalizeIntentId(job.intentId) === normalized) ?? null;
+  return store.jobs.find((job) => jobKey(job.smartAccountId, job.intentId) === key) ?? null;
 }
 
 export async function createRelayerJob(input: CreateRelayerJobInput) {
   validateRelayerJobInput(input);
 
   return mutateStore((store) => {
-    const normalizedIntentId = normalizeIntentId(input.intentId);
-    const existing = store.jobs.find(
-      (job) => normalizeIntentId(job.intentId) === normalizedIntentId,
-    );
+    const key = jobKey(input.smartAccountId, input.intentId);
+    const existing = store.jobs.find((job) => jobKey(job.smartAccountId, job.intentId) === key);
     const now = new Date().toISOString();
 
     if (existing) {
@@ -108,7 +123,8 @@ export async function createRelayerJob(input: CreateRelayerJobInput) {
     }
 
     const job: RelayerJobRecord = {
-      intentId: normalizedIntentId,
+      smartAccountId: input.smartAccountId,
+      intentId: normalizeIntentId(input.intentId),
       childSequence: 1,
       startLedger: input.startLedger,
       endLedger: input.endLedger,
@@ -126,13 +142,14 @@ export async function createRelayerJob(input: CreateRelayerJobInput) {
 }
 
 export async function updateRelayerJob(
+  smartAccountId: string,
   intentId: string,
   update: (job: RelayerJobRecord) => RelayerJobRecord,
 ) {
   return mutateStore((store) => {
-    const normalized = normalizeIntentId(intentId);
+    const key = jobKey(smartAccountId, intentId);
     const index = store.jobs.findIndex(
-      (job) => normalizeIntentId(job.intentId) === normalized,
+      (job) => jobKey(job.smartAccountId, job.intentId) === key,
     );
     if (index === -1) {
       throw new Error("Relayer job not found.");

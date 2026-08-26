@@ -12,7 +12,8 @@ import {
 } from "lucide-react";
 
 import { Separator } from "@/components/ui/separator";
-import { CONTRACTS, STELLAR_CONFIG } from "@/config";
+import { buildContractList, STELLAR_CONFIG } from "@/config";
+import type { ContractSet } from "@/lib/env";
 import { formatNumber, truncateAddress } from "@/lib/format";
 import type { SmartAccountAuthPlan } from "@/lib/smartAccountAuth";
 import type { ContextRule, NetworkHealth, TreasuryStatus } from "@/types";
@@ -34,6 +35,7 @@ export type TreasurySnapshot = {
 
 export function TreasurySection({
   connected,
+  contracts = STELLAR_CONFIG.contracts,
   error,
   health,
   isError,
@@ -41,6 +43,7 @@ export function TreasurySection({
   snapshot,
 }: {
   connected: boolean;
+  contracts?: ContractSet;
   error: unknown;
   health: NetworkHealth;
   isError: boolean;
@@ -104,7 +107,7 @@ export function TreasurySection({
       ))}
 
       <div className="grid grid-cols-2 gap-2 max-lg:grid-cols-1">
-        {CONTRACTS.map(([name, address]) => (
+        {buildContractList(contracts).map(([name, address]) => (
           <a
             className="flex min-h-12 items-center justify-between gap-3 rounded-md border bg-background px-3 text-sm transition-colors hover:bg-secondary"
             href={`${STELLAR_CONFIG.explorerBaseUrl}/contract/${address}`}

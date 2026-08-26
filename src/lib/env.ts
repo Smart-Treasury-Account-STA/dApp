@@ -16,6 +16,15 @@ export type StellarConfig = {
   explorerBaseUrl: string;
   contracts: ContractSet;
   testRecipient: string;
+  /** account_factory's contract id -- lets a connected wallet deploy its own
+   * treasury. Optional (not part of the hard-required set below) so an
+   * environment that hasn't configured it yet doesn't fail the whole app;
+   * the deploy UI feature-detects its absence instead. */
+  accountFactoryId: string | null;
+  /** Public key of the relayer's executor identity -- passed as `executor`
+   * when deploying a new treasury so the shared relayer can service it.
+   * Optional for the same reason as `accountFactoryId`. */
+  relayerExecutorAddress: string | null;
 };
 
 export class ConfigError extends Error {
@@ -68,6 +77,29 @@ export function readStellarConfig(source: Source): StellarConfig {
     return value;
   }
 
+  // Unlike `required`/`contractId` above, these two only flag an issue when
+  // present-but-malformed -- absence is fine and resolves to `null`, so an
+  // environment that hasn't configured the deploy feature yet doesn't fail
+  // config validation for the whole app (see the `StellarConfig` doc
+  // comments on these two fields).
+  function optionalContractId(key: string): string | null {
+    const value = source[key]?.trim();
+    if (!value) return null;
+    if (!StrKey.isValidContract(value)) {
+      issues.push(`${key} must be a Stellar contract id starting with C.`);
+    }
+    return value;
+  }
+
+  function optionalEd25519PublicKey(key: string): string | null {
+    const value = source[key]?.trim();
+    if (!value) return null;
+    if (!StrKey.isValidEd25519PublicKey(value)) {
+      issues.push(`${key} must be a Stellar account id starting with G.`);
+    }
+    return value;
+  }
+
   const rpcUrl = httpsUrl("NEXT_PUBLIC_STELLAR_RPC_URL");
   const networkPassphrase = required("NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE");
   const explorerBaseUrl = httpsUrl("NEXT_PUBLIC_STELLAR_EXPLORER_URL");
@@ -81,9 +113,20 @@ export function readStellarConfig(source: Source): StellarConfig {
     issues.push("NEXT_PUBLIC_TEST_RECIPIENT must be a Stellar account id starting with G.");
   }
 
+  const accountFactoryId = optionalContractId("NEXT_PUBLIC_ACCOUNT_FACTORY_ID");
+  const relayerExecutorAddress = optionalEd25519PublicKey("NEXT_PUBLIC_RELAYER_EXECUTOR_ADDRESS");
+
   if (issues.length > 0) {
     throw new ConfigError(issues);
   }
 
-  return { rpcUrl, networkPassphrase, explorerBaseUrl, contracts, testRecipient };
+  return {
+    rpcUrl,
+    networkPassphrase,
+    explorerBaseUrl,
+    contracts,
+    testRecipient,
+    accountFactoryId,
+    relayerExecutorAddress,
+  };
 }

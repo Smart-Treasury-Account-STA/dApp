@@ -17,6 +17,7 @@ import { Buffer } from "buffer";
 import { STELLAR_CONFIG } from "@/config";
 import { validatePaymentDraft, validateScheduleDraft } from "@/features/treasury/drafts";
 import { countAuthContexts, selectInvocationForAddress } from "@/lib/authTree";
+import type { ContractSet } from "@/lib/env";
 import { describeSimulationFailure } from "@/lib/format";
 import { structScVal } from "@/lib/scval";
 import { validationFailure } from "@/lib/simulationResult";
@@ -54,6 +55,7 @@ type CustomAuthInput = {
   contextRuleIds: number[];
   signerAddress: string;
   signatureExpirationLedger: number;
+  contracts: ContractSet;
 };
 
 /**
@@ -72,10 +74,11 @@ async function discoverTreasuryInvocation(
   sourceAddress: string,
   functionName: string,
   args: xdr.ScVal[],
+  contracts: ContractSet,
 ): Promise<xdr.SorobanAuthorizedInvocation> {
   const server = getServer();
   const source = await server.getAccount(sourceAddress);
-  const contract = new Contract(STELLAR_CONFIG.contracts.smartAccount);
+  const contract = new Contract(contracts.smartAccount);
   const tx = new TransactionBuilder(source, {
     fee: BASE_FEE,
     networkPassphrase: STELLAR_CONFIG.networkPassphrase,
@@ -91,7 +94,7 @@ async function discoverTreasuryInvocation(
 
   const recorded = selectInvocationForAddress(
     simulation.result?.auth ?? [],
-    STELLAR_CONFIG.contracts.smartAccount,
+    contracts.smartAccount,
   );
   if (!recorded) {
     throw new Error(
@@ -102,7 +105,7 @@ async function discoverTreasuryInvocation(
   return recorded;
 }
 
-function getServer() {
+export function getServer() {
   return new rpc.Server(STELLAR_CONFIG.rpcUrl);
 }
 
@@ -174,7 +177,7 @@ export function boolScVal(value: boolean) {
   return nativeToScVal(value);
 }
 
-function bytesN32ScVal(hex: string) {
+export function bytesN32ScVal(hex: string) {
   const normalized = hex.replace(/^0x/, "");
   const parts = normalized.match(/.{1,2}/g) ?? [];
   const bytes = Buffer.from(parts.map((byte) => parseInt(byte, 16)));
@@ -200,7 +203,7 @@ function policyCheckScVal(draft: PaymentDraft | ScheduleDraft, operation = "tran
   });
 }
 
-function scheduledIntentScVal(draft: ScheduleDraft) {
+function scheduledIntentScVal(draft: ScheduleDraft, contracts: ContractSet) {
   return structScVal({
     intent_id: bytesN32ScVal(draft.intentId),
     asset: addressScVal(draft.asset),
@@ -208,15 +211,16 @@ function scheduledIntentScVal(draft: ScheduleDraft) {
     amount: i128ScVal(draft.amount),
     start_ledger: u32ScVal(draft.startLedger),
     end_ledger: u32ScVal(draft.endLedger),
+    interval_ledgers: u32ScVal(draft.intervalLedgers ?? 0),
     max_executions: u32ScVal(draft.maxExecutions),
     execution_count: u32ScVal(0),
     policy_version: u32ScVal(draft.expectedPolicyVersion),
-    adapter: addressScVal(STELLAR_CONFIG.contracts.transferAdapter),
+    adapter: addressScVal(contracts.transferAdapter),
     cancelled: boolScVal(false),
   });
 }
 
-function contractInvocation(contractId: string, functionName: string, args: xdr.ScVal[]) {
+export function contractInvocation(contractId: string, functionName: string, args: xdr.ScVal[]) {
   return new xdr.SorobanAuthorizedInvocation({
     function: xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(
       new xdr.InvokeContractArgs({
@@ -229,7 +233,7 @@ function contractInvocation(contractId: string, functionName: string, args: xdr.
   });
 }
 
-function addressCredentialsEntry({
+export function addressCredentialsEntry({
   address,
   invocation,
   nonce,
@@ -271,7 +275,7 @@ function signaturePayload(
   return hash(preimage.toXDR());
 }
 
-function randomAuthNonce() {
+export function randomAuthNonce() {
   const high = BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER));
   const nonce =
     (high ^ BigInt(Date.now())) & ((BigInt(1) << BigInt(62)) - BigInt(1));
@@ -353,6 +357,7 @@ function buildUnsignedCustomAuthEntries({
   rootInvocation,
   signerAddress,
   signatureExpirationLedger,
+  contracts,
 }: CustomAuthInput) {
   if (contextRuleIds.length === 0) {
     throw new Error("No SmartAccount context rule is selected.");
@@ -368,7 +373,7 @@ function buildUnsignedCustomAuthEntries({
   const authDigest = hash(Buffer.concat([rootPayload, contextRuleIdsScVal.toXDR()]));
 
   const entryA = addressCredentialsEntry({
-    address: STELLAR_CONFIG.contracts.smartAccount,
+    address: contracts.smartAccount,
     invocation: rootInvocation,
     nonce: entryANonce,
     signatureExpirationLedger,
@@ -377,7 +382,7 @@ function buildUnsignedCustomAuthEntries({
 
   const entryB = addressCredentialsEntry({
     address: signerAddress,
-    invocation: contractInvocation(STELLAR_CONFIG.contracts.smartAccount, "__check_auth", [
+    invocation: contractInvocation(contracts.smartAccount, "__check_auth", [
       bytesScVal(authDigest),
     ]),
     nonce: randomAuthNonce(),
@@ -388,7 +393,7 @@ function buildUnsignedCustomAuthEntries({
   return { entryA, entryB };
 }
 
-function invokeContractOperation(
+export function invokeContractOperation(
   contractId: string,
   functionName: string,
   args: xdr.ScVal[],
@@ -419,7 +424,7 @@ function getSignerAddresses(value: SimulationValue) {
   return Array.from(new Set(serialized.match(/G[A-Z2-7]{55}/g) ?? []));
 }
 
-async function submitSignedTransaction(signedTx: Transaction): Promise<TransactionReceipt> {
+export async function submitSignedTransaction(signedTx: Transaction): Promise<TransactionReceipt> {
   const server = getServer();
   const sendResponse = await server.sendTransaction(signedTx);
   if (sendResponse.status === "ERROR") {
@@ -461,17 +466,19 @@ export async function signAndSubmitContractInvocation({
   functionName,
   sourceAddress,
   wallet,
+  contracts = STELLAR_CONFIG.contracts,
 }: {
   args: xdr.ScVal[];
   functionName: string;
   sourceAddress: string;
   wallet: WalletSigning;
+  contracts?: ContractSet;
 }): Promise<TransactionReceipt> {
   const server = getServer();
   const latestLedger = await server.getLatestLedger();
   const signatureExpirationLedger = latestLedger.sequence + 100;
   const source = await server.getAccount(sourceAddress);
-  const rules = await loadContextRules(sourceAddress);
+  const rules = await loadContextRules(sourceAddress, contracts);
   const matchedRule = selectRuleForSigner(rules, wallet.address);
 
   if (!matchedRule) {
@@ -497,6 +504,7 @@ export async function signAndSubmitContractInvocation({
     sourceAddress,
     functionName,
     args,
+    contracts,
   );
   // One context_rule_id per authorization context the tree produces. The
   // treasury validates every context against the same rule, so this repeats
@@ -510,6 +518,7 @@ export async function signAndSubmitContractInvocation({
     rootInvocation,
     signerAddress: wallet.address,
     signatureExpirationLedger,
+    contracts,
   });
 
   const signedEntryB = await signDelegatedAuthEntry(
@@ -523,7 +532,7 @@ export async function signAndSubmitContractInvocation({
     networkPassphrase: STELLAR_CONFIG.networkPassphrase,
   })
     .addOperation(
-      invokeContractOperation(STELLAR_CONFIG.contracts.smartAccount, functionName, args, [
+      invokeContractOperation(contracts.smartAccount, functionName, args, [
         entryA,
         signedEntryB,
       ]),
@@ -581,17 +590,12 @@ function readContextRule(id: number, value: SimulationValue): ContextRule {
   };
 }
 
-export async function loadTreasurySnapshot(sourceAddress: string) {
-  const status = await simulateContractCall(
-    sourceAddress,
-    STELLAR_CONFIG.contracts.smartAccount,
-    "status",
-  );
-  const version = await simulateContractCall(
-    sourceAddress,
-    STELLAR_CONFIG.contracts.policyEngine,
-    "version",
-  );
+export async function loadTreasurySnapshot(
+  sourceAddress: string,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
+) {
+  const status = await simulateContractCall(sourceAddress, contracts.smartAccount, "status");
+  const version = await simulateContractCall(sourceAddress, contracts.policyEngine, "version");
   const latestLedger = await getLatestLedger();
 
   return {
@@ -607,10 +611,13 @@ export async function loadTreasurySnapshot(sourceAddress: string) {
  * throw, not return null. So this probes candidate ids one at a time and skips
  * the gaps, rather than assuming `count` consecutive ids starting at 0.
  */
-export async function loadContextRules(sourceAddress: string): Promise<ContextRule[]> {
+export async function loadContextRules(
+  sourceAddress: string,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
+): Promise<ContextRule[]> {
   const countResult = await simulateContractCall(
     sourceAddress,
-    STELLAR_CONFIG.contracts.smartAccount,
+    contracts.smartAccount,
     "get_context_rules_count",
   );
   const count = Number(countResult.value ?? 0);
@@ -621,7 +628,7 @@ export async function loadContextRules(sourceAddress: string): Promise<ContextRu
     try {
       const result = await simulateContractCall(
         sourceAddress,
-        STELLAR_CONFIG.contracts.smartAccount,
+        contracts.smartAccount,
         "get_context_rule",
         [u32ScVal(id)],
       );
@@ -634,19 +641,22 @@ export async function loadContextRules(sourceAddress: string): Promise<ContextRu
   return rules;
 }
 
-export async function loadOwner(sourceAddress: string): Promise<string | null> {
-  const result = await simulateContractCall(
-    sourceAddress,
-    STELLAR_CONFIG.contracts.smartAccount,
-    "get_owner",
-  );
+export async function loadOwner(
+  sourceAddress: string,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
+): Promise<string | null> {
+  const result = await simulateContractCall(sourceAddress, contracts.smartAccount, "get_owner");
   return typeof result.value === "string" ? result.value : null;
 }
 
-export async function loadSignerId(sourceAddress: string, signerAddress: string) {
+export async function loadSignerId(
+  sourceAddress: string,
+  signerAddress: string,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
+) {
   const result = await simulateContractCall(
     sourceAddress,
-    STELLAR_CONFIG.contracts.smartAccount,
+    contracts.smartAccount,
     "get_signer_id",
     [signerDelegatedScVal(signerAddress)],
   );
@@ -657,7 +667,10 @@ export async function loadSignerId(sourceAddress: string, signerAddress: string)
  * Builds the probe function `policyProbe` consumes. Rejects with the raw host
  * error so `classifyProbeFailure` can read the contract code out of it.
  */
-export function simulatePolicyProbe(sourceAddress: string) {
+export function simulatePolicyProbe(
+  sourceAddress: string,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
+) {
   return async (input: {
     asset: string;
     destination: string;
@@ -667,7 +680,7 @@ export function simulatePolicyProbe(sourceAddress: string) {
   }) => {
     await simulateContractCall(
       sourceAddress,
-      STELLAR_CONFIG.contracts.policyEngine,
+      contracts.policyEngine,
       "validate_policy",
       [
         structScVal({
@@ -723,13 +736,14 @@ export async function submitAsSourceAccount({
 export async function approveAndSubmitTransfer(
   wallet: WalletSigning,
   draft: PaymentDraft,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
 ): Promise<TransactionReceipt> {
   validatePaymentDraft(draft);
-  const policyResult = await simulatePolicy(wallet.address, draft);
+  const policyResult = await simulatePolicy(wallet.address, draft, contracts);
   if (!policyResult.ok) {
     throw new Error(policyResult.detail);
   }
-  const nonceUsed = await checkNonce(wallet.address, draft.nonce);
+  const nonceUsed = await checkNonce(wallet.address, draft.nonce, contracts);
   if (nonceUsed) {
     throw new Error("Nonce has already been used.");
   }
@@ -739,28 +753,31 @@ export async function approveAndSubmitTransfer(
     functionName: "execute_transfer_payment",
     sourceAddress: wallet.address,
     wallet,
+    contracts,
   });
 }
 
 export async function approveAndSubmitSchedule(
   wallet: WalletSigning,
   draft: ScheduleDraft,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
 ): Promise<TransactionReceipt> {
   validateScheduleDraft(draft);
-  const policyResult = await simulatePolicy(wallet.address, draft);
+  const policyResult = await simulatePolicy(wallet.address, draft, contracts);
   if (!policyResult.ok) {
     throw new Error(policyResult.detail);
   }
-  const exists = await checkScheduledIntentExists(wallet.address, draft.intentId);
+  const exists = await checkScheduledIntentExists(wallet.address, draft.intentId, contracts);
   if (exists) {
     throw new Error("Scheduled intent already exists on-chain.");
   }
 
   return signAndSubmitContractInvocation({
-    args: [scheduledIntentScVal(draft)],
+    args: [scheduledIntentScVal(draft, contracts)],
     functionName: "create_scheduled_payment",
     sourceAddress: wallet.address,
     wallet,
+    contracts,
   });
 }
 
@@ -769,24 +786,26 @@ export async function getLatestLedger() {
   return result.sequence;
 }
 
-export async function checkNonce(sourceAddress: string, nonce: string) {
-  const result = await simulateContractCall(
-    sourceAddress,
-    STELLAR_CONFIG.contracts.smartAccount,
-    "is_nonce_used",
-    [u64ScVal(nonce)],
-  );
+export async function checkNonce(
+  sourceAddress: string,
+  nonce: string,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
+) {
+  const result = await simulateContractCall(sourceAddress, contracts.smartAccount, "is_nonce_used", [
+    u64ScVal(nonce),
+  ]);
   return Boolean(result.value);
 }
 
-export async function checkScheduledIntentExists(sourceAddress: string, intentId: string) {
+export async function checkScheduledIntentExists(
+  sourceAddress: string,
+  intentId: string,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
+) {
   try {
-    await simulateContractCall(
-      sourceAddress,
-      STELLAR_CONFIG.contracts.intentRegistry,
-      "get_intent",
-      [bytesN32ScVal(intentId)],
-    );
+    await simulateContractCall(sourceAddress, contracts.intentRegistry, "get_intent", [
+      bytesN32ScVal(intentId),
+    ]);
     return true;
   } catch {
     return false;
@@ -800,14 +819,12 @@ export async function checkScheduledIntentExists(sourceAddress: string, intentId
 export async function loadIntentPolicyVersion(
   sourceAddress: string,
   intentId: string,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
 ): Promise<number | null> {
   try {
-    const result = await simulateContractCall(
-      sourceAddress,
-      STELLAR_CONFIG.contracts.intentRegistry,
-      "get_intent",
-      [bytesN32ScVal(intentId)],
-    );
+    const result = await simulateContractCall(sourceAddress, contracts.intentRegistry, "get_intent", [
+      bytesN32ScVal(intentId),
+    ]);
     const record = getRecord(result.value);
     const version = record.policy_version;
     return typeof version === "number" ? version : null;
@@ -839,17 +856,15 @@ export async function simulateWriteOperation(
 export async function simulatePolicy(
   sourceAddress: string,
   draft: PaymentDraft,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
 ): Promise<SimulationResult> {
   const invalid = validationFailure(() => validatePaymentDraft(draft));
   if (invalid) return invalid;
 
   try {
-    await simulateContractCall(
-      sourceAddress,
-      STELLAR_CONFIG.contracts.policyEngine,
-      "validate_policy",
-      [policyCheckScVal(draft, "transfer")],
-    );
+    await simulateContractCall(sourceAddress, contracts.policyEngine, "validate_policy", [
+      policyCheckScVal(draft, "transfer"),
+    ]);
     return {
       ok: true,
       title: "Policy simulation passed",
@@ -873,12 +888,13 @@ export async function simulatePolicy(
 export async function simulateTransfer(
   sourceAddress: string,
   draft: PaymentDraft,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
 ): Promise<SimulationResult> {
   const invalid = validationFailure(() => validatePaymentDraft(draft));
   if (invalid) return invalid;
 
   try {
-    const nonceUsed = await checkNonce(sourceAddress, draft.nonce);
+    const nonceUsed = await checkNonce(sourceAddress, draft.nonce, contracts);
     if (nonceUsed) {
       return {
         ok: false,
@@ -889,7 +905,7 @@ export async function simulateTransfer(
 
     await simulateContractCall(
       sourceAddress,
-      STELLAR_CONFIG.contracts.smartAccount,
+      contracts.smartAccount,
       "execute_transfer_payment",
       [
         addressScVal(draft.asset),
@@ -926,12 +942,13 @@ export async function simulateTransfer(
 export async function simulateSchedule(
   sourceAddress: string,
   draft: ScheduleDraft,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
 ): Promise<SimulationResult> {
   const invalid = validationFailure(() => validateScheduleDraft(draft));
   if (invalid) return invalid;
 
   try {
-    const exists = await checkScheduledIntentExists(sourceAddress, draft.intentId);
+    const exists = await checkScheduledIntentExists(sourceAddress, draft.intentId, contracts);
     if (exists) {
       return {
         ok: false,
@@ -942,9 +959,9 @@ export async function simulateSchedule(
 
     await simulateContractCall(
       sourceAddress,
-      STELLAR_CONFIG.contracts.smartAccount,
+      contracts.smartAccount,
       "create_scheduled_payment",
-      [scheduledIntentScVal(draft)],
+      [scheduledIntentScVal(draft, contracts)],
     );
     return {
       ok: true,

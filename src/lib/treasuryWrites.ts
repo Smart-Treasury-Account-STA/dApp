@@ -1,6 +1,7 @@
 import type { xdr } from "@stellar/stellar-sdk";
 
 import { STELLAR_CONFIG } from "@/config";
+import type { ContractSet } from "@/lib/env";
 import { structScVal } from "@/lib/scval";
 import {
   addressScVal,
@@ -25,13 +26,15 @@ export type WriteOperation = {
 export function addSignerOperation({
   contextRuleId,
   signerAddress,
+  contracts = STELLAR_CONFIG.contracts,
 }: {
   contextRuleId: number;
   signerAddress: string;
+  contracts?: ContractSet;
 }): WriteOperation {
   return {
     id: `add-signer:${contextRuleId}:${signerAddress}`,
-    contractId: STELLAR_CONFIG.contracts.smartAccount,
+    contractId: contracts.smartAccount,
     functionName: "add_signer",
     args: [u32ScVal(contextRuleId), signerDelegatedScVal(signerAddress)],
     strategy: "custom-account",
@@ -42,13 +45,15 @@ export function addSignerOperation({
 export function removeSignerOperation({
   contextRuleId,
   signerId,
+  contracts = STELLAR_CONFIG.contracts,
 }: {
   contextRuleId: number;
   signerId: number;
+  contracts?: ContractSet;
 }): WriteOperation {
   return {
     id: `remove-signer:${contextRuleId}:${signerId}`,
-    contractId: STELLAR_CONFIG.contracts.smartAccount,
+    contractId: contracts.smartAccount,
     functionName: "remove_signer",
     args: [u32ScVal(contextRuleId), u32ScVal(signerId)],
     strategy: "custom-account",
@@ -60,14 +65,16 @@ export function setAssetRuleOperation({
   asset,
   enabled,
   maxSingleTransfer,
+  contracts = STELLAR_CONFIG.contracts,
 }: {
   asset: string;
   enabled: boolean;
   maxSingleTransfer: string;
+  contracts?: ContractSet;
 }): WriteOperation {
   return {
     id: `set-asset-rule:${asset}`,
-    contractId: STELLAR_CONFIG.contracts.policyEngine,
+    contractId: contracts.policyEngine,
     functionName: "set_asset_rule",
     args: [
       addressScVal(asset),
@@ -86,13 +93,15 @@ export function setAssetRuleOperation({
 export function setRecipientAllowedOperation({
   allowed,
   recipient,
+  contracts = STELLAR_CONFIG.contracts,
 }: {
   allowed: boolean;
   recipient: string;
+  contracts?: ContractSet;
 }): WriteOperation {
   return {
     id: `set-recipient:${recipient}`,
-    contractId: STELLAR_CONFIG.contracts.policyEngine,
+    contractId: contracts.policyEngine,
     functionName: "set_recipient_allowed",
     args: [addressScVal(recipient), boolScVal(allowed)],
     strategy: "source-account",
@@ -105,13 +114,15 @@ export function setRecipientAllowedOperation({
 export function setOperationAllowedOperation({
   allowed,
   operation,
+  contracts = STELLAR_CONFIG.contracts,
 }: {
   allowed: boolean;
   operation: string;
+  contracts?: ContractSet;
 }): WriteOperation {
   return {
     id: `set-operation:${operation}`,
-    contractId: STELLAR_CONFIG.contracts.policyEngine,
+    contractId: contracts.policyEngine,
     functionName: "set_operation_allowed",
     args: [symbolScVal(operation), boolScVal(allowed)],
     strategy: "source-account",
@@ -123,12 +134,14 @@ export function setOperationAllowedOperation({
 
 export function bumpVersionOperation({
   nextVersion,
+  contracts = STELLAR_CONFIG.contracts,
 }: {
   nextVersion: number;
+  contracts?: ContractSet;
 }): WriteOperation {
   return {
     id: `bump-version:${nextVersion}`,
-    contractId: STELLAR_CONFIG.contracts.policyEngine,
+    contractId: contracts.policyEngine,
     functionName: "bump_version",
     args: [u32ScVal(nextVersion)],
     strategy: "source-account",

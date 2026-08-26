@@ -11,14 +11,22 @@ const serverMethods = vi.hoisted(() => ({
 
 const EXECUTOR_PUBLIC_KEY = "GEXECUTOR00000000000000000000000000000000000000000000";
 
+const authorizeEntryMock = vi.hoisted(() =>
+  vi.fn(async (entry: unknown, signer: unknown) => ({ __signedEntry: true, entry, signer })),
+);
+
 vi.mock("@stellar/stellar-sdk", () => {
   return {
+    authorizeEntry: authorizeEntryMock,
     BASE_FEE: "100",
     Contract: vi.fn().mockImplementation(() => ({
       call: vi.fn((method: string, ...args: unknown[]) => ({ method, args })),
     })),
     Keypair: {
       fromSecret: vi.fn(() => ({ publicKey: () => EXECUTOR_PUBLIC_KEY })),
+    },
+    Operation: {
+      invokeContractFunction: vi.fn((opts: unknown) => ({ __op: "invokeContractFunction", ...(opts as object) })),
     },
     TransactionBuilder: vi.fn().mockImplementation(() => {
       const builder: Record<string, unknown> = {};
@@ -33,7 +41,12 @@ vi.mock("@stellar/stellar-sdk", () => {
         ? (value as { __native: unknown }).__native
         : value,
     ),
-    xdr: { ScVal: { scvBytes: vi.fn((bytes: Uint8Array) => ({ __bytes: bytes })) } },
+    xdr: {
+      ScVal: {
+        scvBytes: vi.fn((bytes: Uint8Array) => ({ __bytes: bytes })),
+        scvVoid: vi.fn(() => ({ __void: true })),
+      },
+    },
     StrKey: {
       isValidContract: vi.fn(() => true),
       isValidEd25519PublicKey: vi.fn(() => true),
@@ -50,7 +63,33 @@ vi.mock("@/lib/relayer/store", () => ({
   updateRelayerJob: vi.fn(),
 }));
 
+vi.mock("@/lib/stellarClient", () => ({
+  contractInvocation: vi.fn((contractId: string, functionName: string, args: unknown[]) => ({
+    __invocation: true,
+    contractId,
+    functionName,
+    args,
+  })),
+  addressCredentialsEntry: vi.fn((opts: unknown) => ({ __unsignedEntry: true, ...(opts as object) })),
+  randomAuthNonce: vi.fn(() => "424242"),
+}));
+
+vi.mock("@/lib/treasuryRegistry/store", () => ({
+  getTreasury: vi.fn(),
+  toContractSet: vi.fn((record: { smartAccountId: string; intentRegistryId: string }) => ({
+    smartAccount: record.smartAccountId,
+    policyEngine: "mock-policy-engine",
+    intentRegistry: record.intentRegistryId,
+    recoveryManager: "mock-recovery-manager",
+    transferAdapter: "mock-transfer-adapter",
+    splitAdapter: "mock-split-adapter",
+    staAsset: "mock-sta-asset",
+  })),
+}));
+
 import { getRelayerJob, listRelayerJobs, updateRelayerJob } from "@/lib/relayer/store";
+import { addressCredentialsEntry, contractInvocation } from "@/lib/stellarClient";
+import { getTreasury } from "@/lib/treasuryRegistry/store";
 import type { RelayerJobRecord } from "@/lib/relayer/types";
 
 import {
@@ -62,13 +101,22 @@ import {
 
 const updateRelayerJobMock = vi.mocked(updateRelayerJob);
 const getRelayerJobMock = vi.mocked(getRelayerJob);
+const getTreasuryMock = vi.mocked(getTreasury);
 const listRelayerJobsMock = vi.mocked(listRelayerJobs);
+const contractInvocationMock = vi.mocked(contractInvocation);
+const addressCredentialsEntryMock = vi.mocked(addressCredentialsEntry);
 
 const INTENT_ID = "a".repeat(64);
 const TX_HASH = "f712d5609ca52226746ad9b6776240b763d597246808df1c2a844bf1905d813";
+// Matches vitest.config.ts's NEXT_PUBLIC_SMART_ACCOUNT_ID so
+// resolveTreasuryContracts takes the "default treasury" branch (synthesized
+// straight from STELLAR_CONFIG) without needing to mock the treasury
+// registry too.
+const SMART_ACCOUNT_ID = "CD6GY4UUTNPW4TUV7LDL5SELN4BBHJG4KDDT3W6G23DY6XCGM75MULMQ";
 
 function job(overrides: Partial<RelayerJobRecord> = {}): RelayerJobRecord {
   return {
+    smartAccountId: SMART_ACCOUNT_ID,
     intentId: INTENT_ID,
     childSequence: 1,
     startLedger: 100,
@@ -97,7 +145,9 @@ function queueIntentReads(
 beforeEach(() => {
   process.env.RELAYER_EXECUTOR_SECRET = "SEXECUTORSECRET";
   vi.clearAllMocks();
-  updateRelayerJobMock.mockImplementation(async (_intentId, update) => update(job()));
+  updateRelayerJobMock.mockImplementation(async (_smartAccountId, _intentId, update) =>
+    update(job()),
+  );
 });
 
 afterEach(() => {
@@ -221,6 +271,38 @@ describe("executeRelayerJob — submission outcomes", () => {
     expect(result.txHash).toBe(TX_HASH);
   });
 
+  it("builds and signs an explicit authorization entry for intent_registry.mark_child_executed, not just a source-account signature", async () => {
+    serverMethods.sendTransaction.mockResolvedValue({ status: "PENDING", hash: TX_HASH });
+    serverMethods.getTransaction.mockResolvedValue({ status: "SUCCESS" });
+    vi.useFakeTimers();
+
+    const promise = executeRelayerJob(job({ childSequence: 3 }));
+    await vi.advanceTimersByTimeAsync(1500);
+    await promise;
+
+    // The invocation this entry authorizes must be rooted directly at
+    // mark_child_executed on intent_registry -- not at the outer
+    // execute_scheduled_payment call, since that's where the real
+    // require_auth() actually fires (two levels deep).
+    expect(contractInvocationMock).toHaveBeenCalledWith(
+      "CAFIATSIZQSBILZJWVT4PVDXPVITJHLP6LPAVKDRHCA7I7XPZSLTRPUS",
+      "mark_child_executed",
+      expect.arrayContaining([expect.anything(), expect.anything()]),
+    );
+    expect(addressCredentialsEntryMock).toHaveBeenCalledWith(
+      expect.objectContaining({ address: EXECUTOR_PUBLIC_KEY }),
+    );
+    // authorizeEntry must be called with the executor's own Keypair as
+    // signer (a plain classic-account credential, no wallet/AuthPayload
+    // involved) and the unsigned entry addressCredentialsEntry produced.
+    expect(authorizeEntryMock).toHaveBeenCalledWith(
+      expect.objectContaining({ __unsignedEntry: true, address: EXECUTOR_PUBLIC_KEY }),
+      expect.objectContaining({ publicKey: expect.any(Function) }),
+      expect.any(Number),
+      expect.any(String),
+    );
+  });
+
   it("does not advance the child sequence when the submitted transaction fails on-chain", async () => {
     serverMethods.sendTransaction.mockResolvedValue({ status: "PENDING", hash: TX_HASH });
     serverMethods.getTransaction.mockResolvedValue({ status: "FAILED" });
@@ -251,17 +333,58 @@ describe("executeRelayerJob — submission outcomes", () => {
   });
 });
 
+describe("executeRelayerJob — resolveTreasuryContracts (multi-treasury tracking)", () => {
+  const OTHER_SMART_ACCOUNT_ID = "CB4KZJ3I4XANE6GWPAMXCNXQ34PTQWPXVKFBBMLNKV25GAOXQC7RQUMS";
+
+  beforeEach(() => {
+    serverMethods.getLatestLedger.mockResolvedValue({ sequence: 150 });
+  });
+
+  it("resolves a registered non-default treasury from the registry, not the env-configured default", async () => {
+    getTreasuryMock.mockResolvedValue({
+      smartAccountId: OTHER_SMART_ACCOUNT_ID,
+      policyEngineId: "mock",
+      intentRegistryId: "COTHERINTENTREGISTRY0000000000000000000000000000000000",
+      recoveryManagerId: "mock",
+      transferAdapterId: "mock",
+      splitAdapterId: "mock",
+      ownerAddress: "mock",
+      executorAddress: "mock",
+      deployTxHash: "a".repeat(64),
+      createdAt: "2026-08-17T00:00:00.000Z",
+    });
+    queueIntentReads({ cancelled: true, execution_count: 0, max_executions: 5 }, false);
+
+    const result = await executeRelayerJob(job({ smartAccountId: OTHER_SMART_ACCOUNT_ID }));
+
+    expect(getTreasuryMock).toHaveBeenCalledWith(OTHER_SMART_ACCOUNT_ID);
+    expect(result.status).toBe("blocked");
+    expect(result.note).toMatch(/cancelled on-chain/i);
+  });
+
+  it("throws a clear error for a smartAccountId that is neither the default nor registered", async () => {
+    getTreasuryMock.mockResolvedValue(null);
+
+    await expect(
+      executeRelayerJob(job({ smartAccountId: OTHER_SMART_ACCOUNT_ID })),
+    ).rejects.toThrow(/no registered treasury/i);
+    expect(serverMethods.simulateTransaction).not.toHaveBeenCalled();
+  });
+});
+
 describe("executeRelayerJobById", () => {
   it("throws when the job does not exist in the store", async () => {
     getRelayerJobMock.mockResolvedValue(null);
-    await expect(executeRelayerJobById(INTENT_ID)).rejects.toThrow("Relayer job not found.");
+    await expect(executeRelayerJobById(SMART_ACCOUNT_ID, INTENT_ID)).rejects.toThrow(
+      "Relayer job not found.",
+    );
   });
 
   it("delegates to executeRelayerJob for a known job", async () => {
     getRelayerJobMock.mockResolvedValue(job({ executionCount: 5, maxExecutions: 5 }));
     serverMethods.getLatestLedger.mockResolvedValue({ sequence: 150 });
 
-    const result = await executeRelayerJobById(INTENT_ID);
+    const result = await executeRelayerJobById(SMART_ACCOUNT_ID, INTENT_ID);
     expect(result.status).toBe("blocked");
   });
 });
@@ -277,7 +400,9 @@ describe("runDueRelayerJobs", () => {
       job({ intentId: "c".repeat(64), startLedger: 500, endLedger: 600 }),
       job({ intentId: "d".repeat(64), status: "executing" }),
     ]);
-    updateRelayerJobMock.mockImplementation(async (_intentId, update) => update(due));
+    updateRelayerJobMock.mockImplementation(async (_smartAccountId, _intentId, update) =>
+      update(due),
+    );
 
     const result = await runDueRelayerJobs(5);
 
@@ -297,7 +422,7 @@ describe("readQueueableScheduledIntent", () => {
       result: { retval: { __native: null } },
     });
 
-    await expect(readQueueableScheduledIntent(INTENT_ID)).rejects.toThrow(
+    await expect(readQueueableScheduledIntent(SMART_ACCOUNT_ID, INTENT_ID)).rejects.toThrow(
       "Scheduled intent was not found on-chain.",
     );
   });
@@ -308,7 +433,7 @@ describe("readQueueableScheduledIntent", () => {
       result: { retval: { __native: { cancelled: true } } },
     });
 
-    await expect(readQueueableScheduledIntent(INTENT_ID)).rejects.toThrow(
+    await expect(readQueueableScheduledIntent(SMART_ACCOUNT_ID, INTENT_ID)).rejects.toThrow(
       "Scheduled intent is cancelled on-chain.",
     );
   });
@@ -328,9 +453,10 @@ describe("readQueueableScheduledIntent", () => {
       },
     });
 
-    const result = await readQueueableScheduledIntent(INTENT_ID);
+    const result = await readQueueableScheduledIntent(SMART_ACCOUNT_ID, INTENT_ID);
 
     expect(result).toEqual({
+      smartAccountId: SMART_ACCOUNT_ID,
       intentId: INTENT_ID,
       startLedger: 100,
       endLedger: 200,

@@ -1,4 +1,11 @@
 export type RelayerJobRecord = {
+  /**
+   * Which treasury's intent_registry/smart_account this job belongs to.
+   * Combined with `intentId` as the store's lookup/idempotency key — two
+   * different treasuries can otherwise pick colliding random intent ids,
+   * which a single-key model would silently merge.
+   */
+  smartAccountId: string;
   intentId: string;
   childSequence: number;
   startLedger: number;
@@ -13,6 +20,7 @@ export type RelayerJobRecord = {
 };
 
 export type CreateRelayerJobInput = {
+  smartAccountId: string;
   intentId: string;
   startLedger: number;
   endLedger: number;

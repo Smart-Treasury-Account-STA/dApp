@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Address, xdr } from "@stellar/stellar-sdk";
 
-import { countAuthContexts, selectInvocationForAddress } from "./authTree";
+import { countAuthContexts, selectAllInvocationsForAddress, selectInvocationForAddress } from "./authTree";
 
 const SMART_ACCOUNT = "CB4KZJ3I4XANE6GWPAMXCNXQ34PTQWPXVKFBBMLNKV25GAOXQC7RQUMS";
 const ASSET = "CCOUVA654JH2V6B7LNTKHJP5DF3QA553RS2IIWXSGPDFH2N3QILIVU5L";
@@ -102,5 +102,43 @@ describe("selectInvocationForAddress", () => {
 
   it("returns null when no entry belongs to the address", () => {
     expect(selectInvocationForAddress([], SMART_ACCOUNT)).toBeNull();
+  });
+});
+
+describe("selectAllInvocationsForAddress", () => {
+  it("returns every invocation recorded for the address, not just the first", () => {
+    const factoryBody = invocation(OTHER, "deploy_account");
+    const policyEngineInit = invocation(SMART_ACCOUNT, "initialize");
+    const smartAccountInit = invocation(SMART_ACCOUNT, "initialize");
+    const entries = [
+      entryFor(SMART_ACCOUNT, factoryBody),
+      entryFor(SMART_ACCOUNT, policyEngineInit),
+      entryFor(SMART_ACCOUNT, smartAccountInit),
+    ];
+
+    expect(selectAllInvocationsForAddress(entries, SMART_ACCOUNT)).toEqual([
+      factoryBody,
+      policyEngineInit,
+      smartAccountInit,
+    ]);
+  });
+
+  it("ignores entries recorded for a different address", () => {
+    const entries = [
+      entryFor(OTHER, invocation(OTHER, "something")),
+      entryFor(SMART_ACCOUNT, transferTree),
+    ];
+
+    expect(selectAllInvocationsForAddress(entries, SMART_ACCOUNT)).toEqual([transferTree]);
+  });
+
+  it("skips source-account credentials, which carry no address to match", () => {
+    const entries = [sourceAccountEntry(invocation(OTHER, "something"))];
+
+    expect(selectAllInvocationsForAddress(entries, SMART_ACCOUNT)).toEqual([]);
+  });
+
+  it("returns an empty array when no entry belongs to the address", () => {
+    expect(selectAllInvocationsForAddress([], SMART_ACCOUNT)).toEqual([]);
   });
 });

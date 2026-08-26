@@ -43,3 +43,36 @@ export function selectInvocationForAddress(
 
   return null;
 }
+
+/**
+ * Every invocation tree the simulation recorded for one address — unlike
+ * {@link selectInvocationForAddress}, which returns only the first match.
+ *
+ * Some calls need this: `account_factory.deploy_account`'s `caller`
+ * requires auth at six separate, sibling (non-nested) points in the call
+ * tree — the factory's own body plus once inside each of the five
+ * sub-contracts' own `initialize` — so recording mode reports six distinct
+ * entries for the same address, each scoped to its own node, not one entry
+ * covering all six. Every one needs its own signed authorization entry.
+ */
+export function selectAllInvocationsForAddress(
+  entries: xdr.SorobanAuthorizationEntry[],
+  address: string,
+): xdr.SorobanAuthorizedInvocation[] {
+  const matches: xdr.SorobanAuthorizedInvocation[] = [];
+
+  for (const entry of entries) {
+    const credentials = entry.credentials();
+    if (
+      credentials.switch().value !==
+      xdr.SorobanCredentialsType.sorobanCredentialsAddress().value
+    ) {
+      continue;
+    }
+    if (Address.fromScAddress(credentials.address().address()).toString() === address) {
+      matches.push(entry.rootInvocation());
+    }
+  }
+
+  return matches;
+}

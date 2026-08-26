@@ -7,6 +7,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { STELLAR_CONFIG } from "@/config";
+import type { ContractSet } from "@/lib/env";
 import type { SimulationResult } from "@/types";
 import {
   closeRelayerSession,
@@ -18,10 +20,12 @@ import {
 import { SectionHeader, StatusBadge } from "@/features/treasury/components/primitives";
 
 export function RelayerSection({
+  contracts = STELLAR_CONFIG.contracts,
   onNotice,
   onSessionActiveChange,
   sessionActive,
 }: {
+  contracts?: ContractSet;
   onNotice: (notice: SimulationResult | null) => void;
   onSessionActiveChange: (active: boolean) => void;
   sessionActive: boolean;
@@ -32,10 +36,11 @@ export function RelayerSection({
   // token itself is exchanged for an httpOnly session cookie by the server
   // and never lives in component state that outlives the submit.
   const [relayerUnlockInput, setRelayerUnlockInput] = useState("");
+  const relayerJobsQueryKey = ["relayer-jobs", contracts.smartAccount];
 
   const relayerJobsQuery = useQuery({
-    queryKey: ["relayer-jobs"],
-    queryFn: fetchRelayerJobs,
+    queryKey: relayerJobsQueryKey,
+    queryFn: () => fetchRelayerJobs(contracts.smartAccount),
   });
 
   const openRelayerSessionMutation = useMutation({
@@ -77,9 +82,9 @@ export function RelayerSection({
     },
   });
   const executeRelayerMutation = useMutation({
-    mutationFn: (intentId: string) => executeRelayerJob(intentId),
+    mutationFn: (intentId: string) => executeRelayerJob(contracts.smartAccount, intentId),
     onSuccess: (job) => {
-      queryClient.invalidateQueries({ queryKey: ["relayer-jobs"] });
+      queryClient.invalidateQueries({ queryKey: relayerJobsQueryKey });
       onNotice({
         ok: job.status === "executed",
         title: job.status === "executed" ? "Relayer executed payment" : "Relayer updated job",
@@ -98,7 +103,7 @@ export function RelayerSection({
   const runDueRelayerMutation = useMutation({
     mutationFn: runDueRelayerJobs,
     onSuccess: (jobs) => {
-      queryClient.invalidateQueries({ queryKey: ["relayer-jobs"] });
+      queryClient.invalidateQueries({ queryKey: relayerJobsQueryKey });
       onNotice({
         ok: true,
         title: "Relayer scan completed",

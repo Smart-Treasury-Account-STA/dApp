@@ -18,21 +18,18 @@ import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import Link from "next/link";
+
 import { Button } from "@/components/ui/button";
 import { STELLAR_CONFIG } from "@/config";
 import { computeLedgerWindow } from "@/features/treasury/drafts";
+import type { ContractSet } from "@/lib/env";
 import { makeIntentId, makeNonce, truncateAddress } from "@/lib/format";
 import { buildTransferAuthPlan } from "@/lib/smartAccountAuth";
 import { buildToastFeedback } from "@/lib/toastFeedback";
-import { connectWallet, disconnectWallet } from "@/lib/wallet";
-import type {
-  NetworkHealth,
-  PaymentDraft,
-  ScheduleDraft,
-  SimulationResult,
-  WalletState,
-} from "@/types";
+import type { NetworkHealth, PaymentDraft, ScheduleDraft, SimulationResult } from "@/types";
 import { useContextRules, useTreasurySnapshot } from "@/features/treasury/queries";
+import { useWallet } from "@/providers/wallet-provider";
 import { PaymentSection } from "@/features/treasury/components/payment-section";
 import { PolicySection } from "@/features/treasury/components/policy-section";
 import { RelayerSection } from "@/features/treasury/components/relayer-section";
@@ -43,12 +40,6 @@ import {
   CapabilitiesSection,
   TreasurySection,
 } from "@/features/treasury/components/treasury-section";
-
-const initialWallet: WalletState = {
-  address: null,
-  walletName: null,
-  connected: false,
-};
 
 const navItems: {
   href: string;
@@ -63,20 +54,24 @@ const navItems: {
   { href: "#relayer", icon: RadioTower, label: "Relayer" },
 ];
 
-export function TreasuryConsole() {
+export function TreasuryConsole({
+  contracts = STELLAR_CONFIG.contracts,
+}: {
+  contracts?: ContractSet;
+}) {
   const { setTheme, resolvedTheme } = useTheme();
-  const [wallet, setWallet] = useState<WalletState>(initialWallet);
+  const { wallet, connect, disconnect } = useWallet();
   const [notice, setNotice] = useState<SimulationResult | null>(null);
   const [relayerSessionActive, setRelayerSessionActive] = useState(false);
   const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>({
-    asset: STELLAR_CONFIG.contracts.staAsset,
+    asset: contracts.staAsset,
     destination: STELLAR_CONFIG.testRecipient,
     amount: "5000000",
     nonce: makeNonce(),
     expectedPolicyVersion: 1,
   });
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft>({
-    asset: STELLAR_CONFIG.contracts.staAsset,
+    asset: contracts.staAsset,
     destination: STELLAR_CONFIG.testRecipient,
     amount: "1000000",
     nonce: makeNonce(),
@@ -85,10 +80,11 @@ export function TreasuryConsole() {
     startLedger: "0",
     endLedger: "0",
     maxExecutions: "1",
+    intervalLedgers: "0",
   });
 
-  const snapshotQuery = useTreasurySnapshot(wallet.address);
-  const rulesQuery = useContextRules(wallet.address);
+  const snapshotQuery = useTreasurySnapshot(wallet.address, contracts);
+  const rulesQuery = useContextRules(wallet.address, contracts);
 
   const policyVersion = snapshotQuery.data?.policyVersion ?? null;
   const latestLedger = snapshotQuery.data?.latestLedger ?? null;
@@ -160,8 +156,7 @@ export function TreasuryConsole() {
   async function onConnectWallet() {
     setNotice(null);
     try {
-      const connected = await connectWallet();
-      setWallet(connected);
+      const connected = await connect();
       setNotice({
         ok: true,
         title: "Wallet connected",
@@ -177,8 +172,7 @@ export function TreasuryConsole() {
   }
 
   function onDisconnectWallet() {
-    disconnectWallet();
-    setWallet(initialWallet);
+    disconnect();
     setNotice({
       ok: true,
       title: "Wallet disconnected",
@@ -214,6 +208,13 @@ export function TreasuryConsole() {
               {label}
             </a>
           ))}
+          <Link
+            className="flex min-h-10 items-center gap-2 rounded-md px-3 text-sm text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+            href="/treasuries"
+          >
+            <Wallet size={18} />
+            My treasuries
+          </Link>
         </nav>
 
         <div className="mt-auto grid gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4 max-lg:mt-0">
@@ -272,6 +273,7 @@ export function TreasuryConsole() {
 
         <TreasurySection
           connected={wallet.connected}
+          contracts={contracts}
           error={snapshotQuery.error}
           health={health}
           isError={snapshotQuery.isError}
@@ -279,12 +281,13 @@ export function TreasuryConsole() {
           snapshot={snapshotQuery.data ?? null}
         />
 
-        <SignersSection onNotice={setNotice} wallet={wallet} />
+        <SignersSection contracts={contracts} onNotice={setNotice} wallet={wallet} />
 
-        <PolicySection onNotice={setNotice} wallet={wallet} />
+        <PolicySection contracts={contracts} onNotice={setNotice} wallet={wallet} />
 
         <section className="grid grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)] gap-5 max-xl:grid-cols-1">
           <PaymentSection
+            contracts={contracts}
             draft={paymentDraft}
             onDraftChange={setPaymentDraft}
             onNotice={setNotice}
@@ -302,6 +305,7 @@ export function TreasuryConsole() {
         </section>
 
         <ScheduleSection
+          contracts={contracts}
           draft={scheduleDraft}
           onDraftChange={setScheduleDraft}
           onNotice={setNotice}
@@ -310,6 +314,7 @@ export function TreasuryConsole() {
         />
 
         <RelayerSection
+          contracts={contracts}
           onNotice={setNotice}
           onSessionActiveChange={setRelayerSessionActive}
           sessionActive={relayerSessionActive}

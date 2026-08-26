@@ -17,6 +17,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { STELLAR_CONFIG } from "@/config";
 import { LEDGER_CLOSE_SECONDS } from "@/lib/constants";
+import type { ContractSet } from "@/lib/env";
 import { makeIntentId, truncateAddress } from "@/lib/format";
 import { describeReceipt } from "@/lib/receipt";
 import {
@@ -32,12 +33,14 @@ import { queueRelayerJob } from "@/features/treasury/relayer-client";
 import { FormField, SectionHeader } from "@/features/treasury/components/primitives";
 
 export function ScheduleSection({
+  contracts = STELLAR_CONFIG.contracts,
   draft,
   onDraftChange,
   onNotice,
   relayerSessionActive,
   wallet,
 }: {
+  contracts?: ContractSet;
   draft: ScheduleDraft;
   onDraftChange: Dispatch<SetStateAction<ScheduleDraft>>;
   onNotice: (notice: SimulationResult | null) => void;
@@ -60,6 +63,7 @@ export function ScheduleSection({
           signTransaction,
         },
         draft,
+        contracts,
       );
     },
     onMutate: () => {
@@ -72,6 +76,7 @@ export function ScheduleSection({
     },
     onSuccess: (receipt) => {
       const relayerJob: CreateRelayerJobInput = {
+        smartAccountId: contracts.smartAccount,
         intentId: draft.intentId,
         startLedger: Number(draft.startLedger),
         endLedger: Number(draft.endLedger),
@@ -126,7 +131,7 @@ export function ScheduleSection({
 
   async function onScheduleSimulation() {
     const source = wallet.address ?? STELLAR_CONFIG.testRecipient;
-    onNotice(await simulateSchedule(source, draft));
+    onNotice(await simulateSchedule(source, draft, contracts));
   }
 
   function onScheduleSubmit() {
@@ -200,6 +205,13 @@ export function ScheduleSection({
             onDraftChange((current) => ({ ...current, maxExecutions }))
           }
           value={draft.maxExecutions}
+        />
+        <FormField
+          label="Interval ledgers"
+          onChange={(intervalLedgers) =>
+            onDraftChange((current) => ({ ...current, intervalLedgers }))
+          }
+          value={draft.intervalLedgers ?? "0"}
         />
       </div>
 

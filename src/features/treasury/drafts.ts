@@ -56,6 +56,7 @@ export function validateScheduleDraft(draft: ScheduleDraft) {
   const startLedger = parseU32("Start ledger", draft.startLedger);
   const endLedger = parseU32("End ledger", draft.endLedger);
   const maxExecutions = parseU32("Max executions", draft.maxExecutions);
+  parseU32("Interval ledgers", draft.intervalLedgers ?? 0);
   if (maxExecutions < 1) {
     throw new Error("Max executions must be at least 1.");
   }
