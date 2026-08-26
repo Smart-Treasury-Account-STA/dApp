@@ -74,6 +74,12 @@ vi.mock("@/lib/stellarClient", () => ({
   randomAuthNonce: vi.fn(() => "424242"),
 }));
 
+const findEventMock = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/contractEvents", () => ({
+  parseContractEvents: vi.fn((events: unknown) => events),
+  findEvent: findEventMock,
+}));
+
 vi.mock("@/lib/treasuryRegistry/store", () => ({
   getTreasury: vi.fn(),
   toContractSet: vi.fn((record: { smartAccountId: string; intentRegistryId: string }) => ({
@@ -269,6 +275,42 @@ describe("executeRelayerJob — submission outcomes", () => {
     expect(result.childSequence).toBe(2);
     expect(result.executionCount).toBe(1);
     expect(result.txHash).toBe(TX_HASH);
+  });
+
+  it("decodes a ScheduledPaymentExecuted event into the job's note when present", async () => {
+    serverMethods.sendTransaction.mockResolvedValue({ status: "PENDING", hash: TX_HASH });
+    serverMethods.getTransaction.mockResolvedValue({
+      status: "SUCCESS",
+      events: { contractEventsXdr: [["raw-event"]] },
+    });
+    findEventMock.mockReturnValue({
+      intent_id: Buffer.alloc(0),
+      child_sequence: 3,
+      asset: "CASSET0000000000000000000000000000000000000000000000000",
+      destination: "GDEST000000000000000000000000000000000000000000000000",
+      amount: 5000000n,
+    });
+    vi.useFakeTimers();
+
+    const promise = executeRelayerJob(job({ childSequence: 3 }));
+    await vi.advanceTimersByTimeAsync(1500);
+    const result = await promise;
+
+    expect(result.note).toContain("child 3");
+    expect(result.note).toContain("5000000");
+    expect(result.note).toContain("GDEST000000000000000000000000000000000000000000000000");
+  });
+
+  it("falls back to the generic note when getTransaction returns no events for the operation", async () => {
+    serverMethods.sendTransaction.mockResolvedValue({ status: "PENDING", hash: TX_HASH });
+    serverMethods.getTransaction.mockResolvedValue({ status: "SUCCESS" });
+    vi.useFakeTimers();
+
+    const promise = executeRelayerJob(job());
+    await vi.advanceTimersByTimeAsync(1500);
+    const result = await promise;
+
+    expect(result.note).toMatch(/executed exactly once/i);
   });
 
   it("builds and signs an explicit authorization entry for intent_registry.mark_child_executed, not just a source-account signature", async () => {

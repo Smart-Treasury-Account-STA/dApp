@@ -450,6 +450,10 @@ export async function submitSignedTransaction(signedTx: Transaction): Promise<Tr
         hash: sendResponse.hash,
         status: txResult.status,
         latestLedger: txResult.latestLedger,
+        // Present on both SUCCESS and FAILED (not on the NOT_FOUND variant,
+        // which this branch already excludes) -- one events array per
+        // operation; this dApp's transactions always have exactly one.
+        events: "events" in txResult ? txResult.events.contractEventsXdr[0] : undefined,
       };
     }
   }

@@ -1,3 +1,5 @@
+import type { xdr } from "@stellar/stellar-sdk";
+
 export type NetworkHealth = "idle" | "loading" | "ready" | "degraded";
 
 export type TreasuryStatus = {
@@ -73,6 +75,10 @@ export type TransactionReceipt = {
   hash: string;
   status: string;
   latestLedger?: number;
+  /** This operation's contract events, when the poll reached a terminal
+   * SUCCESS/FAILED status (absent while still pending/NOT_FOUND). Decode
+   * with `parseContractEvents` from `@/lib/contractEvents`. */
+  events?: xdr.ContractEvent[];
 };
 
 export type WalletSigning = {

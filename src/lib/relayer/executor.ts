@@ -15,6 +15,7 @@ import { Buffer } from "buffer";
 import { STELLAR_CONFIG } from "@/config";
 import type { ContractSet } from "@/lib/env";
 import { getRelayerJob, listRelayerJobs, updateRelayerJob } from "@/lib/relayer/store";
+import { findEvent, parseContractEvents } from "@/lib/contractEvents";
 import { addressCredentialsEntry, contractInvocation, randomAuthNonce } from "@/lib/stellarClient";
 import { getTreasury, toContractSet } from "@/lib/treasuryRegistry/store";
 import type {
@@ -331,6 +332,11 @@ export async function executeRelayerJob(job: RelayerJobRecord) {
     await new Promise((resolve) => setTimeout(resolve, 1500));
     const result = await server.getTransaction(sent.hash);
     if (result.status === "SUCCESS") {
+      const eventsForOp = result.events?.contractEventsXdr?.[0];
+      const executed = eventsForOp ? findEvent(parseContractEvents(eventsForOp), "auto_ok") : undefined;
+      const note = executed
+        ? `Executed child ${executed.child_sequence}: ${executed.amount.toString()} of ${executed.asset} to ${executed.destination}.`
+        : "Scheduled payment executed exactly once for the consumed child sequence.";
       return updateRelayerJob(job.smartAccountId, job.intentId, (current) => ({
         ...current,
         status:
@@ -339,7 +345,7 @@ export async function executeRelayerJob(job: RelayerJobRecord) {
             : "ready",
         executionCount: current.executionCount + 1,
         childSequence: current.childSequence + 1,
-        note: "Scheduled payment executed exactly once for the consumed child sequence.",
+        note,
         txHash: sent.hash,
       }));
     }

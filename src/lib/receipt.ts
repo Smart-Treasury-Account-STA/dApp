@@ -1,3 +1,4 @@
+import { findEvent, parseContractEvents } from "@/lib/contractEvents";
 import type { SimulationResult, TransactionReceipt } from "@/types";
 
 export type ReceiptLabels = {
@@ -6,6 +7,42 @@ export type ReceiptLabels = {
   /** Shown while the outcome is still unknown. */
   submittedTitle: string;
 };
+
+/**
+ * A short, human-readable line built from whichever of this dApp's known
+ * contract events actually landed in the receipt -- checked in the order a
+ * signer-authored write is most likely to have produced them. Returns null
+ * when there's nothing decodable (no events, or none of the topics this
+ * dApp knows how to summarize), so callers can fall back to the plain
+ * status line without an awkward empty append.
+ */
+function summarizeEvents(receipt: TransactionReceipt): string | null {
+  if (!receipt.events || receipt.events.length === 0) return null;
+  const parsed = parseContractEvents(receipt.events);
+
+  const paid = findEvent(parsed, "pay_ok");
+  if (paid) {
+    return `Paid ${paid.amount.toString()} of ${paid.asset} to ${paid.destination}.`;
+  }
+  const split = findEvent(parsed, "splt_ok");
+  if (split) {
+    return `Split ${split.asset} across ${split.recipient_count} recipient${split.recipient_count === 1 ? "" : "s"}.`;
+  }
+  const scheduled = findEvent(parsed, "auto_ok");
+  if (scheduled) {
+    return `Executed child ${scheduled.child_sequence} of the scheduled payment: ${scheduled.amount.toString()} of ${scheduled.asset} to ${scheduled.destination}.`;
+  }
+  const created = findEvent(parsed, "intent");
+  if (created) {
+    return `Scheduled intent ${created.intent_id.toString("hex").slice(0, 8)}… created.`;
+  }
+  const cancelled = findEvent(parsed, "cancel");
+  if (cancelled) {
+    return `Scheduled intent ${cancelled.intent_id.toString("hex").slice(0, 8)}… cancelled.`;
+  }
+
+  return null;
+}
 
 /**
  * Turns a submission receipt into what the operator should be told.
@@ -22,10 +59,11 @@ export function describeReceipt(
   labels: ReceiptLabels,
 ): SimulationResult {
   if (receipt.status === "SUCCESS") {
+    const eventSummary = summarizeEvents(receipt);
     return {
       ok: true,
       title: labels.confirmedTitle,
-      detail: "Transaction status: SUCCESS",
+      detail: eventSummary ? `${eventSummary} (SUCCESS)` : "Transaction status: SUCCESS",
       txHash: receipt.hash,
     };
   }
