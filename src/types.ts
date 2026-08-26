@@ -34,6 +34,18 @@ export type PaymentDraft = {
   expectedPolicyVersion: number;
 };
 
+export type SplitRecipient = {
+  destination: string;
+  amount: string;
+};
+
+export type SplitDraft = {
+  asset: string;
+  recipients: SplitRecipient[];
+  nonce: string;
+  expectedPolicyVersion: number;
+};
+
 export type ScheduleDraft = PaymentDraft & {
   intentId: string;
   startLedger: string;

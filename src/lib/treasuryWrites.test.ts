@@ -3,6 +3,7 @@ import { xdr } from "@stellar/stellar-sdk";
 
 import { STELLAR_CONFIG } from "@/config";
 import {
+  addGuardianOperation,
   addSignerOperation,
   bumpVersionOperation,
   removeSignerOperation,
@@ -67,6 +68,27 @@ describe("policy_engine write descriptors", () => {
 
     expect(op.functionName).toBe("bump_version");
     expect(op.args[0].u32()).toBe(2);
+  });
+});
+
+describe("recovery_manager write descriptors", () => {
+  it("routes add_guardian through the source-account strategy, targeting recoveryManager not smartAccount", () => {
+    const op = addGuardianOperation({ guardian: SIGNER });
+
+    expect(op.contractId).toBe(STELLAR_CONFIG.contracts.recoveryManager);
+    expect(op.functionName).toBe("add_guardian");
+    expect(op.strategy).toBe("source-account");
+    expect(op.args).toHaveLength(1);
+  });
+
+  it("respects a per-treasury contracts override, like every other write descriptor", () => {
+    const customRecoveryManager = "CB4KZJ3I4XANE6GWPAMXCNXQ34PTQWPXVKFBBMLNKV25GAOXQC7RQUMS";
+    const op = addGuardianOperation({
+      guardian: SIGNER,
+      contracts: { ...STELLAR_CONFIG.contracts, recoveryManager: customRecoveryManager },
+    });
+
+    expect(op.contractId).toBe(customRecoveryManager);
   });
 });
 

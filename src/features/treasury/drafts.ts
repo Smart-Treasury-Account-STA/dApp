@@ -1,7 +1,7 @@
 import { Address } from "@stellar/stellar-sdk";
 
 import { LEDGER_CLOSE_SECONDS } from "@/lib/constants";
-import type { PaymentDraft, ScheduleDraft } from "@/types";
+import type { PaymentDraft, ScheduleDraft, SplitDraft } from "@/types";
 
 const INTENT_ID_PATTERN = /^(0x)?[0-9a-fA-F]{64}$/;
 const MAX_U32 = 2 ** 32 - 1;
@@ -62,6 +62,28 @@ export function validateScheduleDraft(draft: ScheduleDraft) {
   }
   if (startLedger >= endLedger) {
     throw new Error("Start ledger must be lower than end ledger.");
+  }
+}
+
+export function validateSplitDraft(draft: SplitDraft) {
+  assertAddress("Asset contract", draft.asset);
+  const nonce = parsePositiveBigInt("Nonce", draft.nonce);
+  if (nonce > MAX_U64) {
+    throw new Error("Nonce must fit in u64.");
+  }
+  if (!Number.isSafeInteger(draft.expectedPolicyVersion) || draft.expectedPolicyVersion < 1) {
+    throw new Error("Policy version must be a positive integer.");
+  }
+  if (draft.recipients.length < 2) {
+    throw new Error("A split needs at least two recipients — use a plain payment for one.");
+  }
+  draft.recipients.forEach((recipient, index) => {
+    assertAddress(`Recipient ${index + 1}`, recipient.destination);
+    parsePositiveBigInt(`Amount ${index + 1}`, recipient.amount);
+  });
+  const destinations = draft.recipients.map((recipient) => recipient.destination);
+  if (new Set(destinations).size !== destinations.length) {
+    throw new Error("Split recipients must be distinct addresses.");
   }
 }
 

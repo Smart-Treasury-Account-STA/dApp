@@ -4,15 +4,27 @@ import {
   computeLedgerWindow,
   validatePaymentDraft,
   validateScheduleDraft,
+  validateSplitDraft,
 } from "@/features/treasury/drafts";
 
 const contract = "CB4KZJ3I4XANE6GWPAMXCNXQ34PTQWPXVKFBBMLNKV25GAOXQC7RQUMS";
 const account = "GAK3XILRBYBMBOCZMSLL2CLR6WPQLEIOC6ZCYYPTE4OIAX3PCFFO2YMU";
+const account2 = "GDU3LDGZOCJIB6MIKQWK5AICFFEWVC2FJ2BDEVXG37XXSKWIZ7OXVCAS";
 
 const payment = {
   asset: contract,
   destination: account,
   amount: "5000000",
+  nonce: "42",
+  expectedPolicyVersion: 1,
+};
+
+const split = {
+  asset: contract,
+  recipients: [
+    { destination: account, amount: "2000000" },
+    { destination: account2, amount: "3000000" },
+  ],
   nonce: "42",
   expectedPolicyVersion: 1,
 };
@@ -74,6 +86,56 @@ describe("validateScheduleDraft", () => {
     expect(() => validateScheduleDraft({ ...schedule, intervalLedgers: "-1" })).toThrow(
       /Interval ledgers/,
     );
+  });
+});
+
+describe("validateSplitDraft", () => {
+  it("accepts a valid draft", () => {
+    expect(() => validateSplitDraft(split)).not.toThrow();
+  });
+
+  it("rejects a malformed asset", () => {
+    expect(() => validateSplitDraft({ ...split, asset: "nope" })).toThrow(/Asset contract/);
+  });
+
+  it("rejects a single recipient — use a plain payment instead", () => {
+    expect(() =>
+      validateSplitDraft({ ...split, recipients: [split.recipients[0]] }),
+    ).toThrow(/at least two recipients/);
+  });
+
+  it("rejects a malformed recipient address", () => {
+    expect(() =>
+      validateSplitDraft({
+        ...split,
+        recipients: [{ destination: "nope", amount: "1" }, split.recipients[1]],
+      }),
+    ).toThrow(/Recipient 1/);
+  });
+
+  it("rejects a zero or negative recipient amount", () => {
+    expect(() =>
+      validateSplitDraft({
+        ...split,
+        recipients: [{ destination: account, amount: "0" }, split.recipients[1]],
+      }),
+    ).toThrow(/Amount 1/);
+  });
+
+  it("rejects duplicate recipient addresses — matches the contract's own DuplicateRecipient check", () => {
+    expect(() =>
+      validateSplitDraft({
+        ...split,
+        recipients: [
+          { destination: account, amount: "1000000" },
+          { destination: account, amount: "2000000" },
+        ],
+      }),
+    ).toThrow(/distinct addresses/);
+  });
+
+  it("rejects an invalid nonce", () => {
+    expect(() => validateSplitDraft({ ...split, nonce: "0" })).toThrow(/Nonce/);
   });
 });
 

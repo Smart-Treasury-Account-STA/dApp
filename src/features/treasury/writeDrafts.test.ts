@@ -4,6 +4,7 @@ import {
   isSelfRemoval,
   signerRemovalBlock,
   validateAssetRuleDraft,
+  validateGuardianDraft,
   validateOperationDraft,
   validateRecipientDraft,
   validateSignerDraft,
@@ -35,6 +36,16 @@ describe("validateSignerDraft", () => {
     expect(() => validateSignerDraft({ signerAddress: "not-an-address" })).toThrow(
       /valid Stellar/i,
     );
+  });
+});
+
+describe("validateGuardianDraft", () => {
+  it("accepts a valid account address", () => {
+    expect(() => validateGuardianDraft({ guardian: SIGNER })).not.toThrow();
+  });
+
+  it("rejects a malformed address", () => {
+    expect(() => validateGuardianDraft({ guardian: "not-an-address" })).toThrow(/valid Stellar/i);
   });
 });
 

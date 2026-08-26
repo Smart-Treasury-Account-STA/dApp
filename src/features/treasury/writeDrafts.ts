@@ -17,6 +17,10 @@ export function validateSignerDraft({ signerAddress }: { signerAddress: string }
   assertAddress("Signer", signerAddress);
 }
 
+export function validateGuardianDraft({ guardian }: { guardian: string }) {
+  assertAddress("Guardian", guardian);
+}
+
 export function validateAssetRuleDraft({
   asset,
   enabled,

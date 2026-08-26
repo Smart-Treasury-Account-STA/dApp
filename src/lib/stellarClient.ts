@@ -15,7 +15,7 @@ import {
 import { Buffer } from "buffer";
 
 import { STELLAR_CONFIG } from "@/config";
-import { validatePaymentDraft, validateScheduleDraft } from "@/features/treasury/drafts";
+import { validatePaymentDraft, validateScheduleDraft, validateSplitDraft } from "@/features/treasury/drafts";
 import { countAuthContexts, selectInvocationForAddress } from "@/lib/authTree";
 import type { ContractSet } from "@/lib/env";
 import { describeSimulationFailure } from "@/lib/format";
@@ -28,6 +28,7 @@ import type {
   PaymentDraft,
   ScheduleDraft,
   SimulationResult,
+  SplitDraft,
   TreasuryStatus,
   TransactionReceipt,
   WalletSigning,
@@ -417,6 +418,20 @@ function transferArgs(draft: PaymentDraft) {
   ];
 }
 
+function splitArgs(draft: SplitDraft) {
+  return [
+    addressScVal(draft.asset),
+    xdr.ScVal.scvVec(draft.recipients.map((recipient) => addressScVal(recipient.destination))),
+    xdr.ScVal.scvVec(draft.recipients.map((recipient) => i128ScVal(recipient.amount))),
+    u64ScVal(draft.nonce),
+    u32ScVal(draft.expectedPolicyVersion),
+  ];
+}
+
+function cancelScheduleArgs(intentId: string) {
+  return [bytesN32ScVal(intentId)];
+}
+
 function getSignerAddresses(value: SimulationValue) {
   const serialized = JSON.stringify(value, (_key, nestedValue) =>
     typeof nestedValue === "bigint" ? nestedValue.toString() : nestedValue,
@@ -667,6 +682,20 @@ export async function loadSignerId(
   return Number(result.value ?? 0);
 }
 
+export async function checkIsGuardian(
+  sourceAddress: string,
+  guardianAddress: string,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
+) {
+  const result = await simulateContractCall(
+    sourceAddress,
+    contracts.recoveryManager,
+    "is_guardian",
+    [addressScVal(guardianAddress)],
+  );
+  return Boolean(result.value);
+}
+
 /**
  * Builds the probe function `policyProbe` consumes. Rejects with the raw host
  * error so `classifyProbeFailure` can read the contract code out of it.
@@ -785,6 +814,52 @@ export async function approveAndSubmitSchedule(
   });
 }
 
+export async function approveAndSubmitSplit(
+  wallet: WalletSigning,
+  draft: SplitDraft,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
+): Promise<TransactionReceipt> {
+  validateSplitDraft(draft);
+  const policyResult = await simulateSplitPolicy(wallet.address, draft, contracts);
+  if (!policyResult.ok) {
+    throw new Error(policyResult.detail);
+  }
+  const nonceUsed = await checkNonce(wallet.address, draft.nonce, contracts);
+  if (nonceUsed) {
+    throw new Error("Nonce has already been used.");
+  }
+
+  return signAndSubmitContractInvocation({
+    args: splitArgs(draft),
+    functionName: "execute_split_payment",
+    sourceAddress: wallet.address,
+    wallet,
+    contracts,
+  });
+}
+
+export async function approveAndSubmitCancelSchedule(
+  wallet: WalletSigning,
+  intentId: string,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
+): Promise<TransactionReceipt> {
+  if (!/^(0x)?[0-9a-fA-F]{64}$/.test(intentId)) {
+    throw new Error("Intent ID must be 32 bytes encoded as 64 hex characters.");
+  }
+  const exists = await checkScheduledIntentExists(wallet.address, intentId, contracts);
+  if (!exists) {
+    throw new Error("No scheduled intent exists on-chain for this ID.");
+  }
+
+  return signAndSubmitContractInvocation({
+    args: cancelScheduleArgs(intentId),
+    functionName: "cancel_scheduled_payment",
+    sourceAddress: wallet.address,
+    wallet,
+    contracts,
+  });
+}
+
 export async function getLatestLedger() {
   const result = await getServer().getLatestLedger();
   return result.sequence;
@@ -889,6 +964,56 @@ export async function simulatePolicy(
   }
 }
 
+/**
+ * Checks policy for every recipient/amount pair, matching how
+ * `execute_split_payment` validates on-chain — it calls
+ * `policy_engine.validate_policy` once per recipient with `operation:
+ * "split"`, not once for the whole batch (see contracts/smart_account/src/lib.rs).
+ * Reports the first rejection found, in recipient order.
+ */
+export async function simulateSplitPolicy(
+  sourceAddress: string,
+  draft: SplitDraft,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
+): Promise<SimulationResult> {
+  const invalid = validationFailure(() => validateSplitDraft(draft));
+  if (invalid) return invalid;
+
+  for (const [index, recipient] of draft.recipients.entries()) {
+    try {
+      await simulateContractCall(sourceAddress, contracts.policyEngine, "validate_policy", [
+        policyCheckScVal(
+          {
+            asset: draft.asset,
+            destination: recipient.destination,
+            amount: recipient.amount,
+            nonce: "1",
+            expectedPolicyVersion: draft.expectedPolicyVersion,
+          },
+          "split",
+        ),
+      ]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const failure = describeSimulationFailure(message);
+      return {
+        ok: false,
+        title: failure.rejectedByContract
+          ? `Policy rejected recipient ${index + 1}`
+          : "Policy check could not run",
+        detail: failure.detail,
+        diagnostic: message,
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    title: "Policy simulation passed",
+    detail: `Every recipient, amount, and the expected policy version are accepted on testnet.`,
+  };
+}
+
 export async function simulateTransfer(
   sourceAddress: string,
   draft: PaymentDraft,
@@ -937,6 +1062,54 @@ export async function simulateTransfer(
           : failure.rejectedByContract
             ? "Transfer rejected by the contract"
             : "Transfer simulation could not run",
+      detail: failure.detail,
+      diagnostic: message,
+    };
+  }
+}
+
+export async function simulateSplit(
+  sourceAddress: string,
+  draft: SplitDraft,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
+): Promise<SimulationResult> {
+  const invalid = validationFailure(() => validateSplitDraft(draft));
+  if (invalid) return invalid;
+
+  try {
+    const nonceUsed = await checkNonce(sourceAddress, draft.nonce, contracts);
+    if (nonceUsed) {
+      return {
+        ok: false,
+        title: "Nonce already used",
+        detail: "Generate a fresh nonce before asking the signer to approve.",
+      };
+    }
+
+    await simulateContractCall(
+      sourceAddress,
+      contracts.smartAccount,
+      "execute_split_payment",
+      splitArgs(draft),
+    );
+
+    return {
+      ok: true,
+      title: "Split simulation built",
+      detail:
+        "The unsigned split invocation is structurally valid. Final submission still requires SmartAccount custom auth entries.",
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const failure = describeSimulationFailure(message);
+    return {
+      ok: false,
+      title:
+        failure.kind === "authorization"
+          ? "Split simulation needs auth"
+          : failure.rejectedByContract
+            ? "Split rejected by the contract"
+            : "Split simulation could not run",
       detail: failure.detail,
       diagnostic: message,
     };

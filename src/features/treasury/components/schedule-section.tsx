@@ -9,6 +9,7 @@ import {
   RefreshCcw,
   Wallet,
   Workflow,
+  XCircle,
 } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 import { useState } from "react";
@@ -21,6 +22,7 @@ import type { ContractSet } from "@/lib/env";
 import { makeIntentId, truncateAddress } from "@/lib/format";
 import { describeReceipt } from "@/lib/receipt";
 import {
+  approveAndSubmitCancelSchedule,
   approveAndSubmitSchedule,
   getLatestLedger,
   simulateSchedule,
@@ -50,6 +52,7 @@ export function ScheduleSection({
   const queryClient = useQueryClient();
   const [createdScheduleJob, setCreatedScheduleJob] =
     useState<CreateRelayerJobInput | null>(null);
+  const [cancelIntentId, setCancelIntentId] = useState("");
 
   const submitScheduleMutation = useMutation({
     mutationFn: async () => {
@@ -124,6 +127,44 @@ export function ScheduleSection({
       onNotice({
         ok: false,
         title: "Could not queue relayer job",
+        detail: error instanceof Error ? error.message : String(error),
+      });
+    },
+  });
+
+  const cancelScheduleMutation = useMutation({
+    mutationFn: async () => {
+      if (!wallet.address) {
+        throw new Error("Connect an authorized Stellar wallet before submission.");
+      }
+      return approveAndSubmitCancelSchedule(
+        { address: wallet.address, signAuthEntry, signTransaction },
+        cancelIntentId,
+        contracts,
+      );
+    },
+    onMutate: () => {
+      onNotice({
+        ok: true,
+        title: "Cancellation approval requested",
+        detail: "Approve the SmartAccount authorization entry to cancel this scheduled payment.",
+      });
+    },
+    onSuccess: (receipt) => {
+      onNotice(
+        describeReceipt(receipt, {
+          confirmedTitle: "Scheduled payment cancelled",
+          submittedTitle: "Cancellation submitted",
+        }),
+      );
+      if (receipt.status === "SUCCESS") {
+        setCancelIntentId("");
+      }
+    },
+    onError: (error) => {
+      onNotice({
+        ok: false,
+        title: "Cancellation failed",
         detail: error instanceof Error ? error.message : String(error),
       });
     },
@@ -265,6 +306,31 @@ export function ScheduleSection({
           {LEDGER_CLOSE_SECONDS}s per ledger, the default window starts near two minutes from
           now and lasts one hour.
         </span>
+      </div>
+
+      <div className="grid gap-3 rounded-md border bg-background p-3">
+        <span className="text-xs font-semibold uppercase text-muted-foreground">
+          Cancel an existing scheduled payment
+        </span>
+        <FormField
+          label="Intent ID to cancel"
+          onChange={setCancelIntentId}
+          value={cancelIntentId}
+        />
+        <Button
+          disabled={
+            !wallet.connected || cancelIntentId.length === 0 || cancelScheduleMutation.isPending
+          }
+          onClick={() => cancelScheduleMutation.mutate()}
+          variant="secondary"
+        >
+          {cancelScheduleMutation.isPending ? (
+            <Loader2 className="animate-spin" size={18} />
+          ) : (
+            <XCircle size={18} />
+          )}
+          Cancel scheduled payment
+        </Button>
       </div>
     </section>
   );

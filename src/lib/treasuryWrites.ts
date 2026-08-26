@@ -148,3 +148,30 @@ export function bumpVersionOperation({
     summary: `Raise the policy version to ${nextVersion}. Every payment or scheduled intent still pinned to an older version will be rejected with #2006.`,
   };
 }
+
+/**
+ * `recovery_manager.add_guardian` -- admin-gated (plain `Address::require_auth()`,
+ * the same `source-account` strategy as the policy_engine writes above, not
+ * smart_account's custom AuthPayload), so only the treasury's Recovery Admin
+ * (the same key as Policy Admin/Owner under Tier 1 deploy -- see
+ * DAPP_INTEGRATION_SPEC.md §12.1) can add one. A newly registered guardian
+ * has a ~1 day activation delay before it counts toward guardian_threshold
+ * (contracts/recovery_manager/src/lib.rs's GUARDIAN_ACTIVATION_DELAY_LEDGERS) --
+ * this call only registers it, it does not make it live immediately.
+ */
+export function addGuardianOperation({
+  guardian,
+  contracts = STELLAR_CONFIG.contracts,
+}: {
+  guardian: string;
+  contracts?: ContractSet;
+}): WriteOperation {
+  return {
+    id: `add-guardian:${guardian}`,
+    contractId: contracts.recoveryManager,
+    functionName: "add_guardian",
+    args: [addressScVal(guardian)],
+    strategy: "source-account",
+    summary: `Register ${guardian} as a guardian. It activates in about a day, not immediately.`,
+  };
+}

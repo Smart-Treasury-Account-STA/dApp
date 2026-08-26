@@ -9,7 +9,9 @@ import {
   RefreshCcw,
   ScrollText,
   SendHorizontal,
+  ShieldAlert,
   ShieldCheck,
+  Split,
   Sun,
   Wallet,
 } from "lucide-react";
@@ -27,14 +29,22 @@ import type { ContractSet } from "@/lib/env";
 import { makeIntentId, makeNonce, truncateAddress } from "@/lib/format";
 import { buildTransferAuthPlan } from "@/lib/smartAccountAuth";
 import { buildToastFeedback } from "@/lib/toastFeedback";
-import type { NetworkHealth, PaymentDraft, ScheduleDraft, SimulationResult } from "@/types";
+import type {
+  NetworkHealth,
+  PaymentDraft,
+  ScheduleDraft,
+  SimulationResult,
+  SplitDraft,
+} from "@/types";
 import { useContextRules, useTreasurySnapshot } from "@/features/treasury/queries";
 import { useWallet } from "@/providers/wallet-provider";
+import { GuardiansSection } from "@/features/treasury/components/guardians-section";
 import { PaymentSection } from "@/features/treasury/components/payment-section";
 import { PolicySection } from "@/features/treasury/components/policy-section";
 import { RelayerSection } from "@/features/treasury/components/relayer-section";
 import { ScheduleSection } from "@/features/treasury/components/schedule-section";
 import { SignersSection } from "@/features/treasury/components/signers-section";
+import { SplitSection } from "@/features/treasury/components/split-section";
 import {
   ApprovalPlanSection,
   CapabilitiesSection,
@@ -48,8 +58,10 @@ const navItems: {
 }[] = [
   { href: "#treasury", icon: Activity, label: "Treasury" },
   { href: "#signers", icon: ShieldCheck, label: "Signers" },
+  { href: "#guardians", icon: ShieldAlert, label: "Guardians" },
   { href: "#policy", icon: ScrollText, label: "Policy" },
   { href: "#payment", icon: SendHorizontal, label: "Payment" },
+  { href: "#split", icon: Split, label: "Split" },
   { href: "#schedule", icon: CalendarClock, label: "Schedule" },
   { href: "#relayer", icon: RadioTower, label: "Relayer" },
 ];
@@ -81,6 +93,15 @@ export function TreasuryConsole({
     endLedger: "0",
     maxExecutions: "1",
     intervalLedgers: "0",
+  });
+  const [splitDraft, setSplitDraft] = useState<SplitDraft>({
+    asset: contracts.staAsset,
+    recipients: [
+      { destination: STELLAR_CONFIG.testRecipient, amount: "1000000" },
+      { destination: "", amount: "" },
+    ],
+    nonce: makeNonce(),
+    expectedPolicyVersion: 1,
   });
 
   const snapshotQuery = useTreasurySnapshot(wallet.address, contracts);
@@ -142,6 +163,7 @@ export function TreasuryConsole({
     if (syncedPolicyVersionAddressRef.current === wallet.address) return;
     syncedPolicyVersionAddressRef.current = wallet.address;
     setPaymentDraft((draft) => ({ ...draft, expectedPolicyVersion: policyVersion }));
+    setSplitDraft((draft) => ({ ...draft, expectedPolicyVersion: policyVersion }));
     setScheduleDraft((draft) => {
       const next = { ...draft, expectedPolicyVersion: policyVersion };
       if (draft.startLedger === "0" && draft.endLedger === "0") {
@@ -283,6 +305,8 @@ export function TreasuryConsole({
 
         <SignersSection contracts={contracts} onNotice={setNotice} wallet={wallet} />
 
+        <GuardiansSection contracts={contracts} onNotice={setNotice} wallet={wallet} />
+
         <PolicySection contracts={contracts} onNotice={setNotice} wallet={wallet} />
 
         <section className="grid grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)] gap-5 max-xl:grid-cols-1">
@@ -303,6 +327,14 @@ export function TreasuryConsole({
             rules={rules}
           />
         </section>
+
+        <SplitSection
+          contracts={contracts}
+          draft={splitDraft}
+          onDraftChange={setSplitDraft}
+          onNotice={setNotice}
+          wallet={wallet}
+        />
 
         <ScheduleSection
           contracts={contracts}
