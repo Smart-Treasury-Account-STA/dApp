@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Address, xdr } from "@stellar/stellar-sdk";
 
-import { findEvent, parseContractEvent, parseContractEvents } from "@/lib/contractEvents";
+import { findEvent, parseContractEvent, parseContractEvents } from "@/lib/staSdk/events";
 
 const ASSET = "CCOUVA654JH2V6B7LNTKHJP5DF3QA553RS2IIWXSGPDFH2N3QILIVU5L";
 const DESTINATION = "GAK3XILRBYBMBOCZMSLL2CLR6WPQLEIOC6ZCYYPTE4OIAX3PCFFO2YMU";

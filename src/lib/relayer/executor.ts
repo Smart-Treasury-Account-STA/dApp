@@ -15,7 +15,7 @@ import { Buffer } from "buffer";
 import { STELLAR_CONFIG } from "@/config";
 import type { ContractSet } from "@/lib/env";
 import { getRelayerJob, listRelayerJobs, updateRelayerJob } from "@/lib/relayer/store";
-import { findEvent, parseContractEvents } from "@/lib/contractEvents";
+import { findEvent, parseContractEvents } from "@/lib/staSdk/events";
 import { addressCredentialsEntry, contractInvocation, randomAuthNonce } from "@/lib/stellarClient";
 import { getTreasury, toContractSet } from "@/lib/treasuryRegistry/store";
 import type {

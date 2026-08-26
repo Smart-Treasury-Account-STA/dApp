@@ -89,7 +89,7 @@ export type TransactionReceipt = {
   latestLedger?: number;
   /** This operation's contract events, when the poll reached a terminal
    * SUCCESS/FAILED status (absent while still pending/NOT_FOUND). Decode
-   * with `parseContractEvents` from `@/lib/contractEvents`. */
+   * with `parseContractEvents` from `@/lib/staSdk/events`. */
   events?: xdr.ContractEvent[];
 };
 

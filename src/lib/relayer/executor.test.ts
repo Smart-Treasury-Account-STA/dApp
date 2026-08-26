@@ -75,7 +75,7 @@ vi.mock("@/lib/stellarClient", () => ({
 }));
 
 const findEventMock = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/contractEvents", () => ({
+vi.mock("@/lib/staSdk/events", () => ({
   parseContractEvents: vi.fn((events: unknown) => events),
   findEvent: findEventMock,
 }));
