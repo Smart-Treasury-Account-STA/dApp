@@ -15,11 +15,11 @@ this system are explained in full in §3.
 
 - **Framework**: Next.js 16 (App Router), TypeScript strict mode.
 - **Wallet connectivity**: Stellar Wallets Kit (`@creit.tech/stellar-wallets-kit`), Freighter and xBull, via `src/lib/wallet.ts` and `src/providers/wallet-provider.tsx`.
-- **Chain interaction**: `@stellar/stellar-sdk ^16.2.0`, hand-built XDR construction throughout (`src/lib/stellarClient.ts`) — no generated per-contract client bindings, deliberately (see `src/lib/staSdk/README.md`).
+- **Chain interaction**: `@stellar/stellar-sdk ^16.2.0`, hand-built XDR construction throughout (`src/lib/stellarClient.ts`) — no generated per-contract client bindings, deliberately (see the `sta-sdk` package's README).
 - **Contracts**: seven Soroban packages — `account_factory`, `smart_account`, `policy_engine`, `intent_registry`, `recovery_manager`, `transfer_adapter`, `split_adapter` — plus the shared, stateless `webauthn_verifier` (not used by this dApp; passkey signers are out of scope).
 - **Relayer**: a self-operated Node service (`src/lib/relayer/`, `src/app/api/relayer/*`, `scripts/run-relayer.mjs`) that executes scheduled payments on behalf of every treasury it's configured as executor for.
 - **Treasury registry**: an off-chain store (`src/lib/treasuryRegistry/`) recording which contract addresses belong to which deployed treasury — the only record of this mapping, since no on-chain getter exposes a `smart_account`'s pinned sub-contract addresses (see §2.2).
-- **Vendored SDK**: `src/lib/staSdk/` — a standalone port of the smart-contracts repo's own TypeScript SDK; see its own README for what it is and why it's vendored rather than depended on.
+- **SDK**: `sta-sdk` (npm) — auth-entry construction, transaction preparation, typed event parsing, and typed state reads for the Smart Treasury Account contracts. This dApp depends on it rather than keeping a private copy; only `parseContractEvents`/`findEvent` (event decoding) are actually wired into live code paths today.
 
 Every treasury-aware function and component in this dApp takes an optional
 `contracts: ContractSet` parameter (default: the single env-configured
@@ -118,8 +118,8 @@ funds.
 
 Both flows: policy pre-check → nonce freshness check → wallet approval
 (Entry A/B, §3.4) → submit → poll to a terminal status → decoded event
-summary (`TransferPaid`/`SplitPaid`) in the resulting toast, via the
-vendored `src/lib/staSdk/events.ts`.
+summary (`TransferPaid`/`SplitPaid`) in the resulting toast, via
+`sta-sdk`'s `events` module.
 
 ### 2.6 Scheduled payments
 
@@ -289,9 +289,9 @@ Any call that does `env.current_contract_address().require_auth()` needs
   `auth_digest = sha256(signature_payload || context_rule_ids.to_xdr())`.
 
 Built in `src/lib/stellarClient.ts` (the code actually used by every
-component) and, faithfully, in `src/lib/staSdk/auth.ts` (the vendored SDK
-reference — see that module's own doc comment for the one deliberate
-difference from the upstream SDK).
+component) and, equivalently, in `sta-sdk`'s `auth` module (see that
+module's own doc comment for why it hand-encodes rather than depending on
+generated contract bindings).
 
 Discovering exactly which invocation nodes need this (a plain transfer is
 one node; one that moves an SAC token is two, since the SAC's own
@@ -320,7 +320,7 @@ covers a `require_auth()` at the *root* of the invocation tree. This
 needs its own explicit, signed classic-account entry, rooted directly at
 `mark_child_executed` — confirmed against live testnet failures when
 this was missing; see `src/lib/relayer/executor.ts`'s own comment on the
-fix, and `src/lib/staSdk/auth.ts`'s `buildExecutorAuthEntry`.
+fix, and `sta-sdk`'s `buildExecutorAuthEntry` (in its `auth` module).
 
 ## 5. Relayer architecture
 
@@ -348,10 +348,10 @@ two different treasuries can otherwise pick colliding random intent ids.
 |---|---|
 | Wallet connection | `src/lib/wallet.ts`, `src/providers/wallet-provider.tsx` |
 | Low-level chain calls (the code actually used) | `src/lib/stellarClient.ts`, `src/lib/treasuryWrites.ts`, `src/lib/writeAuth.ts` |
-| Vendored SDK reference | `src/lib/staSdk/` (see its own README) |
+| SDK (npm dependency, not vendored) | `sta-sdk` — see its own README |
 | Treasury deploy | `src/lib/deployAccount.ts`, `src/app/treasuries/page.tsx` |
 | Treasury registry | `src/lib/treasuryRegistry/`, `src/app/api/treasuries/` |
 | Per-treasury console | `src/features/treasury/treasury-console.tsx` and `src/features/treasury/components/*` |
 | Relayer | `src/lib/relayer/`, `src/app/api/relayer/*`, `scripts/run-relayer.mjs` |
-| Event decoding | `src/lib/staSdk/events.ts`, `src/lib/receipt.ts` |
+| Event decoding | `sta-sdk`'s `events` module, `src/lib/receipt.ts` |
 | Config | `src/config.ts`, `src/lib/env.ts` (env-var-driven, what the app actually runs on) |

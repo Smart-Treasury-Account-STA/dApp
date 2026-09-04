@@ -1,4 +1,4 @@
-import { findEvent, parseContractEvents } from "@/lib/staSdk/events";
+import { findEvent, parseContractEvents } from "sta-sdk";
 import type { SimulationResult, TransactionReceipt } from "@/types";
 
 export type ReceiptLabels = {

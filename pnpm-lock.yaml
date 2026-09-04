@@ -47,6 +47,9 @@ importers:
       sonner:
         specifier: ^2.0.8
         version: 2.0.8(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      sta-sdk:
+        specifier: ^0.1.0
+        version: 0.1.0(@stellar/stellar-sdk@16.2.0(debug@4.4.3(supports-color@7.2.0))(supports-color@7.2.0))
       tailwind-merge:
         specifier: ^2.5.5
         version: 2.6.1
@@ -2612,6 +2615,7 @@ packages:
   eslint@9.39.5:
     resolution: {integrity: sha512-DgZS62aPLXKlnxILS/AYCoRvHaZeXceIzlXPkkGGzJWSow1aEk0lbTlxUSlyjC8jcaKxAdOnTDz+o1JFSBsyjw==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'
@@ -3879,6 +3883,12 @@ packages:
   split2@4.2.0:
     resolution: {integrity: sha512-UcjcJOWknrNkF6PLX83qcHM6KHgVKNkV62Y8a5uYDVv9ydGQVwAHMKqHdJje1VTWpljG0WYpCDhrCdAOYH4TWg==}
     engines: {node: '>= 10.x'}
+
+  sta-sdk@0.1.0:
+    resolution: {integrity: sha512-O2sPjWM5r94RxR7UYh/x46Wa9bwEjQDMGHdzanoc4D8L+jft8/LSxfFBv6iw4l4FgRp8w2Y0AzPADo44E3ATJQ==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@stellar/stellar-sdk': '>=16.0.0'
 
   stable-hash@0.0.5:
     resolution: {integrity: sha512-+L3ccpzibovGXFK+Ap/f8LOS0ahMrHTf3xu7mMLSpEGU0EO9ucaysSylKo9eRDFNhWve/y275iPmIZ4z39a9iA==}
@@ -9026,6 +9036,10 @@ snapshots:
   split-on-first@1.1.0: {}
 
   split2@4.2.0: {}
+
+  sta-sdk@0.1.0(@stellar/stellar-sdk@16.2.0(debug@4.4.3(supports-color@7.2.0))(supports-color@7.2.0)):
+    dependencies:
+      '@stellar/stellar-sdk': 16.2.0(debug@4.4.3(supports-color@7.2.0))(supports-color@7.2.0)
 
   stable-hash@0.0.5: {}
 

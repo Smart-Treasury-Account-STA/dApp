@@ -9,3 +9,5 @@ allowBuilds:
   unrs-resolver: true
   usb: true
   utf-8-validate: true
+minimumReleaseAgeExclude:
+  - sta-sdk@0.1.0
