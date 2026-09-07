@@ -117,3 +117,45 @@ export function explainContractError(message: string) {
   };
   return errors[code] ?? `Contract rejected with code #${code}.`;
 }
+
+/**
+ * Explains a `smart_account` signer/context-rule management error
+ * (OpenZeppelin's `stellar-accounts` `SmartAccountError`, code range
+ * 3000-3016).
+ *
+ * Deliberately a separate map from `explainContractError` above, not an
+ * addition to it: `intent_registry`'s own `IntentRegistryError` (also
+ * documented in the 3000s -- see `DAPP_INTEGRATION_SPEC.md` §10.3) uses
+ * the *same* numeric codes for unrelated meanings (its own `#3007` is
+ * "execution window is not open yet", not "duplicate signer"). Soroban
+ * doesn't enforce error-code uniqueness across contracts, so a single
+ * flat code->message map applied regardless of which contract raised the
+ * error would silently show the wrong explanation. Call this only for
+ * errors from signer/context-rule calls (`add_signer`, `remove_signer`,
+ * `add_context_rule`, ...); use `explainContractError` for payment/
+ * policy/schedule calls.
+ */
+export function explainSmartAccountError(message: string) {
+  const match = message.match(/#(\d{4})/);
+  if (!match) return null;
+  const code = Number(match[1]);
+  const errors: Record<number, string> = {
+    3000: "That context rule does not exist.",
+    3002: "This context could not be validated against any rule.",
+    3003: "External signer verification failed.",
+    3004: "A rule needs at least one signer or one policy — this would leave it with neither.",
+    3005: "That rule's valid-until ledger is already in the past.",
+    3006: "That signer is not part of this rule.",
+    3007: "That address is already a signer on this rule.",
+    3008: "That policy is not attached to this rule.",
+    3009: "That policy is already attached to this rule.",
+    3010: "This rule already has the maximum number of signers.",
+    3011: "This rule already has the maximum number of policies.",
+    3012: "An internal counter for this rule has reached its maximum value.",
+    3013: "That signer's key data is too large.",
+    3014: "Internal error: context_rule_ids length mismatch.",
+    3015: "That name is too long.",
+    3016: "That signer is not authorized for any selected context rule.",
+  };
+  return errors[code] ?? `Contract rejected with code #${code}.`;
+}

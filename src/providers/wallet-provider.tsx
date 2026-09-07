@@ -1,10 +1,22 @@
 "use client";
 
-import { createContext, useCallback, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
-import { connectWallet as connectWalletImpl, disconnectWallet as disconnectWalletImpl } from "@/lib/wallet";
+import {
+  connectWallet as connectWalletImpl,
+  disconnectWallet as disconnectWalletImpl,
+  getConnectedAddress,
+} from "@/lib/wallet";
 import type { WalletState } from "@/types";
+
+/** Neither Freighter nor the wallets kit emits an event on account switch,
+ * so this is the only way to notice one happened without a manual
+ * disconnect/reconnect -- see getConnectedAddress's own doc comment. Short
+ * enough that switching accounts in the extension feels responsive; long
+ * enough not to matter for a call this cheap (a local RPC-free read from
+ * the extension itself, not a network round trip). */
+const WALLET_ADDRESS_POLL_MS = 2000;
 
 const initialWallet: WalletState = {
   address: null,
@@ -42,6 +54,23 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     disconnectWalletImpl();
     setWallet(initialWallet);
   }, []);
+
+  // Catches switching accounts in the Freighter extension itself, which
+  // otherwise leaves every section reading a stale wallet.address until a
+  // manual disconnect/reconnect (or a full page reload, which drops the
+  // connection entirely rather than picking up the new account).
+  useEffect(() => {
+    if (!wallet.connected) return;
+
+    const interval = setInterval(async () => {
+      const current = await getConnectedAddress();
+      if (current && current !== wallet.address) {
+        setWallet((prev) => ({ ...prev, address: current }));
+      }
+    }, WALLET_ADDRESS_POLL_MS);
+
+    return () => clearInterval(interval);
+  }, [wallet.connected, wallet.address]);
 
   return (
     <WalletContext.Provider value={{ wallet, connect, disconnect }}>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { describeSimulationFailure } from "./format";
+import { describeSimulationFailure, explainSmartAccountError } from "./format";
 
 describe("describeSimulationFailure", () => {
   it("attributes a contract error code to the contract, with its meaning", () => {
@@ -60,5 +60,29 @@ describe("describeSimulationFailure", () => {
     const result = describeSimulationFailure("Bad union switch: 1");
 
     expect(result.detail).toMatch(/archiv/i);
+  });
+});
+
+describe("explainSmartAccountError", () => {
+  it("resolves #3007 to smart_account's own DuplicateSigner meaning, not intent_registry's collision at the same code", () => {
+    // intent_registry's IntentRegistryError also defines #3007 ("execution
+    // window is not open yet") -- explainContractError's map (scoped to
+    // payment/schedule flows) uses that meaning. This is a *different*
+    // function specifically so a signer-management error never picks up
+    // the wrong contract's explanation for the same numeric code.
+    const message =
+      'HostError: Error(Contract, #3007)\n  ...data:[1, [Delegated, GB2K...]]';
+
+    expect(explainSmartAccountError(message)).toMatch(/already a signer/i);
+  });
+
+  it("falls back to a generic message for a mapped-range code without specific copy", () => {
+    expect(explainSmartAccountError("HostError: Error(Contract, #3001)")).toBe(
+      "Contract rejected with code #3001.",
+    );
+  });
+
+  it("returns null for a message with no contract error code", () => {
+    expect(explainSmartAccountError("Connect a wallet first.")).toBeNull();
   });
 });

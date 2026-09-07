@@ -154,16 +154,24 @@ export async function deployAccount(wallet: WalletSigning): Promise<DeployAccoun
     throw new Error(simulation.error);
   }
 
-  const invocations = selectAllInvocationsForAddress(
-    simulation.result?.auth ?? [],
-    wallet.address,
-  );
-  if (invocations.length === 0) {
+  const rawAuth = simulation.result?.auth ?? [];
+  const invocations = selectAllInvocationsForAddress(rawAuth, wallet.address);
+  if (invocations.length === 0 && rawAuth.length === 0) {
     throw new Error(
       "Simulation recorded no authorization requirement for the connected wallet — account_factory.deploy_account's authorization shape may have changed.",
     );
   }
 
+  // When the connected wallet is both the transaction's source account and
+  // `caller` (always true for this call), Soroban's recording-mode
+  // simulation satisfies every caller.require_auth() node via
+  // source-account credentials rather than explicit Address-credential
+  // entries -- selectAllInvocationsForAddress correctly returns none of
+  // those (see its own doc comment), and `invocations` being empty here is
+  // expected, not an error: the envelope signature below already covers
+  // it. Verified directly against a live testnet simulation of this exact
+  // call (2026-09-07) -- the recorded auth entry's credentials discriminant
+  // is SOROBAN_CREDENTIALS_SOURCE_ACCOUNT (0), not _ADDRESS (1).
   const signedEntries: xdr.SorobanAuthorizationEntry[] = [];
   for (const invocation of invocations) {
     const unsigned = addressCredentialsEntry({

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { disconnectWallet, selectWalletThroughModal, signAuthEntry, signTransaction } from "./wallet";
+import {
+  disconnectWallet,
+  getConnectedAddress,
+  selectWalletThroughModal,
+  signAuthEntry,
+  signTransaction,
+} from "./wallet";
 
 /**
  * Stands in for `StellarWalletsKit`. Its `openModal` reads `this`, exactly as
@@ -51,5 +57,13 @@ describe("disconnectWallet", () => {
     // that sends the operator looking for the wrong problem.
     await expect(signAuthEntry("preimage", "GABC")).rejects.toThrow(/No wallet is connected/i);
     await expect(signTransaction("envelope", "GABC")).rejects.toThrow(/No wallet is connected/i);
+  });
+});
+
+describe("getConnectedAddress", () => {
+  it("returns null rather than throwing when nothing is connected", async () => {
+    disconnectWallet();
+
+    await expect(getConnectedAddress()).resolves.toBeNull();
   });
 });

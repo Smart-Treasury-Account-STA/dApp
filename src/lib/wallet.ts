@@ -125,6 +125,28 @@ export function disconnectWallet() {
   kitHandle = null;
 }
 
+/**
+ * Re-reads the currently connected kit's address, or `null` if nothing is
+ * connected. Neither Freighter nor this kit emits an event when the
+ * extension's selected account changes — switching accounts in Freighter
+ * itself leaves this dApp's cached `wallet.address` stale until something
+ * calls `getAddress()` again. `WalletProvider` polls this to catch that
+ * without requiring a manual disconnect/reconnect. Swallows errors (a
+ * locked or disconnected extension) rather than throwing, since a poll
+ * failing once is not the caller's problem.
+ */
+export async function getConnectedAddress(): Promise<string | null> {
+  if (!kitHandle?.kit) return null;
+  try {
+    const addressResult = await kitHandle.kit.getAddress();
+    return typeof addressResult === "string"
+      ? addressResult
+      : (addressResult.address ?? addressResult.publicKey ?? null);
+  } catch {
+    return null;
+  }
+}
+
 export async function signAuthEntry(preimageXdr: string, address: string) {
   if (!kitHandle?.kit) {
     throw new Error("No wallet is connected.");

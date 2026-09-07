@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { STELLAR_CONFIG } from "@/config";
 import type { ContractSet } from "@/lib/env";
-import { truncateAddress } from "@/lib/format";
+import { explainSmartAccountError, truncateAddress } from "@/lib/format";
 import { describeReceipt } from "@/lib/receipt";
 import { loadSignerId } from "@/lib/stellarClient";
 import { addSignerOperation, removeSignerOperation } from "@/lib/treasuryWrites";
@@ -22,6 +22,16 @@ import {
 import { FormField, SectionHeader } from "@/features/treasury/components/primitives";
 import { useContextRules, useTreasuryAuthority } from "@/features/treasury/queries";
 import type { ContextRule, SimulationResult, WalletState } from "@/types";
+
+/** `add_signer`/`remove_signer` reject with a raw `smart_account`
+ * (SmartAccountError) code -- explainSmartAccountError translates it;
+ * anything else (validation errors like "Connect a wallet first.",
+ * network failures) passes through unchanged since it's already a plain
+ * sentence. */
+function describeSignerError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  return explainSmartAccountError(error.message) ?? error.message;
+}
 
 export function SignersSection({
   contracts = STELLAR_CONFIG.contracts,
@@ -84,7 +94,7 @@ export function SignersSection({
       onNotice({
         ok: false,
         title: "Could not add signer",
-        detail: error instanceof Error ? error.message : String(error),
+        detail: describeSignerError(error),
       });
     },
   });
@@ -116,7 +126,7 @@ export function SignersSection({
       onNotice({
         ok: false,
         title: "Could not revoke signer",
-        detail: error instanceof Error ? error.message : String(error),
+        detail: describeSignerError(error),
       });
       setPendingRemoval(null);
     },

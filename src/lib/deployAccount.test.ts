@@ -165,7 +165,29 @@ describe("deployAccount — multi-entry discovery and signing", () => {
     expect(finalOpCall?.[3]).toHaveLength(6);
   });
 
-  it("throws a clear error when the simulation records zero entries for the caller — a canary if the contract's auth shape changes", async () => {
+  it("proceeds via source-account credentials when the simulation recorded auth but none of it is an explicit Address entry for the caller", async () => {
+    // This is the normal case for deploy_account: the connected wallet is
+    // both the tx source account and `caller`, so Soroban's recording-mode
+    // simulation satisfies every caller.require_auth() node via
+    // source-account credentials (covered by the envelope signature below)
+    // instead of explicit Address-credential entries. selectAllInvocationsForAddress
+    // correctly returns none of those -- see its own doc comment -- but the
+    // raw simulation still recorded real auth, so this must not be treated
+    // as an error.
+    serverMethods.simulateTransaction.mockResolvedValue({ result: { auth: ["source-account-entry"] } });
+    selectAllInvocationsForAddressMock.mockReturnValue([]);
+
+    await deployAccount(wallet);
+
+    expect(addressCredentialsEntryMock).not.toHaveBeenCalled();
+    expect(signDelegatedAuthEntryMock).not.toHaveBeenCalled();
+    const finalOpCall = invokeContractOperationMock.mock.calls.at(-1);
+    expect(finalOpCall?.[3]).toHaveLength(0);
+    expect(submitSignedTransactionMock).toHaveBeenCalled();
+  });
+
+  it("throws a clear error when the simulation records no authorization requirement at all — a canary if the contract's auth shape changes", async () => {
+    serverMethods.simulateTransaction.mockResolvedValue({ result: { auth: [] } });
     selectAllInvocationsForAddressMock.mockReturnValue([]);
 
     await expect(deployAccount(wallet)).rejects.toThrow(/no authorization requirement/i);

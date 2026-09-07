@@ -3,7 +3,7 @@
 import { LogOut, Plus, ShieldCheck, Wallet as WalletIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,7 @@ class RegistrationFailedAfterDeployError extends Error {
 
 export default function TreasuriesPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { wallet, connect, disconnect } = useWallet();
   const treasuriesQuery = useMyTreasuries(wallet.address);
 
@@ -48,6 +49,10 @@ export default function TreasuriesPage() {
       toast.success("Treasury registered", {
         description: `${truncateAddress(treasury.smartAccountId)} is ready to configure.`,
       });
+      // Without this, "My Treasuries" keeps showing its 30s-stale list
+      // (useMyTreasuries' staleTime) until a hard refresh, even though the
+      // new treasury already exists in the registry.
+      queryClient.invalidateQueries({ queryKey: ["treasuries", "mine", wallet.address] });
       router.push(`/treasuries/${treasury.smartAccountId}`);
     },
     onError: (error, input) => {
@@ -87,6 +92,7 @@ export default function TreasuriesPage() {
       toast.success("Treasury deployed", {
         description: `${truncateAddress(treasury.smartAccountId)} is ready to configure.`,
       });
+      queryClient.invalidateQueries({ queryKey: ["treasuries", "mine", wallet.address] });
       router.push(`/treasuries/${treasury.smartAccountId}`);
     },
     onError: (error) => {
