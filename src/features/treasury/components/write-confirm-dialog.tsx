@@ -74,26 +74,18 @@ export function WriteConfirmDialog({
   pending: StagedWrite | null;
   submitting: boolean;
 }) {
-  // Which staged operation the operator has acknowledged the blocks on.
-  // Keyed by operation id rather than a bare boolean so staging a different
-  // write cannot inherit the previous one's acknowledgement, and cleared on
-  // cancel and submit so re-staging the same write asks again.
-  const [acknowledgedId, setAcknowledgedId] = useState<string | null>(null);
+  // Which staged write the operator has acknowledged the blocks on, held by
+  // object identity rather than a boolean or an operation id. Staging always
+  // builds a fresh object, so this resets itself on the next write and on a
+  // retry of the same one, while staying ticked across the re-renders that
+  // happen while the wallet prompt is up -- no effect, and nothing to clear.
+  const [acknowledgedWrite, setAcknowledgedWrite] = useState<StagedWrite | null>(null);
 
   const blocks = pending?.warnings.filter((warning) => warning.severity === "block") ?? [];
-  const acknowledged = pending !== null && acknowledgedId === pending.operation.id;
-
-  function reset() {
-    setAcknowledgedId(null);
-  }
-
-  function handleCancel() {
-    reset();
-    onCancel();
-  }
+  const acknowledged = pending !== null && acknowledgedWrite === pending;
 
   return (
-    <Dialog onOpenChange={(open) => !open && handleCancel()} open={pending !== null}>
+    <Dialog onOpenChange={(open) => !open && onCancel()} open={pending !== null}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Confirm this change</DialogTitle>
@@ -132,9 +124,7 @@ export function WriteConfirmDialog({
             <input
               checked={acknowledged}
               className="mt-0.5 size-4 shrink-0 accent-[hsl(var(--destructive))]"
-              onChange={(event) =>
-                setAcknowledgedId(event.target.checked ? pending.operation.id : null)
-              }
+              onChange={(event) => setAcknowledgedWrite(event.target.checked ? pending : null)}
               type="checkbox"
             />
             <span>
@@ -145,15 +135,12 @@ export function WriteConfirmDialog({
         ) : null}
 
         <DialogFooter>
-          <Button onClick={handleCancel} variant="secondary">
+          <Button onClick={onCancel} variant="secondary">
             Cancel
           </Button>
           <Button
             disabled={!pending || submitting || (blocks.length > 0 && !acknowledged)}
-            onClick={() => {
-              reset();
-              onSubmit();
-            }}
+            onClick={onSubmit}
           >
             {submitting ? "Awaiting wallet…" : "Sign and submit"}
           </Button>

@@ -1,3 +1,4 @@
+import { findAuthorizingPath } from "@/lib/treasurySecurity";
 import type { ContextRule, ExecutionStep, PaymentDraft, WalletState } from "@/types";
 
 export type SmartAccountAuthPlan = {
@@ -12,24 +13,37 @@ export type SmartAccountAuthPlan = {
 /**
  * Picks the context rule to authorize under for a given signer.
  *
+ * This id is written into the AuthPayload (`context_rule_ids` in
+ * `stellarClient.ts`'s `smartAccountAuthPayload`), so the contract validates
+ * against *this* rule and no other. Nothing scans for "some rule that works":
+ * whatever this returns is what the signature is checked against.
+ *
  * A treasury can carry several rules that are all `Default` — the context type
  * does not distinguish them — so matching on the type alone always returns the
  * first one and ignores which rule the connected wallet is actually registered
  * in. That silently builds an AuthPayload pinned to a rule the signer is not
  * part of, which the contract then refuses.
  *
- * The signer's own rule wins. The type-then-first fallback is kept for the
- * disconnected case, so the UI still has a rule to describe.
+ * Among the signer's own rules, one this wallet can satisfy alone wins, then
+ * one whose policy might accept a single signature, and only then one that
+ * provably needs co-signers. Order matters because this dApp submits exactly
+ * one authorization entry: picking the first listed match instead would pin a
+ * wallet to a two-signer rule and guarantee a rejection while a working rule
+ * sat right next to it. The ranking is `findAuthorizingPath`'s, deliberately —
+ * `collectWriteWarnings` warns about the rule chosen here, so the two must
+ * agree or the dialog names a rule the submission does not use.
+ *
+ * The type-then-first fallback is kept for the disconnected case, and for a
+ * wallet on no readable rule, so the UI still has a rule to describe.
  */
 export function selectRuleForSigner(
   rules: ContextRule[],
   signerAddress: string | null,
 ): ContextRule | null {
-  if (signerAddress) {
-    const owned = rules.find((rule) => rule.signerAddresses.includes(signerAddress));
-    if (owned) {
-      return owned;
-    }
+  const path = findAuthorizingPath(rules, signerAddress);
+  const owned = path.soleSignerRule ?? path.policyGatedRules[0] ?? path.rules[0];
+  if (owned) {
+    return owned;
   }
 
   return (

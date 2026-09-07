@@ -128,19 +128,18 @@ export function collectWriteWarnings(
     const path = findAuthorizingPath(context.allRules, context.connectedAddress);
 
     if (path.rules.length > 0 && path.soleSignerRule === null) {
-      const ruleList = path.rules
-        .map((rule) => `${rule.id} · ${rule.name}`)
-        .join(", ");
+      const many = path.rules.length > 1;
+      const ruleList = path.rules.map((rule) => `${rule.id} · ${rule.name}`).join(", ");
 
       warnings.push(
         path.blocked
           ? {
               severity: "block",
-              message: `This wallet is only registered on rule ${ruleList}, which requires every one of its signers to co-sign. This dApp submits one signature per transaction, so this write will be rejected on-chain (#3002) after you sign it. Collect the other signatures outside this dApp, or attach a threshold policy to that rule first.`,
-              }
+              message: `This wallet is only registered on ${many ? "rules" : "rule"} ${ruleList}, ${many ? "each of which requires" : "which requires"} every one of its signers to co-sign. This dApp submits one signature per transaction, so this write will be rejected on-chain (#3002) after you sign it. Collect the other signatures outside this dApp, or attach a threshold policy first.`,
+            }
           : {
               severity: "warn",
-              message: `No rule this wallet is on is satisfiable by one signature outright. Rule ${ruleList} defers to an attached policy whose threshold this dApp cannot read: if that policy needs more than one signature, this write will be rejected on-chain after you sign it.`,
+              message: `No rule this wallet is on is satisfiable by one signature outright. ${many ? "Rules" : "Rule"} ${ruleList} ${many ? "defer to attached policies whose thresholds" : "defers to an attached policy whose threshold"} this dApp cannot read: if more than one signature is needed, this write will be rejected on-chain after you sign it.`,
             },
       );
     }

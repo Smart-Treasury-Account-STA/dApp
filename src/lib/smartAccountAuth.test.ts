@@ -47,6 +47,34 @@ describe("selectRuleForSigner", () => {
     const rules = [rule(0, "root", [DEPLOYER]), rule(7, "ops", [DEV])];
     expect(selectRuleForSigner(rules, DEV)?.id).toBe(7);
   });
+
+  it("prefers a rule this wallet can satisfy alone over an earlier one needing co-signers", () => {
+    // Both list DEV, so "first match" would pin the AuthPayload to rule 0,
+    // which needs DEPLOYER to co-sign as well -- a guaranteed on-chain
+    // rejection while rule 1 would have gone through on one signature.
+    const rules = [rule(0, "shared", [DEV, DEPLOYER]), rule(1, "solo", [DEV])];
+
+    expect(selectRuleForSigner(rules, DEV)?.id).toBe(1);
+  });
+
+  it("prefers a policy-gated rule over one that provably needs co-signers", () => {
+    // The policy's threshold is unreadable here and could well be 1-of-N,
+    // so "might work" beats "cannot work with one signature".
+    const rules = [
+      rule(0, "shared", [DEV, DEPLOYER]),
+      { ...rule(1, "gated", [DEV, DEPLOYER]), policyCount: 1 },
+    ];
+
+    expect(selectRuleForSigner(rules, DEV)?.id).toBe(1);
+  });
+
+  it("still returns the wallet's only rule when none of them is satisfiable alone", () => {
+    // Nothing better exists. The pre-flight in collectWriteWarnings is what
+    // warns about this; selection must not invent a rule the wallet is not on.
+    const rules = [rule(0, "root", [DEPLOYER]), rule(1, "shared", [DEV, DEPLOYER])];
+
+    expect(selectRuleForSigner(rules, DEV)?.id).toBe(1);
+  });
 });
 
 describe("buildTransferAuthPlan", () => {
