@@ -94,7 +94,7 @@ export function collectWriteWarnings(
     const { name, signerCount, signerAddresses } = context.targetRule;
     warnings.push({
       severity: "warn",
-      message: `This removes rule "${name}" entirely, along with all ${signerCount} of its signer${signerCount === 1 ? "" : "s"}' access through it.`,
+      message: `This removes rule "${name}" entirely, along with ${signerCount === 1 ? "its signer's" : `all ${signerCount} of its signers'`} access through it.`,
     });
     if (
       context.connectedAddress !== null &&

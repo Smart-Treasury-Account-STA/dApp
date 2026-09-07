@@ -82,6 +82,12 @@ export function SignersSection({
   // rule it is, and what it requires, is the whole question when a write is
   // about to be rejected for needing co-signatures.
   const authorizingPath = findAuthorizingPath(rules, wallet.address);
+  // Every write in this section is a smart_account call authorized through one
+  // of the wallet's own context rules. A wallet on none of them cannot sign any
+  // of them, and `executeCustomAccountWrite` refuses outright ("Connected
+  // wallet is not a delegated signer on any SmartAccount context rule") -- so
+  // the controls are replaced by the reason rather than offered and rejected.
+  const canWrite = authorizingPath.rules.length > 0;
   const authorizingDescription = authorizingPath.soleSignerRule
     ? `Signed via the SmartAccount authorization entry, through rule ${authorizingPath.soleSignerRule.id} · ${authorizingPath.soleSignerRule.name}, where this wallet is the only signer.`
     : authorizingPath.rules.length > 0
@@ -269,7 +275,7 @@ export function SignersSection({
                   </strong>
                   <span className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground">{rule.contextType}</span>
-                    {ruleBlock ? (
+                    {!canWrite ? null : ruleBlock ? (
                       // Short label, full reason on hover: the rule-level and
                       // signer-level blocks end in the same sentence, and a
                       // fresh one-rule/one-signer treasury hits both at once,
@@ -284,7 +290,6 @@ export function SignersSection({
                         disabled={stageMutation.isPending}
                         onClick={() => stageRuleRemoval(rule)}
                         size="sm"
-                        variant="ghost"
                       >
                         Remove this rule
                       </Button>
@@ -317,7 +322,7 @@ export function SignersSection({
                               <span className="text-xs text-muted-foreground">(this wallet)</span>
                             ) : null}
                           </span>
-                          {block ? (
+                          {!canWrite ? null : block ? (
                             // Short label, full reason on hover -- see the
                             // rule-level block above. `index` comes from this
                             // rule's own signer list, so the only reachable
@@ -352,110 +357,130 @@ export function SignersSection({
             );
           })}
 
-          <div className="mt-6 rounded-lg border border-dashed border-border p-4">
-            <strong className="text-sm">Create a new, independent rule</strong>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Not a helper or a limited role: this signer gets full, independent power over this
-              treasury, equal to every other rule&apos;s signers — because any one satisfied rule
-              authorizes anything. This treasury becomes only as secure as this new rule. Use this
-              only when you want a genuinely separate, co-equal path to control (e.g. a second
-              team with its own key) — not to add a backup signer to an existing rule (use &ldquo;Add
-              signer&rdquo; below for that).
-            </p>
-            <div className="mt-3 grid gap-3">
-              <FormField label="Rule name" onChange={setNewRuleName} value={newRuleName} />
-              <FormField label="Signer address" onChange={setNewRuleSigner} value={newRuleSigner} />
-              <Button
-                onClick={() => {
-                  try {
-                    validateContextRuleDraft({ name: newRuleName, signerAddress: newRuleSigner });
-                    stageMutation.mutate({
-                      operation: addContextRuleOperation({
-                        name: newRuleName,
-                        signerAddress: newRuleSigner,
-                        contracts,
-                      }),
-                    });
-                  } catch (error) {
-                    onNotice({
-                      ok: false,
-                      title: "Invalid input",
-                      detail: error instanceof Error ? error.message : String(error),
-                    });
-                  }
-                }}
-                disabled={
-                  stageMutation.isPending || newRuleName.length === 0 || newRuleSigner.length === 0
-                }
-              >
-                <Plus className="size-4" />
-                Create rule
-              </Button>
+          {!canWrite ? (
+            <div className="mt-6 rounded-lg border border-border bg-secondary p-4 text-sm">
+              <strong>This wallet cannot change this treasury&apos;s signers.</strong>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {truncateAddress(wallet.address)} is not a delegated signer on any context rule
+                above, so the SmartAccount rejects every write from it. Connect a wallet
+                registered on{" "}
+                {rules.map((rule, index) => (
+                  <span key={rule.id}>
+                    {index > 0 ? (index === rules.length - 1 ? " or " : ", ") : null}
+                    rule {rule.id} · {rule.name}
+                  </span>
+                ))}{" "}
+                to make changes here. The rules above stay readable either way.
+              </p>
             </div>
-          </div>
+          ) : (
+            <>
+              <div className="mt-6 rounded-lg border border-dashed border-border p-4">
+                <strong className="text-sm">Create a new, independent rule</strong>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Not a helper or a limited role: this signer gets full, independent power over this
+                  treasury, equal to every other rule&apos;s signers — because any one satisfied rule
+                  authorizes anything. This treasury becomes only as secure as this new rule. Use this
+                  only when you want a genuinely separate, co-equal path to control (e.g. a second
+                  team with its own key) — not to add a backup signer to an existing rule (use &ldquo;Add
+                  signer&rdquo; below for that).
+                </p>
+                <div className="mt-3 grid gap-3">
+                  <FormField label="Rule name" onChange={setNewRuleName} value={newRuleName} />
+                  <FormField label="Signer address" onChange={setNewRuleSigner} value={newRuleSigner} />
+                  <Button
+                    onClick={() => {
+                      try {
+                        validateContextRuleDraft({ name: newRuleName, signerAddress: newRuleSigner });
+                        stageMutation.mutate({
+                          operation: addContextRuleOperation({
+                            name: newRuleName,
+                            signerAddress: newRuleSigner,
+                            contracts,
+                          }),
+                        });
+                      } catch (error) {
+                        onNotice({
+                          ok: false,
+                          title: "Invalid input",
+                          detail: error instanceof Error ? error.message : String(error),
+                        });
+                      }
+                    }}
+                    disabled={
+                      stageMutation.isPending || newRuleName.length === 0 || newRuleSigner.length === 0
+                    }
+                  >
+                    <Plus className="size-4" />
+                    Create rule
+                  </Button>
+                </div>
+              </div>
 
-          <div className="mt-6 grid gap-3">
-            <strong className="text-sm">Add signer to an existing rule</strong>
-            <p className="text-xs text-muted-foreground">
-              Gives this signer whatever role that rule already grants — a co-signer, not a new
-              independent power. To grant full, independent control instead, use &ldquo;Create a
-              new, independent rule&rdquo; above.
-            </p>
-            <div className="grid gap-2">
-              <Label>Context rule</Label>
-              <Select
-                value={targetRule ? String(targetRule.id) : ""}
-                onChange={(event) => setSelectedRuleId(Number(event.target.value))}
-                disabled={rules.length === 0}
-              >
-                {rules.length === 0 ? <option value="">No context rule is loaded yet.</option> : null}
-                {rules.map((rule) => (
-                  <option key={rule.id} value={rule.id}>
-                    Rule {rule.id} · {rule.name} ({rule.signerCount} signer
-                    {rule.signerCount === 1 ? "" : "s"})
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <FormField
-              label="New delegated signer"
-              onChange={setSignerAddress}
-              value={signerAddress}
-            />
-            <Button
-              onClick={() => {
-                try {
-                  validateSignerDraft({ signerAddress });
-                  if (!targetRule) throw new Error("No context rule is available.");
-                  stageMutation.mutate({
-                    operation: addSignerOperation({
-                      contextRuleId: targetRule.id,
-                      signerAddress,
-                      contracts,
-                    }),
-                    targetRule,
-                  });
-                } catch (error) {
-                  onNotice({
-                    ok: false,
-                    title: "Invalid input",
-                    detail: error instanceof Error ? error.message : String(error),
-                  });
-                }
-              }}
-              disabled={stageMutation.isPending || signerAddress.length === 0 || !targetRule}
-            >
-              {stageMutation.isPending ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <UserPlus className="size-4" />
-              )}
-              {stageMutation.isPending ? "Checking…" : "Add signer"}
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              Simulation cannot confirm authorization. The wallet signature is what proves it.
-            </p>
-          </div>
+              <div className="mt-6 grid gap-3">
+                <strong className="text-sm">Add signer to an existing rule</strong>
+                <p className="text-xs text-muted-foreground">
+                  Gives this signer whatever role that rule already grants — a co-signer, not a new
+                  independent power. To grant full, independent control instead, use &ldquo;Create a
+                  new, independent rule&rdquo; above.
+                </p>
+                <div className="grid gap-2">
+                  <Label>Context rule</Label>
+                  <Select
+                    value={targetRule ? String(targetRule.id) : ""}
+                    onChange={(event) => setSelectedRuleId(Number(event.target.value))}
+                    disabled={rules.length === 0}
+                  >
+                    {rules.length === 0 ? <option value="">No context rule is loaded yet.</option> : null}
+                    {rules.map((rule) => (
+                      <option key={rule.id} value={rule.id}>
+                        Rule {rule.id} · {rule.name} ({rule.signerCount} signer
+                        {rule.signerCount === 1 ? "" : "s"})
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <FormField
+                  label="New delegated signer"
+                  onChange={setSignerAddress}
+                  value={signerAddress}
+                />
+                <Button
+                  onClick={() => {
+                    try {
+                      validateSignerDraft({ signerAddress });
+                      if (!targetRule) throw new Error("No context rule is available.");
+                      stageMutation.mutate({
+                        operation: addSignerOperation({
+                          contextRuleId: targetRule.id,
+                          signerAddress,
+                          contracts,
+                        }),
+                        targetRule,
+                      });
+                    } catch (error) {
+                      onNotice({
+                        ok: false,
+                        title: "Invalid input",
+                        detail: error instanceof Error ? error.message : String(error),
+                      });
+                    }
+                  }}
+                  disabled={stageMutation.isPending || signerAddress.length === 0 || !targetRule}
+                >
+                  {stageMutation.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <UserPlus className="size-4" />
+                  )}
+                  {stageMutation.isPending ? "Checking…" : "Add signer"}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Simulation cannot confirm authorization. The wallet signature is what proves it.
+                </p>
+              </div>
+            </>
+          )}
 
           <WriteConfirmDialog
             description={authorizingDescription}
