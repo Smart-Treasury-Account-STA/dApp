@@ -1,22 +1,41 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-
 import { StrKey } from "@stellar/stellar-sdk";
 
+import { query, toIsoString } from "@/lib/db";
 import type { CreateTreasuryInput, TreasuryRecord } from "@/lib/treasuryRegistry/types";
 
 export { toContractSet } from "@/lib/treasuryRegistry/types";
 
-type TreasuryStoreFile = {
-  treasuries: TreasuryRecord[];
+const TX_HASH_PATTERN = /^[0-9a-fA-F]{64}$/;
+
+const COLUMNS = `smart_account_id, policy_engine_id, intent_registry_id, recovery_manager_id,
+    transfer_adapter_id, split_adapter_id, owner_address, executor_address, deploy_tx_hash, created_at`;
+
+type TreasuryRow = {
+  smart_account_id: string;
+  policy_engine_id: string;
+  intent_registry_id: string;
+  recovery_manager_id: string;
+  transfer_adapter_id: string;
+  split_adapter_id: string;
+  owner_address: string;
+  executor_address: string;
+  deploy_tx_hash: string;
+  created_at: unknown;
 };
 
-const TX_HASH_PATTERN = /^[0-9a-fA-F]{64}$/;
-const STORE_DIR = ".treasuries";
-const STORE_FILE = ".treasuries/treasuries.json";
-let writeQueue = Promise.resolve();
-
-function storePath() {
-  return STORE_FILE;
+function toRecord(row: TreasuryRow): TreasuryRecord {
+  return {
+    smartAccountId: row.smart_account_id,
+    policyEngineId: row.policy_engine_id,
+    intentRegistryId: row.intent_registry_id,
+    recoveryManagerId: row.recovery_manager_id,
+    transferAdapterId: row.transfer_adapter_id,
+    splitAdapterId: row.split_adapter_id,
+    ownerAddress: row.owner_address,
+    executorAddress: row.executor_address,
+    deployTxHash: row.deploy_tx_hash,
+    createdAt: toIsoString(row.created_at),
+  };
 }
 
 export function validateCreateTreasuryInput(input: CreateTreasuryInput) {
@@ -49,59 +68,27 @@ export function validateCreateTreasuryInput(input: CreateTreasuryInput) {
   }
 }
 
-async function readStore(): Promise<TreasuryStoreFile> {
-  try {
-    const raw = await readFile(storePath(), "utf8");
-    const parsed = JSON.parse(raw) as Partial<TreasuryStoreFile>;
-    return { treasuries: Array.isArray(parsed.treasuries) ? parsed.treasuries : [] };
-  } catch (error) {
-    if (
-      error &&
-      typeof error === "object" &&
-      "code" in error &&
-      error.code === "ENOENT"
-    ) {
-      return { treasuries: [] };
-    }
-    throw error;
-  }
-}
-
-async function writeStore(store: TreasuryStoreFile) {
-  const target = storePath();
-  await mkdir(STORE_DIR, { recursive: true });
-  const temp = `${target}.${process.pid}.${Date.now()}.tmp`;
-  await writeFile(temp, `${JSON.stringify(store, null, 2)}\n`, "utf8");
-  await rename(temp, target);
-}
-
-async function mutateStore<T>(mutate: (store: TreasuryStoreFile) => Promise<T> | T) {
-  const run = writeQueue.then(async () => {
-    const store = await readStore();
-    const result = await mutate(store);
-    await writeStore(store);
-    return result;
-  });
-  writeQueue = run.then(
-    () => undefined,
-    () => undefined,
-  );
-  return run;
-}
-
 export async function listTreasuries() {
-  const store = await readStore();
-  return [...store.treasuries].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const rows = await query<TreasuryRow>(
+    `SELECT ${COLUMNS} FROM treasuries ORDER BY created_at DESC`,
+  );
+  return rows.map(toRecord);
 }
 
 export async function listTreasuriesByOwner(ownerAddress: string) {
-  const treasuries = await listTreasuries();
-  return treasuries.filter((treasury) => treasury.ownerAddress === ownerAddress);
+  const rows = await query<TreasuryRow>(
+    `SELECT ${COLUMNS} FROM treasuries WHERE owner_address = $1 ORDER BY created_at DESC`,
+    [ownerAddress],
+  );
+  return rows.map(toRecord);
 }
 
 export async function getTreasury(smartAccountId: string) {
-  const store = await readStore();
-  return store.treasuries.find((treasury) => treasury.smartAccountId === smartAccountId) ?? null;
+  const rows = await query<TreasuryRow>(
+    `SELECT ${COLUMNS} FROM treasuries WHERE smart_account_id = $1`,
+    [smartAccountId],
+  );
+  return rows.length > 0 ? toRecord(rows[0]) : null;
 }
 
 /**
@@ -154,22 +141,44 @@ function recordsMatch(a: TreasuryRecord, b: CreateTreasuryInput): boolean {
 export async function createTreasury(input: CreateTreasuryInput) {
   validateCreateTreasuryInput(input);
 
-  return mutateStore((store) => {
-    const existing = store.treasuries.find(
-      (treasury) => treasury.smartAccountId === input.smartAccountId,
-    );
-    if (existing) {
-      if (!recordsMatch(existing, input)) {
-        throw new TreasuryConflictError(input.smartAccountId);
-      }
-      return existing;
-    }
+  // `ON CONFLICT DO NOTHING` is what closes the registration race the class
+  // doc above describes: the primary key decides a single winner inside one
+  // statement, so a fabricated claim and the legitimate deployer's own call
+  // can no longer both believe they wrote the row. An empty result means this
+  // caller lost -- read the winner and let `recordsMatch` decide whether that
+  // is an ordinary idempotent retry or a genuine disagreement.
+  const inserted = await query<TreasuryRow>(
+    `INSERT INTO treasuries (${COLUMNS})
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+     ON CONFLICT (smart_account_id) DO NOTHING
+     RETURNING ${COLUMNS}`,
+    [
+      input.smartAccountId,
+      input.policyEngineId,
+      input.intentRegistryId,
+      input.recoveryManagerId,
+      input.transferAdapterId,
+      input.splitAdapterId,
+      input.ownerAddress,
+      input.executorAddress,
+      input.deployTxHash,
+    ],
+  );
 
-    const record: TreasuryRecord = {
-      ...input,
-      createdAt: new Date().toISOString(),
-    };
-    store.treasuries.push(record);
-    return record;
-  });
+  if (inserted.length > 0) {
+    return toRecord(inserted[0]);
+  }
+
+  const existing = await getTreasury(input.smartAccountId);
+  if (!existing) {
+    // The row existed for the INSERT and is gone for this SELECT: only a
+    // concurrent delete does that, and nothing in this app deletes treasuries.
+    throw new Error(
+      `Treasury ${input.smartAccountId} could not be registered or read back.`,
+    );
+  }
+  if (!recordsMatch(existing, input)) {
+    throw new TreasuryConflictError(input.smartAccountId);
+  }
+  return existing;
 }

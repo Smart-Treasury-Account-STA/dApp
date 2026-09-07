@@ -1,26 +1,91 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const fsState = vi.hoisted(() => ({ file: null as string | null }));
+/**
+ * Postgres double at the `@/lib/db` seam -- see the equivalent in
+ * `treasuryRegistry/store.test.ts`. Reproduces the composite-key conflict on
+ * INSERT and the optimistic `version` check on UPDATE, which is what the
+ * compound-key and idempotency assertions below actually exercise.
+ */
+const dbState = vi.hoisted(() => ({ rows: [] as Record<string, unknown>[] }));
 
-vi.mock("node:fs/promises", () => ({
-  mkdir: vi.fn(async () => undefined),
-  readFile: vi.fn(async () => {
-    if (fsState.file === null) {
-      const error = new Error("ENOENT") as NodeJS.ErrnoException;
-      error.code = "ENOENT";
-      throw error;
+vi.mock("@/lib/db", () => ({
+  toIsoString: (value: unknown) =>
+    value instanceof Date ? value.toISOString() : String(value),
+  query: vi.fn(async (text: string, params: unknown[] = []) => {
+    const find = (smartAccountId: unknown, intentId: unknown) =>
+      dbState.rows.find(
+        (row) => row.smart_account_id === smartAccountId && row.intent_id === intentId,
+      );
+
+    if (text.includes("INSERT INTO relayer_jobs")) {
+      const [smart_account_id, intent_id, start_ledger, end_ledger, max_executions, note] =
+        params as [string, string, number, number, number, string];
+      // ON CONFLICT (smart_account_id, intent_id) DO NOTHING.
+      if (find(smart_account_id, intent_id)) return [];
+      const now = new Date();
+      const row = {
+        smart_account_id,
+        intent_id,
+        child_sequence: 1,
+        start_ledger,
+        end_ledger,
+        max_executions,
+        execution_count: 0,
+        status: "scheduled",
+        note,
+        tx_hash: null,
+        created_at: now,
+        updated_at: now,
+        version: 0,
+      };
+      dbState.rows.push(row);
+      return [row];
     }
-    return fsState.file;
+
+    if (text.includes("UPDATE relayer_jobs")) {
+      const [smart_account_id, intent_id] = params as [string, string];
+      const row = find(smart_account_id, intent_id);
+      const expectedVersion = params[10];
+      // The optimistic guard: a writer holding a stale version updates no row.
+      if (!row || row.version !== expectedVersion) return [];
+      Object.assign(row, {
+        child_sequence: params[2],
+        start_ledger: params[3],
+        end_ledger: params[4],
+        max_executions: params[5],
+        execution_count: params[6],
+        status: params[7],
+        note: params[8],
+        tx_hash: params[9],
+        updated_at: new Date(),
+        version: (row.version as number) + 1,
+      });
+      return [row];
+    }
+
+    // Reads return detached copies, as a real driver does. Handing back the
+    // stored object would let the caller observe a concurrent writer's change
+    // through the row it already read, which is exactly what the optimistic
+    // version check exists to detect -- the double must not paper over it.
+    if (text.includes("WHERE smart_account_id = $1 AND intent_id = $2")) {
+      const row = find(params[0], params[1]);
+      return row ? [{ ...row }] : [];
+    }
+
+    if (text.includes("WHERE smart_account_id = $1")) {
+      return dbState.rows
+        .filter((row) => row.smart_account_id === params[0])
+        .map((row) => ({ ...row }));
+    }
+
+    return dbState.rows.map((row) => ({ ...row }));
   }),
-  writeFile: vi.fn(async (_path: string, contents: string) => {
-    fsState.file = contents;
-  }),
-  rename: vi.fn(async () => undefined),
 }));
 
 import {
   createRelayerJob,
   getRelayerJob,
+  updateRelayerJob,
   validateRelayerJobInput,
 } from "@/lib/relayer/store";
 
@@ -79,7 +144,7 @@ describe("validateRelayerJobInput", () => {
 
 describe("createRelayerJob / getRelayerJob — compound (smartAccountId, intentId) key", () => {
   beforeEach(() => {
-    fsState.file = null;
+    dbState.rows = [];
   });
 
   it("does not collide when two different treasuries schedule the same intentId", async () => {
@@ -101,5 +166,54 @@ describe("createRelayerJob / getRelayerJob — compound (smartAccountId, intentI
   it("getRelayerJob returns null for the right intentId under the wrong smartAccountId", async () => {
     await createRelayerJob(validInput);
     expect(await getRelayerJob(SMART_ACCOUNT_ID_2, validInput.intentId)).toBeNull();
+  });
+});
+
+describe("updateRelayerJob — optimistic concurrency", () => {
+  beforeEach(() => {
+    dbState.rows = [];
+  });
+
+  it("re-applies the mutation instead of overwriting a writer that committed first", async () => {
+    // The lost update this replaced a per-process write queue to prevent: two
+    // relayer runs on two serverless instances both read executionCount 0 and
+    // both write 1, so one execution vanishes from the count.
+    await createRelayerJob(validInput);
+
+    let calls = 0;
+    const updated = await updateRelayerJob(SMART_ACCOUNT_ID, validInput.intentId, (current) => {
+      calls += 1;
+      if (calls === 1) {
+        // Another writer commits between our SELECT and our UPDATE: it bumps
+        // the count and the version, so our UPDATE matches no row.
+        const row = dbState.rows[0];
+        row.execution_count = 1;
+        row.version = (row.version as number) + 1;
+      }
+      return { ...current, executionCount: current.executionCount + 1 };
+    });
+
+    expect(calls).toBe(2);
+    // 2, not 1: the retry incremented the *winner's* count rather than
+    // clobbering it back down with a value read before that write.
+    expect(updated.executionCount).toBe(2);
+  });
+
+  it("gives up rather than looping forever when it never wins", async () => {
+    await createRelayerJob(validInput);
+
+    await expect(
+      updateRelayerJob(SMART_ACCOUNT_ID, validInput.intentId, (current) => {
+        const row = dbState.rows[0];
+        row.version = (row.version as number) + 1;
+        return current;
+      }),
+    ).rejects.toThrow(/modified concurrently/);
+  });
+
+  it("throws when the job does not exist", async () => {
+    await expect(
+      updateRelayerJob(SMART_ACCOUNT_ID, validInput.intentId, (current) => current),
+    ).rejects.toThrow("Relayer job not found.");
   });
 });

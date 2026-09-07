@@ -1,21 +1,70 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const fsState = vi.hoisted(() => ({ file: null as string | null }));
+/**
+ * Stands in for Postgres at the `@/lib/db` seam, the way this file used to
+ * stand in for the filesystem at `node:fs/promises`. It reproduces only the
+ * semantics `store.ts` actually depends on -- primary-key conflict on INSERT,
+ * equality filtering, `created_at DESC` ordering -- so the behavioural
+ * assertions below (idempotency, conflict rejection, per-owner filtering)
+ * still mean exactly what they meant when the store wrote a JSON file.
+ *
+ * It is a double for Postgres, not a proof of the SQL: the statements
+ * themselves are verified against the real database by running them there.
+ */
+const dbState = vi.hoisted(() => ({ rows: [] as Record<string, unknown>[] }));
 
-vi.mock("node:fs/promises", () => ({
-  mkdir: vi.fn(async () => undefined),
-  readFile: vi.fn(async () => {
-    if (fsState.file === null) {
-      const error = new Error("ENOENT") as NodeJS.ErrnoException;
-      error.code = "ENOENT";
-      throw error;
+vi.mock("@/lib/db", () => ({
+  toIsoString: (value: unknown) =>
+    value instanceof Date ? value.toISOString() : String(value),
+  query: vi.fn(async (text: string, params: unknown[] = []) => {
+    if (text.includes("INSERT INTO treasuries")) {
+      const [
+        smart_account_id,
+        policy_engine_id,
+        intent_registry_id,
+        recovery_manager_id,
+        transfer_adapter_id,
+        split_adapter_id,
+        owner_address,
+        executor_address,
+        deploy_tx_hash,
+      ] = params as string[];
+      // ON CONFLICT (smart_account_id) DO NOTHING: the loser gets no row back.
+      if (dbState.rows.some((row) => row.smart_account_id === smart_account_id)) {
+        return [];
+      }
+      const row = {
+        smart_account_id,
+        policy_engine_id,
+        intent_registry_id,
+        recovery_manager_id,
+        transfer_adapter_id,
+        split_adapter_id,
+        owner_address,
+        executor_address,
+        deploy_tx_hash,
+        created_at: new Date(),
+      };
+      dbState.rows.push(row);
+      return [row];
     }
-    return fsState.file;
+
+    // Detached copies, as a real driver returns -- see the same note in
+    // `relayer/store.test.ts`.
+    if (text.includes("WHERE smart_account_id = $1")) {
+      return dbState.rows
+        .filter((row) => row.smart_account_id === params[0])
+        .map((row) => ({ ...row }));
+    }
+
+    if (text.includes("WHERE owner_address = $1")) {
+      return dbState.rows
+        .filter((row) => row.owner_address === params[0])
+        .map((row) => ({ ...row }));
+    }
+
+    return dbState.rows.map((row) => ({ ...row }));
   }),
-  writeFile: vi.fn(async (_path: string, contents: string) => {
-    fsState.file = contents;
-  }),
-  rename: vi.fn(async () => undefined),
 }));
 
 import {
@@ -70,7 +119,7 @@ function input(overrides: Partial<CreateTreasuryInput> = {}): CreateTreasuryInpu
 }
 
 beforeEach(() => {
-  fsState.file = null;
+  dbState.rows = [];
 });
 
 describe("validateCreateTreasuryInput", () => {
