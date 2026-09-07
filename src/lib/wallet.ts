@@ -26,7 +26,9 @@ type WalletKit = {
   signTransaction?: (
     transactionXdr: string,
     options: { address: string; networkPassphrase: string },
-  ) => Promise<string | { signedTxXdr?: string; signedTransaction?: string }>;
+  ) => Promise<
+    string | { signedTxXdr?: string; signedTransaction?: string; signerAddress?: string }
+  >;
 };
 
 type WalletKitModule = {
@@ -180,7 +182,13 @@ export async function signTransaction(transactionXdr: string, address: string) {
     address,
     networkPassphrase: STELLAR_CONFIG.networkPassphrase,
   });
-  return typeof result === "string"
-    ? result
-    : (result.signedTxXdr ?? result.signedTransaction);
+  if (typeof result === "string") {
+    return { xdr: result };
+  }
+  const xdr = result.signedTxXdr ?? result.signedTransaction;
+  if (!xdr) return undefined;
+  // signerAddress is the account the wallet actually signed with -- see
+  // signEnvelope in stellarClient.ts for why the caller must check this
+  // instead of trusting the requested `address` was honored.
+  return { xdr, signerAddress: result.signerAddress };
 }

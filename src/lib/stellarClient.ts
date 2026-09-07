@@ -353,6 +353,35 @@ export async function signDelegatedAuthEntry(
   );
 }
 
+/**
+ * Signs a transaction envelope with the fee-paying/source account and
+ * verifies the wallet actually signed with the expected key -- the
+ * envelope-signature counterpart to signDelegatedAuthEntry's own check
+ * above, for the same reason: Freighter's signTransaction can silently
+ * sign with whichever account is active in the extension, not necessarily
+ * the one requested. Submitting that mismatched signature would surface
+ * only a generic tx_bad_auth from the network instead of naming the
+ * actual problem -- this is the only signature check at all for a
+ * source-account-strategy write (policy_engine/recovery_manager admin
+ * calls), which has no custom AuthPayload to catch it another way.
+ */
+export async function signEnvelope(
+  wallet: WalletSigning,
+  transactionXdr: string,
+): Promise<string> {
+  const result = await wallet.signTransaction(transactionXdr, wallet.address);
+  if (!result) {
+    throw new Error("Wallet did not return a signed transaction envelope.");
+  }
+  const signerAddress = result.signerAddress ?? wallet.address;
+  if (signerAddress !== wallet.address) {
+    throw new Error(
+      `Wallet signed with ${signerAddress} instead of the expected signer ${wallet.address}. Switch to that account in your wallet and try again.`,
+    );
+  }
+  return result.xdr;
+}
+
 function buildUnsignedCustomAuthEntries({
   contextRuleIds,
   rootInvocation,
@@ -560,10 +589,7 @@ export async function signAndSubmitContractInvocation({
     .build();
 
   const prepared = await server.prepareTransaction(tx);
-  const signedTxXdr = await wallet.signTransaction(prepared.toXDR(), wallet.address);
-  if (!signedTxXdr) {
-    throw new Error("Wallet did not return a signed transaction envelope.");
-  }
+  const signedTxXdr = await signEnvelope(wallet, prepared.toXDR());
 
   return submitSignedTransaction(
     new Transaction(signedTxXdr, STELLAR_CONFIG.networkPassphrase),
@@ -756,10 +782,7 @@ export async function submitAsSourceAccount({
     .build();
 
   const prepared = await server.prepareTransaction(tx);
-  const signedTxXdr = await wallet.signTransaction(prepared.toXDR(), wallet.address);
-  if (!signedTxXdr) {
-    throw new Error("Wallet did not return a signed transaction envelope.");
-  }
+  const signedTxXdr = await signEnvelope(wallet, prepared.toXDR());
 
   return submitSignedTransaction(
     new Transaction(signedTxXdr, STELLAR_CONFIG.networkPassphrase),

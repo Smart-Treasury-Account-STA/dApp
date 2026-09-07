@@ -10,6 +10,7 @@ import {
   invokeContractOperation,
   randomAuthNonce,
   signDelegatedAuthEntry,
+  signEnvelope,
   signerDelegatedScVal,
   submitSignedTransaction,
   u32ScVal,
@@ -201,10 +202,7 @@ export async function deployAccount(wallet: WalletSigning): Promise<DeployAccoun
     .build();
 
   const prepared = await server.prepareTransaction(tx);
-  const signedTxXdr = await wallet.signTransaction(prepared.toXDR(), wallet.address);
-  if (!signedTxXdr) {
-    throw new Error("Wallet did not return a signed transaction envelope.");
-  }
+  const signedTxXdr = await signEnvelope(wallet, prepared.toXDR());
 
   const receipt = await submitSignedTransaction(
     new Transaction(signedTxXdr, STELLAR_CONFIG.networkPassphrase),

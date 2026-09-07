@@ -99,7 +99,10 @@ export type WalletSigning = {
     authEntryXdr: string,
     address: string,
   ) => Promise<{ signature: string; signerAddress?: string } | undefined>;
-  signTransaction: (transactionXdr: string, address: string) => Promise<string | undefined>;
+  signTransaction: (
+    transactionXdr: string,
+    address: string,
+  ) => Promise<{ xdr: string; signerAddress?: string } | undefined>;
 };
 
 export type PolicyProbeReason =

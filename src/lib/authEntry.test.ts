@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Address, Keypair, hash, xdr } from "@stellar/stellar-sdk";
 import { Buffer } from "buffer";
 
-import { signDelegatedAuthEntry } from "./stellarClient";
+import { signDelegatedAuthEntry, signEnvelope } from "./stellarClient";
 import type { WalletSigning } from "@/types";
 
 const CONTRACT = "CB4KZJ3I4XANE6GWPAMXCNXQ34PTQWPXVKFBBMLNKV25GAOXQC7RQUMS";
@@ -159,6 +159,54 @@ describe("signDelegatedAuthEntry", () => {
       ),
     ).rejects.toThrow(
       new RegExp(`${wrongSigner.publicKey()}.*instead of.*${keypair.publicKey()}`, "i"),
+    );
+  });
+});
+
+describe("signEnvelope", () => {
+  const EXPECTED = "GEXPECTED0000000000000000000000000000000000000000000000";
+  const WRONG = "GWRONG00000000000000000000000000000000000000000000000000";
+
+  function wallet(signTransaction: WalletSigning["signTransaction"]): WalletSigning {
+    return {
+      address: EXPECTED,
+      async signAuthEntry() {
+        throw new Error("signAuthEntry is not part of this path.");
+      },
+      signTransaction,
+    };
+  }
+
+  it("returns the signed xdr when the wallet signs with the expected account", async () => {
+    const w = wallet(async () => ({ xdr: "signed-xdr", signerAddress: EXPECTED }));
+
+    await expect(signEnvelope(w, "unsigned-xdr")).resolves.toBe("signed-xdr");
+  });
+
+  it("treats a missing signerAddress as the expected signer, for wallet kits that don't report one", async () => {
+    const w = wallet(async () => ({ xdr: "signed-xdr" }));
+
+    await expect(signEnvelope(w, "unsigned-xdr")).resolves.toBe("signed-xdr");
+  });
+
+  it("fails with an actionable message when the wallet signs with a different account", async () => {
+    // Same production bug as signDelegatedAuthEntry above, one layer up:
+    // the envelope signature. Freighter's active account didn't match the
+    // one requested, and this is the only signature check at all for a
+    // source-account-strategy write -- no custom AuthPayload to catch it
+    // another way.
+    const w = wallet(async () => ({ xdr: "signed-xdr", signerAddress: WRONG }));
+
+    await expect(signEnvelope(w, "unsigned-xdr")).rejects.toThrow(
+      new RegExp(`${WRONG}.*instead of.*${EXPECTED}`, "i"),
+    );
+  });
+
+  it("fails loudly when the wallet returns nothing", async () => {
+    const w = wallet(async () => undefined);
+
+    await expect(signEnvelope(w, "unsigned-xdr")).rejects.toThrow(
+      /did not return a signed transaction envelope/i,
     );
   });
 });

@@ -65,6 +65,7 @@ const stellarClientMocks = vi.hoisted(() => ({
   })),
   randomAuthNonce: vi.fn(() => "424242"),
   signDelegatedAuthEntry: vi.fn(async (entry: unknown) => ({ __signedEntry: true, entry })),
+  signEnvelope: vi.fn(async () => "signed-envelope-xdr"),
   signerDelegatedScVal: vi.fn((address: string) => ({ __delegated: address })),
   submitSignedTransaction: vi.fn(),
   u32ScVal: vi.fn((value: number) => ({ __u32: value })),
@@ -84,7 +85,7 @@ const {
 const wallet = {
   address: WALLET_ADDRESS,
   signAuthEntry: vi.fn(),
-  signTransaction: vi.fn(async () => "signed-envelope-xdr"),
+  signTransaction: vi.fn(async () => ({ xdr: "signed-envelope-xdr" })),
 };
 
 function invocation(tag: string) {
@@ -99,7 +100,7 @@ beforeEach(() => {
   serverMethods.getAccount.mockResolvedValue({ accountId: () => WALLET_ADDRESS });
   serverMethods.simulateTransaction.mockResolvedValue({ result: { auth: ["recorded-entries"] } });
   serverMethods.prepareTransaction.mockResolvedValue({ toXDR: () => "prepared-tx-xdr" });
-  wallet.signTransaction.mockResolvedValue("signed-envelope-xdr");
+  wallet.signTransaction.mockResolvedValue({ xdr: "signed-envelope-xdr" });
   submitSignedTransactionMock.mockResolvedValue({ hash: "deploy-tx-hash", status: "SUCCESS" });
   serverMethods.getTransaction.mockResolvedValue({
     status: "SUCCESS",

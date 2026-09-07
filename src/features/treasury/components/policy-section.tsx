@@ -5,6 +5,16 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { STELLAR_CONFIG } from "@/config";
 import type { ContractSet } from "@/lib/env";
 import { findAmountCap, probePolicy } from "@/lib/policyProbe";
@@ -33,15 +43,18 @@ import {
 } from "@/features/treasury/writeDrafts";
 import { FormField, SectionHeader } from "@/features/treasury/components/primitives";
 import { useTreasuryAuthority, useTreasurySnapshot } from "@/features/treasury/queries";
-import type { PolicyProbeVerdict, SimulationResult, WalletState } from "@/types";
+import type { SimulationResult, WalletState } from "@/types";
 
-type ProbeRow = {
-  asset: string;
-  destination: string;
-  operation: string;
-  verdict?: PolicyProbeVerdict;
-  cap?: string | null;
-};
+/**
+ * The only two operation symbols this dApp's write paths actually check
+ * policy for (`execute_transfer_payment`/`execute_scheduled_payment` pass
+ * "transfer", `execute_split_payment` passes "split" -- see
+ * `stellarClient.ts`'s `policyCheckScVal` call sites). `set_operation_allowed`
+ * itself accepts any Soroban symbol, not just these two, but presenting an
+ * open text field for a two-value set this dApp actually uses is exactly
+ * the kind of ambiguity ("verbes autorisés pas clair") this Select removes.
+ */
+const KNOWN_OPERATIONS = ["transfer", "split"] as const;
 
 const REASON_LABEL: Record<string, string> = {
   operation: "operation not allowed",
@@ -66,52 +79,40 @@ export function PolicySection({
   const authorityQuery = useTreasuryAuthority(wallet.address, contracts);
   const currentVersion = snapshotQuery.data?.policyVersion ?? 1;
 
-  const [rows, setRows] = useState<ProbeRow[]>([
-    {
-      asset: contracts.staAsset,
-      destination: STELLAR_CONFIG.testRecipient,
-      operation: "transfer",
-    },
-  ]);
   const [assetDraft, setAssetDraft] = useState({
     asset: contracts.staAsset,
     maxSingleTransfer: "10000000",
   });
   const [recipientDraft, setRecipientDraft] = useState(STELLAR_CONFIG.testRecipient);
-  const [operationDraft, setOperationDraft] = useState("transfer");
+  const [operationDraft, setOperationDraft] = useState<string>(KNOWN_OPERATIONS[0]);
   const [nextVersion, setNextVersion] = useState(String(currentVersion + 1));
 
-  const probeMutation = useMutation({
+  // Checks exactly the asset/recipient/operation combination currently
+  // typed into the three fields below -- not a separate list to manage.
+  // Editing any of those three fields and re-running this is how you see
+  // whether that specific combination is allowed right now; there is
+  // nothing here to lose on a refresh because there is nothing stored.
+  const checkMutation = useMutation({
     mutationFn: async () => {
       if (!wallet.address) throw new Error("Connect a wallet first.");
       const simulate = simulatePolicyProbe(wallet.address, contracts);
-      return Promise.all(
-        rows.map(async (row) => {
-          const verdict = await probePolicy(simulate, {
-            asset: row.asset,
-            destination: row.destination,
-            operation: row.operation,
-            amount: "1",
-            expectedVersion: currentVersion,
-          });
-          const cap =
-            verdict.allowed || verdict.reason === "recipient"
-              ? await findAmountCap(simulate, {
-                  asset: row.asset,
-                  destination: row.destination,
-                  operation: row.operation,
-                  expectedVersion: currentVersion,
-                })
-              : null;
-          return { ...row, verdict, cap: cap === null ? null : cap.toString() };
-        }),
-      );
+      const input = {
+        asset: assetDraft.asset,
+        destination: recipientDraft,
+        operation: operationDraft,
+        expectedVersion: currentVersion,
+      };
+      const verdict = await probePolicy(simulate, { ...input, amount: "1" });
+      const cap =
+        verdict.allowed || verdict.reason === "recipient"
+          ? await findAmountCap(simulate, input)
+          : null;
+      return { verdict, cap: cap === null ? null : cap.toString() };
     },
-    onSuccess: (next) => setRows(next),
     onError: (error) =>
       onNotice({
         ok: false,
-        title: "Probe failed",
+        title: "Check failed",
         detail: error instanceof Error ? error.message : String(error),
       }),
   });
@@ -202,58 +203,62 @@ export function PolicySection({
         title="Policy rules"
       />
 
-      <p className="mb-4 text-xs text-muted-foreground">
+      <p className="mb-2 text-xs text-muted-foreground">
         This contract exposes no read entrypoints, so its state is discovered by probing
         <code className="mx-1">validate_policy</code>. The policy admin is not readable
         on-chain: a write signed by a non-admin key fails at submission, not at simulation.
       </p>
+      <p className="mb-4 text-xs text-muted-foreground">
+        <strong className="text-foreground">A payment needs all three gates open at once</strong> —
+        its asset, its recipient, and its operation are each checked against a separate
+        allowlist further down (three independent writes, not one combined
+        &ldquo;rule&rdquo;). The check below always tests whatever is currently typed into
+        the <strong className="text-foreground">Asset contract</strong>,{" "}
+        <strong className="text-foreground">Recipient</strong>, and{" "}
+        <strong className="text-foreground">Operation</strong> fields below it — edit any of
+        the three and check again to see how that combination is treated right now.
+      </p>
 
-      <div className="mb-6 overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="text-xs text-muted-foreground">
-              <th className="py-2">Asset</th>
-              <th>Recipient</th>
-              <th>Operation</th>
-              <th>Verdict</th>
-              <th>Cap</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={`${row.asset}:${row.destination}:${row.operation}`}>
-                <td className="py-2"><code className="text-xs">{row.asset.slice(0, 9)}…</code></td>
-                <td><code className="text-xs">{row.destination.slice(0, 9)}…</code></td>
-                <td>{row.operation}</td>
-                <td>
-                  {row.verdict === undefined
-                    ? "—"
-                    : row.verdict.allowed
-                      ? "allowed"
-                      : REASON_LABEL[row.verdict.reason]}
-                </td>
-                <td>{row.cap ?? "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="mb-6 rounded-lg border border-border bg-secondary p-4">
+        <Button
+          onClick={() => checkMutation.mutate()}
+          disabled={checkMutation.isPending}
+        >
+          <ClipboardCheck className="size-4" />
+          {checkMutation.isPending ? "Checking…" : "Check this combination"}
+        </Button>
+
+        {checkMutation.data ? (
+          <p className="mt-3 text-sm">
+            <code className="text-xs">{assetDraft.asset.slice(0, 9)}…</code> →{" "}
+            <code className="text-xs">{recipientDraft.slice(0, 9)}…</code> ·{" "}
+            {operationDraft}:{" "}
+            <strong>
+              {checkMutation.data.verdict.allowed
+                ? "allowed"
+                : REASON_LABEL[checkMutation.data.verdict.reason]}
+            </strong>
+            {checkMutation.data.cap !== null
+              ? ` (cap: ${checkMutation.data.cap})`
+              : ""}
+          </p>
+        ) : null}
       </div>
 
-      <Button onClick={() => probeMutation.mutate()} disabled={probeMutation.isPending}>
-        <ClipboardCheck className="size-4" />
-        {probeMutation.isPending ? "Probing…" : "Probe live policy"}
-      </Button>
+      <Dialog onOpenChange={(open) => !open && setPending(null)} open={pending !== null}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm this change</DialogTitle>
+            <DialogDescription>
+              Signed as the transaction source with this wallet, not as a SmartAccount
+              authorization entry.
+            </DialogDescription>
+          </DialogHeader>
 
-      {pending ? (
-        <div className="mt-6 rounded-lg border border-border bg-secondary p-4">
-          <strong className="text-sm">Confirm this change</strong>
-          <p className="mt-1 text-sm">{pending.operation.summary}</p>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Signed as the transaction source with this wallet, not as a SmartAccount
-            authorization entry.
-          </p>
-          {pending.warnings.length > 0 ? (
-            <ul className="mt-3 grid gap-1">
+          <p className="text-sm">{pending?.operation.summary}</p>
+
+          {pending && pending.warnings.length > 0 ? (
+            <ul className="grid gap-1">
               {pending.warnings.map((warning) => (
                 <li key={warning.message} className="text-xs text-destructive">
                   {warning.message}
@@ -261,17 +266,20 @@ export function PolicySection({
               ))}
             </ul>
           ) : null}
-          <div className="mt-4 flex gap-2">
+
+          <DialogFooter>
+            <Button onClick={() => setPending(null)} variant="secondary">
+              Cancel
+            </Button>
             <Button
-              onClick={() => writeMutation.mutate(pending.operation)}
-              disabled={writeMutation.isPending}
+              disabled={writeMutation.isPending || !pending}
+              onClick={() => pending && writeMutation.mutate(pending.operation)}
             >
               {writeMutation.isPending ? "Awaiting wallet…" : "Sign and submit"}
             </Button>
-            <Button onClick={() => setPending(null)}>Cancel</Button>
-          </div>
-        </div>
-      ) : null}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="mt-6 grid gap-4">
         <FormField
@@ -339,7 +347,19 @@ export function PolicySection({
           </Button>
         </div>
 
-        <FormField label="Operation" onChange={setOperationDraft} value={operationDraft} />
+        <div className="grid gap-2">
+          <Label>Operation</Label>
+          <Select
+            onChange={(event) => setOperationDraft(event.target.value)}
+            value={operationDraft}
+          >
+            {KNOWN_OPERATIONS.map((operation) => (
+              <option key={operation} value={operation}>
+                {operation}
+              </option>
+            ))}
+          </Select>
+        </div>
         <div className="flex gap-2">
           <Button
             onClick={() =>
