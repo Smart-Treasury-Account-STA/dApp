@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { computeWeakestRule } from "./treasurySecurity";
+import { computeWeakestRule, findAuthorizingPath } from "./treasurySecurity";
 import type { ContextRule } from "@/types";
+
+const WALLET = "GB2KHXT4RZBQFPLXK7IGVCUZDSVE6M6HL2AS4JZQ2GHJZ4XZQ7PIEQ4T";
+const OTHER = "GAK3XILRBYBMBOCZMSLL2CLR6WPQLEIOC6ZCYYPTE4OIAX3PCFFO2YMU";
 
 function rule(overrides: Partial<ContextRule> & { id: number }): ContextRule {
   return {
@@ -72,5 +75,80 @@ describe("computeWeakestRule", () => {
       weakestUnanimousRule: null,
       policyGatedRuleIds: [],
     });
+  });
+});
+
+describe("findAuthorizingPath", () => {
+  it("finds the rule this wallet can satisfy alone", () => {
+    const rules = [
+      rule({ id: 0, signerCount: 1, signerAddresses: [OTHER] }),
+      rule({ id: 1, signerCount: 1, signerAddresses: [WALLET] }),
+    ];
+
+    const path = findAuthorizingPath(rules, WALLET);
+
+    expect(path.soleSignerRule?.id).toBe(1);
+    expect(path.rules.map((r) => r.id)).toEqual([1]);
+    expect(path.blocked).toBe(false);
+  });
+
+  it("reports no sole-signer rule when every rule this wallet is on needs co-signers", () => {
+    // Exactly the testnet lockout: the wallet's only rule gained a second
+    // signer, so the contract now requires both, and this dApp submits one.
+    const rules = [
+      rule({ id: 0, signerCount: 1, signerAddresses: [OTHER] }),
+      rule({ id: 1, signerCount: 2, signerAddresses: [WALLET, OTHER] }),
+    ];
+
+    const path = findAuthorizingPath(rules, WALLET);
+
+    expect(path.soleSignerRule).toBeNull();
+    expect(path.unanimousMultiSignerRules.map((r) => r.id)).toEqual([1]);
+    expect(path.policyGatedRules).toEqual([]);
+    expect(path.blocked).toBe(true);
+  });
+
+  it("does not claim a rejection is certain when a policy could still accept one signature", () => {
+    const rules = [rule({ id: 0, signerCount: 3, signerAddresses: [WALLET], policyCount: 1 })];
+
+    const path = findAuthorizingPath(rules, WALLET);
+
+    expect(path.soleSignerRule).toBeNull();
+    expect(path.policyGatedRules.map((r) => r.id)).toEqual([0]);
+    // A 1-of-3 threshold policy would make this succeed. The threshold is not
+    // readable here, so this is uncertain, not blocked.
+    expect(path.blocked).toBe(false);
+  });
+
+  it("stays silent when the wallet is on no readable rule at all", () => {
+    // signerAddresses is a best-effort scrape that misses non-`G` signers, so
+    // "not found" means unknown, never "this wallet cannot sign" -- claiming a
+    // certain failure here would block a wallet that can in fact authorize.
+    const rules = [rule({ id: 0, signerCount: 2, signerAddresses: [] })];
+
+    const path = findAuthorizingPath(rules, WALLET);
+
+    expect(path.rules).toEqual([]);
+    expect(path.soleSignerRule).toBeNull();
+    expect(path.blocked).toBe(false);
+  });
+
+  it("stays silent with no connected address", () => {
+    const path = findAuthorizingPath([rule({ id: 0 })], null);
+
+    expect(path.rules).toEqual([]);
+    expect(path.blocked).toBe(false);
+  });
+
+  it("prefers a satisfiable rule over a blocking one when the wallet is on both", () => {
+    const rules = [
+      rule({ id: 0, signerCount: 2, signerAddresses: [WALLET, OTHER] }),
+      rule({ id: 1, signerCount: 1, signerAddresses: [WALLET] }),
+    ];
+
+    const path = findAuthorizingPath(rules, WALLET);
+
+    expect(path.soleSignerRule?.id).toBe(1);
+    expect(path.blocked).toBe(false);
   });
 });

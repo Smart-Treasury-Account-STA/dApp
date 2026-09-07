@@ -1,5 +1,5 @@
 import type { ContextRule } from "@/types";
-import { computeWeakestRule } from "@/lib/treasurySecurity";
+import { computeWeakestRule, findAuthorizingPath } from "@/lib/treasurySecurity";
 import type { WriteOperation } from "@/lib/treasuryWrites";
 
 export type WriteWarning = { severity: "warn" | "block"; message: string };
@@ -76,10 +76,14 @@ export function collectWriteWarnings(
     // address list came back empty.
     if (policyCount === 0 && signerCount >= 1) {
       warnings.push({
-        // No threshold-policy contract exists anywhere in this system yet,
-        // so a "block" here would be permanent and un-liftable -- mirrors
-        // the same call already made for add_context_rule below.
-        severity: "warn",
+        // "block", not "warn": `smartAccountAuthPayload` signs exactly one
+        // authorization entry per submission, so the rule this creates is
+        // unusable from this dApp until a threshold policy is attached --
+        // and no threshold-policy contract is deployed in this system yet.
+        // The confirm dialog lets an operator acknowledge and proceed
+        // anyway (the fix is reachable off-dApp, by co-signing with both
+        // keys from a script), so the block informs rather than traps.
+        severity: "block",
         message:
           "This rule has no threshold policy: adding this signer means every signer on the rule — including this new one — must co-sign every future action under it, including removals. Set a threshold first if you want N-of-M instead of all-of-N.",
       });
@@ -114,6 +118,32 @@ export function collectWriteWarnings(
           ? "This treasury already has a rule satisfiable by a single signer — adding another independent rule cannot make it less secure, but the new rule's signer will have full, independent control equal to every other rule's signers."
           : "Creating a new, independent context rule means this treasury becomes only as secure as this new rule, regardless of how strong your other rules are — any one satisfied rule authorizes anything, including creating further rules. The new signer gets full, independent power, not a limited role.",
     });
+  }
+
+  // Whether the connected wallet can satisfy any rule on its own. Applies to
+  // every smart_account write, not one function name: they are all authorized
+  // the same way, and simulation cannot check authorization, so without this
+  // the operator learns the answer from an on-chain rejection after signing.
+  if (operation.strategy === "custom-account" && context.allRules) {
+    const path = findAuthorizingPath(context.allRules, context.connectedAddress);
+
+    if (path.rules.length > 0 && path.soleSignerRule === null) {
+      const ruleList = path.rules
+        .map((rule) => `${rule.id} · ${rule.name}`)
+        .join(", ");
+
+      warnings.push(
+        path.blocked
+          ? {
+              severity: "block",
+              message: `This wallet is only registered on rule ${ruleList}, which requires every one of its signers to co-sign. This dApp submits one signature per transaction, so this write will be rejected on-chain (#3002) after you sign it. Collect the other signatures outside this dApp, or attach a threshold policy to that rule first.`,
+              }
+          : {
+              severity: "warn",
+              message: `No rule this wallet is on is satisfiable by one signature outright. Rule ${ruleList} defers to an attached policy whose threshold this dApp cannot read: if that policy needs more than one signature, this write will be rejected on-chain after you sign it.`,
+            },
+      );
+    }
   }
 
   return warnings;

@@ -12,7 +12,7 @@ import type { ContractSet } from "@/lib/env";
 import { explainSmartAccountError, truncateAddress } from "@/lib/format";
 import { describeReceipt } from "@/lib/receipt";
 import { loadSignerId, simulateWriteOperation } from "@/lib/stellarClient";
-import { computeWeakestRule } from "@/lib/treasurySecurity";
+import { computeWeakestRule, findAuthorizingPath } from "@/lib/treasurySecurity";
 import {
   addContextRuleOperation,
   addSignerOperation,
@@ -76,6 +76,17 @@ export function SignersSection({
 
   const isOwner =
     authorityQuery.data?.owner != null && authorityQuery.data.owner === wallet.address;
+
+  // Names the rule the signature will actually be checked against, instead of
+  // the old "whichever context rule this wallet is registered under" -- which
+  // rule it is, and what it requires, is the whole question when a write is
+  // about to be rejected for needing co-signatures.
+  const authorizingPath = findAuthorizingPath(rules, wallet.address);
+  const authorizingDescription = authorizingPath.soleSignerRule
+    ? `Signed via the SmartAccount authorization entry, through rule ${authorizingPath.soleSignerRule.id} · ${authorizingPath.soleSignerRule.name}, where this wallet is the only signer.`
+    : authorizingPath.rules.length > 0
+      ? `Signed via the SmartAccount authorization entry, through rule ${authorizingPath.rules.map((rule) => `${rule.id} · ${rule.name}`).join(", ")} — none of which this wallet can satisfy by itself.`
+      : "Signed via the SmartAccount authorization entry, using whichever context rule this wallet is registered under.";
 
   // Staged operation awaiting confirmation. The spec's pipeline is
   // validate -> guard -> simulate -> confirm -> sign -> submit; nothing reaches
@@ -447,7 +458,7 @@ export function SignersSection({
           </div>
 
           <WriteConfirmDialog
-            description="Signed via the SmartAccount authorization entry, using whichever context rule this wallet is registered under."
+            description={authorizingDescription}
             onCancel={() => setPending(null)}
             onSubmit={() => pending && addMutation.mutate()}
             pending={pending}

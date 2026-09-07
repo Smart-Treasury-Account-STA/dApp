@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -73,10 +74,26 @@ export function WriteConfirmDialog({
   pending: StagedWrite | null;
   submitting: boolean;
 }) {
-  const blocked = pending?.warnings.some((warning) => warning.severity === "block") ?? false;
+  // Which staged operation the operator has acknowledged the blocks on.
+  // Keyed by operation id rather than a bare boolean so staging a different
+  // write cannot inherit the previous one's acknowledgement, and cleared on
+  // cancel and submit so re-staging the same write asks again.
+  const [acknowledgedId, setAcknowledgedId] = useState<string | null>(null);
+
+  const blocks = pending?.warnings.filter((warning) => warning.severity === "block") ?? [];
+  const acknowledged = pending !== null && acknowledgedId === pending.operation.id;
+
+  function reset() {
+    setAcknowledgedId(null);
+  }
+
+  function handleCancel() {
+    reset();
+    onCancel();
+  }
 
   return (
-    <Dialog onOpenChange={(open) => !open && onCancel()} open={pending !== null}>
+    <Dialog onOpenChange={(open) => !open && handleCancel()} open={pending !== null}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Confirm this change</DialogTitle>
@@ -104,11 +121,40 @@ export function WriteConfirmDialog({
           </ul>
         ) : null}
 
+        {pending && blocks.length > 0 ? (
+          // The escape hatch that keeps a "block" from being a dead end. Every
+          // block this dApp raises describes a rule it cannot satisfy on its
+          // own, not a rule nobody can satisfy: the signatures can be collected
+          // outside the dApp, and the operator may know something the read path
+          // cannot see (signerAddresses misses non-`G` signers). So the block
+          // costs a deliberate second action rather than forbidding the write.
+          <label className="flex cursor-pointer items-start gap-2 text-xs text-muted-foreground">
+            <input
+              checked={acknowledged}
+              className="mt-0.5 size-4 shrink-0 accent-[hsl(var(--destructive))]"
+              onChange={(event) =>
+                setAcknowledgedId(event.target.checked ? pending.operation.id : null)
+              }
+              type="checkbox"
+            />
+            <span>
+              I understand{blocks.length === 1 ? " this consequence" : " these consequences"} and
+              want to submit anyway.
+            </span>
+          </label>
+        ) : null}
+
         <DialogFooter>
-          <Button onClick={onCancel} variant="secondary">
+          <Button onClick={handleCancel} variant="secondary">
             Cancel
           </Button>
-          <Button disabled={!pending || submitting || blocked} onClick={onSubmit}>
+          <Button
+            disabled={!pending || submitting || (blocks.length > 0 && !acknowledged)}
+            onClick={() => {
+              reset();
+              onSubmit();
+            }}
+          >
             {submitting ? "Awaiting wallet…" : "Sign and submit"}
           </Button>
         </DialogFooter>

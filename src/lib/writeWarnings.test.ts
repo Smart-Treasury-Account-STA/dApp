@@ -7,6 +7,7 @@ import {
   addSignerOperation,
   bumpVersionOperation,
   removeContextRuleOperation,
+  removeSignerOperation,
   setAssetRuleOperation,
   setOperationAllowedOperation,
   setRecipientAllowedOperation,
@@ -130,12 +131,16 @@ describe("collectWriteWarnings — unanimous-signer trap", () => {
       targetRule,
     });
 
-    // No threshold-policy contract exists anywhere in this system, so this
-    // is deliberately "warn", not "block" -- a permanent block would leave
-    // adding a second signer forever un-confirmable with no escape hatch.
+    // "block", not "warn": this dApp signs one authorization entry per
+    // submission (smartAccountAuthPayload builds a one-entry signers map),
+    // so a no-policy rule with two signers is unusable from this dApp by
+    // construction -- that is the testnet lockout, not a hypothetical. The
+    // block is liftable in the confirm dialog by acknowledging it, which is
+    // what keeps it from being permanent while no threshold-policy contract
+    // is deployed.
     expect(warnings).toContainEqual(
       expect.objectContaining({
-        severity: "warn",
+        severity: "block",
         message: expect.stringMatching(/every signer.*co-sign/i),
       }),
     );
@@ -174,10 +179,75 @@ describe("collectWriteWarnings — unanimous-signer trap", () => {
 
     expect(warnings).toContainEqual(
       expect.objectContaining({
-        severity: "warn",
+        severity: "block",
         message: expect.stringMatching(/every signer.*co-sign/i),
       }),
     );
+  });
+});
+
+describe("collectWriteWarnings — the rule this wallet will authorize through", () => {
+  it("blocks when every rule this wallet is on needs co-signatures this dApp cannot collect", () => {
+    // The testnet lockout, caught before the signature instead of after:
+    // rule 1 gained a second signer, so both must co-sign, and this dApp
+    // submits one entry.
+    const allRules = [
+      rule({ id: 0, signerCount: 1, signerAddresses: [OTHER] }),
+      rule({ id: 1, signerCount: 2, signerAddresses: [OWNER, OTHER] }),
+    ];
+
+    const warnings = collectWriteWarnings(
+      removeSignerOperation({ contextRuleId: 1, signerId: 1 }),
+      { ...context, allRules },
+    );
+
+    expect(warnings).toContainEqual(
+      expect.objectContaining({
+        severity: "block",
+        message: expect.stringMatching(/one signature/i),
+      }),
+    );
+  });
+
+  it("stays quiet when this wallet has a rule it can satisfy alone", () => {
+    const allRules = [
+      rule({ id: 0, signerCount: 2, signerAddresses: [OWNER, OTHER] }),
+      rule({ id: 1, signerCount: 1, signerAddresses: [OWNER] }),
+    ];
+
+    const warnings = collectWriteWarnings(
+      removeSignerOperation({ contextRuleId: 0, signerId: 1 }),
+      { ...context, allRules },
+    );
+
+    expect(warnings.some((w: WriteWarning) => /one signature/i.test(w.message))).toBe(false);
+  });
+
+  it("warns rather than blocks when a policy might still accept one signature", () => {
+    const allRules = [rule({ id: 0, signerCount: 3, signerAddresses: [OWNER], policyCount: 1 })];
+
+    const warnings = collectWriteWarnings(
+      removeSignerOperation({ contextRuleId: 0, signerId: 1 }),
+      { ...context, allRules },
+    );
+
+    expect(warnings).toContainEqual(
+      expect.objectContaining({
+        severity: "warn",
+        message: expect.stringMatching(/threshold/i),
+      }),
+    );
+  });
+
+  it("leaves source-account writes alone -- they are not authorized through a context rule", () => {
+    const allRules = [rule({ id: 0, signerCount: 2, signerAddresses: [OWNER, OTHER] })];
+
+    const warnings = collectWriteWarnings(
+      setRecipientAllowedOperation({ recipient: OTHER, allowed: true }),
+      { ...context, allRules },
+    );
+
+    expect(warnings.some((w: WriteWarning) => /one signature/i.test(w.message))).toBe(false);
   });
 });
 
