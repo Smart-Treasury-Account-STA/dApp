@@ -287,6 +287,17 @@ export function signerDelegatedScVal(address: string) {
   return xdr.ScVal.scvVec([symbolScVal("Delegated"), addressScVal(address)]);
 }
 
+/** `ContextRuleType::Default` -- the unit-variant encoding, same shape as
+ * signerDelegatedScVal's `Signer::Delegated`. The other variant,
+ * `CallContract(Address)`, isn't needed here: every context rule this
+ * dApp creates is `Default` (DAPP_DEVELOPER_QA.md Part 4 -- rules can't
+ * discriminate by function, only by which contract required auth, and
+ * every smart_account-gated call in this dApp is a call to smart_account
+ * itself). */
+export function contextTypeDefaultScVal() {
+  return xdr.ScVal.scvVec([symbolScVal("Default")]);
+}
+
 function smartAccountAuthPayload(signerAddress: string, contextRuleIdsScVal: xdr.ScVal) {
   const signersMap = xdr.ScVal.scvMap([
     new xdr.ScMapEntry({

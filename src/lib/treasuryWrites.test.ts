@@ -3,9 +3,11 @@ import { xdr } from "@stellar/stellar-sdk";
 
 import { STELLAR_CONFIG } from "@/config";
 import {
+  addContextRuleOperation,
   addGuardianOperation,
   addSignerOperation,
   bumpVersionOperation,
+  removeContextRuleOperation,
   removeSignerOperation,
   setAssetRuleOperation,
   setOperationAllowedOperation,
@@ -30,6 +32,24 @@ describe("smart_account write descriptors", () => {
 
     expect(op.functionName).toBe("remove_signer");
     expect(op.args.map((arg: xdr.ScVal) => arg.u32())).toEqual([0, 3]);
+  });
+
+  it("builds add_context_rule with a Default context type and a single delegated signer", () => {
+    const op = addContextRuleOperation({ name: "backup", signerAddress: SIGNER });
+
+    expect(op.contractId).toBe(STELLAR_CONFIG.contracts.smartAccount);
+    expect(op.functionName).toBe("add_context_rule");
+    expect(op.strategy).toBe("custom-account");
+    // context_type, name, valid_until, signers, policies
+    expect(op.args).toHaveLength(5);
+  });
+
+  it("builds remove_context_rule by numeric rule id", () => {
+    const op = removeContextRuleOperation({ contextRuleId: 2 });
+
+    expect(op.functionName).toBe("remove_context_rule");
+    expect(op.args).toHaveLength(1);
+    expect(op.args[0].u32()).toBe(2);
   });
 });
 

@@ -17,6 +17,24 @@ export function validateSignerDraft({ signerAddress }: { signerAddress: string }
   assertAddress("Signer", signerAddress);
 }
 
+const MAX_RULE_NAME_LENGTH = 100;
+
+export function validateContextRuleDraft({
+  name,
+  signerAddress,
+}: {
+  name: string;
+  signerAddress: string;
+}) {
+  if (name.trim().length === 0) {
+    throw new Error("Rule name must not be empty.");
+  }
+  if (name.length > MAX_RULE_NAME_LENGTH) {
+    throw new Error(`Rule name must be ${MAX_RULE_NAME_LENGTH} characters or fewer.`);
+  }
+  assertAddress("Signer", signerAddress);
+}
+
 export function validateGuardianDraft({ guardian }: { guardian: string }) {
   assertAddress("Guardian", guardian);
 }
@@ -90,6 +108,30 @@ export function signerRemovalBlock(rule: ContextRule, signerId: number): string 
   }
   if (signerId < 0 || signerId >= rule.signerAddresses.length) {
     return "That signer is not part of this rule.";
+  }
+  return null;
+}
+
+/**
+ * Returns a blocking reason, or null when removal is safe.
+ *
+ * `remove_context_rule` in the pinned `stellar-accounts@0.7.2` crate is
+ * genuinely unguarded (verified by reading storage.rs's `remove_context_rule`,
+ * lines 845-889): it unconditionally deletes the rule, deregisters its
+ * signers, and decrements the rule count, with no "is this the last rule"
+ * floor check anywhere -- unlike `remove_signer`, which panics with
+ * `NoSignersAndPolicies` rather than leave a rule with zero signers and zero
+ * policies. Removing a treasury's only remaining context rule would leave it
+ * with no way to ever authorize anything again -- not even `add_context_rule`
+ * itself, since that also requires satisfying some existing rule -- so the
+ * client blocks it unconditionally.
+ */
+export function ruleRemovalBlock(allRules: ContextRule[], ruleId: number): string | null {
+  if (allRules.length <= 1) {
+    return "This is the only context rule on this treasury. Removing it would leave the treasury with no way to authorize anything, permanently.";
+  }
+  if (!allRules.some((rule) => rule.id === ruleId)) {
+    return "That rule is not part of this treasury.";
   }
   return null;
 }

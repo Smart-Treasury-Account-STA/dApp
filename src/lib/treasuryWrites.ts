@@ -1,4 +1,4 @@
-import type { xdr } from "@stellar/stellar-sdk";
+import { xdr } from "@stellar/stellar-sdk";
 
 import { STELLAR_CONFIG } from "@/config";
 import type { ContractSet } from "@/lib/env";
@@ -6,6 +6,7 @@ import { structScVal } from "@/lib/scval";
 import {
   addressScVal,
   boolScVal,
+  contextTypeDefaultScVal,
   i128ScVal,
   signerDelegatedScVal,
   symbolScVal,
@@ -58,6 +59,48 @@ export function removeSignerOperation({
     args: [u32ScVal(contextRuleId), u32ScVal(signerId)],
     strategy: "custom-account",
     summary: `Revoke signer #${signerId} from context rule ${contextRuleId}.`,
+  };
+}
+
+export function addContextRuleOperation({
+  name,
+  signerAddress,
+  contracts = STELLAR_CONFIG.contracts,
+}: {
+  name: string;
+  signerAddress: string;
+  contracts?: ContractSet;
+}): WriteOperation {
+  return {
+    id: `add-context-rule:${name}:${signerAddress}`,
+    contractId: contracts.smartAccount,
+    functionName: "add_context_rule",
+    args: [
+      contextTypeDefaultScVal(),
+      xdr.ScVal.scvString(name),
+      xdr.ScVal.scvVoid(), // valid_until: Option<u32> = None
+      xdr.ScVal.scvVec([signerDelegatedScVal(signerAddress)]),
+      xdr.ScVal.scvMap([]), // policies: none at creation -- see this plan's Global Constraints
+    ],
+    strategy: "custom-account",
+    summary: `Create a new, independent context rule "${name}" with ${signerAddress} as its sole signer.`,
+  };
+}
+
+export function removeContextRuleOperation({
+  contextRuleId,
+  contracts = STELLAR_CONFIG.contracts,
+}: {
+  contextRuleId: number;
+  contracts?: ContractSet;
+}): WriteOperation {
+  return {
+    id: `remove-context-rule:${contextRuleId}`,
+    contractId: contracts.smartAccount,
+    functionName: "remove_context_rule",
+    args: [u32ScVal(contextRuleId)],
+    strategy: "custom-account",
+    summary: `Remove context rule ${contextRuleId} entirely.`,
   };
 }
 

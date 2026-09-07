@@ -7,14 +7,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { STELLAR_CONFIG } from "@/config";
 import type { ContractSet } from "@/lib/env";
 import { findAmountCap, probePolicy } from "@/lib/policyProbe";
@@ -32,7 +24,6 @@ import {
 } from "@/lib/treasuryWrites";
 import type { WriteOperation } from "@/lib/treasuryWrites";
 import { collectWriteWarnings } from "@/lib/writeWarnings";
-import type { WriteWarning } from "@/lib/writeWarnings";
 import { executeWriteOperation, walletSigner } from "@/lib/writeAuth";
 import { fetchRelayerJobs } from "@/features/treasury/relayer-client";
 import {
@@ -42,6 +33,8 @@ import {
   validateVersionBump,
 } from "@/features/treasury/writeDrafts";
 import { FormField, SectionHeader } from "@/features/treasury/components/primitives";
+import { WriteConfirmDialog } from "@/features/treasury/components/write-confirm-dialog";
+import type { StagedWrite } from "@/features/treasury/components/write-confirm-dialog";
 import { useTreasuryAuthority, useTreasurySnapshot } from "@/features/treasury/queries";
 import type { SimulationResult, WalletState } from "@/types";
 
@@ -120,10 +113,7 @@ export function PolicySection({
   // Staged operation awaiting confirmation. The spec's pipeline is
   // validate -> guard -> simulate -> confirm -> sign -> submit; nothing reaches
   // the wallet until the operator has seen the summary and its consequences.
-  const [pending, setPending] = useState<{
-    operation: WriteOperation;
-    warnings: WriteWarning[];
-  } | null>(null);
+  const [pending, setPending] = useState<StagedWrite | null>(null);
 
   const stageMutation = useMutation({
     mutationFn: async (operation: WriteOperation) => {
@@ -245,41 +235,13 @@ export function PolicySection({
         ) : null}
       </div>
 
-      <Dialog onOpenChange={(open) => !open && setPending(null)} open={pending !== null}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirm this change</DialogTitle>
-            <DialogDescription>
-              Signed as the transaction source with this wallet, not as a SmartAccount
-              authorization entry.
-            </DialogDescription>
-          </DialogHeader>
-
-          <p className="text-sm">{pending?.operation.summary}</p>
-
-          {pending && pending.warnings.length > 0 ? (
-            <ul className="grid gap-1">
-              {pending.warnings.map((warning) => (
-                <li key={warning.message} className="text-xs text-destructive">
-                  {warning.message}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-
-          <DialogFooter>
-            <Button onClick={() => setPending(null)} variant="secondary">
-              Cancel
-            </Button>
-            <Button
-              disabled={writeMutation.isPending || !pending}
-              onClick={() => pending && writeMutation.mutate(pending.operation)}
-            >
-              {writeMutation.isPending ? "Awaiting wallet…" : "Sign and submit"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <WriteConfirmDialog
+        description="Signed as the transaction source with this wallet, not as a SmartAccount authorization entry."
+        onCancel={() => setPending(null)}
+        onSubmit={() => pending && writeMutation.mutate(pending.operation)}
+        pending={pending}
+        submitting={writeMutation.isPending}
+      />
 
       <div className="mt-6 grid gap-4">
         <FormField

@@ -1,3 +1,5 @@
+import type { ContextRule } from "@/types";
+import { computeWeakestRule } from "@/lib/treasurySecurity";
 import type { WriteOperation } from "@/lib/treasuryWrites";
 
 export type WriteWarning = { severity: "warn" | "block"; message: string };
@@ -8,6 +10,10 @@ export type WarningContext = {
   pinnedVersions: number[];
   connectedAddress: string | null;
   ownerAddress: string | null;
+  /** The rule a signer-management write targets, when applicable. */
+  targetRule?: ContextRule;
+  /** Every rule the treasury currently has, for the weakest-rule check. */
+  allRules?: ContextRule[];
 };
 
 /**
@@ -23,6 +29,7 @@ export function collectWriteWarnings(
   const warnings: WriteWarning[] = [];
 
   if (
+    operation.strategy === "source-account" &&
     context.ownerAddress !== null &&
     context.connectedAddress !== null &&
     context.connectedAddress !== context.ownerAddress
@@ -57,6 +64,55 @@ export function collectWriteWarnings(
     warnings.push({
       severity: "warn",
       message: "Disable this asset and every transfer of it stops, including queued intents.",
+    });
+  }
+
+  if (operation.functionName === "add_signer" && context.targetRule) {
+    const { policyCount, signerCount } = context.targetRule;
+    // signerCount is the contract-enforced count, unlike signerAddresses
+    // (a best-effort regex scrape that can silently miss non-`G` signers,
+    // e.g. Signer::Delegated(C...)) -- see treasurySecurity.ts. Using it
+    // here means this check never fails open just because the display-only
+    // address list came back empty.
+    if (policyCount === 0 && signerCount >= 1) {
+      warnings.push({
+        // No threshold-policy contract exists anywhere in this system yet,
+        // so a "block" here would be permanent and un-liftable -- mirrors
+        // the same call already made for add_context_rule below.
+        severity: "warn",
+        message:
+          "This rule has no threshold policy: adding this signer means every signer on the rule — including this new one — must co-sign every future action under it, including removals. Set a threshold first if you want N-of-M instead of all-of-N.",
+      });
+    }
+  }
+
+  if (operation.functionName === "remove_context_rule" && context.targetRule) {
+    const { name, signerCount, signerAddresses } = context.targetRule;
+    warnings.push({
+      severity: "warn",
+      message: `This removes rule "${name}" entirely, along with all ${signerCount} of its signer${signerCount === 1 ? "" : "s"}' access through it.`,
+    });
+    if (
+      context.connectedAddress !== null &&
+      signerAddresses.includes(context.connectedAddress)
+    ) {
+      warnings.push({
+        severity: "warn",
+        message:
+          "The connected wallet is one of this rule's own signers — removing this rule revokes this wallet's access through it. If this is the only rule this wallet can satisfy, it will lose access to this treasury.",
+      });
+    }
+  }
+
+  if (operation.functionName === "add_context_rule" && context.allRules) {
+    const { requiredSigners: existingWeakest } = computeWeakestRule(context.allRules)
+      .weakestUnanimousRule ?? { requiredSigners: Infinity };
+    warnings.push({
+      severity: "warn",
+      message:
+        existingWeakest === 1
+          ? "This treasury already has a rule satisfiable by a single signer — adding another independent rule cannot make it less secure, but the new rule's signer will have full, independent control equal to every other rule's signers."
+          : "Creating a new, independent context rule means this treasury becomes only as secure as this new rule, regardless of how strong your other rules are — any one satisfied rule authorizes anything, including creating further rules. The new signer gets full, independent power, not a limited role.",
     });
   }
 

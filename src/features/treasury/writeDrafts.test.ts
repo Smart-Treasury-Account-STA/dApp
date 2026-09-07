@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   isSelfRemoval,
+  ruleRemovalBlock,
   signerRemovalBlock,
   validateAssetRuleDraft,
+  validateContextRuleDraft,
   validateGuardianDraft,
   validateOperationDraft,
   validateRecipientDraft,
@@ -27,6 +29,17 @@ function rule(signerAddresses: string[]): ContextRule {
   };
 }
 
+function ruleWithId(id: number): ContextRule {
+  return {
+    id,
+    name: `rule-${id}`,
+    contextType: "Default",
+    signerCount: 1,
+    signerAddresses: [SIGNER],
+    policyCount: 0,
+  };
+}
+
 describe("validateSignerDraft", () => {
   it("accepts a valid account address", () => {
     expect(() => validateSignerDraft({ signerAddress: SIGNER })).not.toThrow();
@@ -36,6 +49,32 @@ describe("validateSignerDraft", () => {
     expect(() => validateSignerDraft({ signerAddress: "not-an-address" })).toThrow(
       /valid Stellar/i,
     );
+  });
+});
+
+describe("validateContextRuleDraft", () => {
+  it("accepts a reasonable name and a valid signer address", () => {
+    expect(() =>
+      validateContextRuleDraft({ name: "backup", signerAddress: SIGNER }),
+    ).not.toThrow();
+  });
+
+  it("rejects an empty name", () => {
+    expect(() => validateContextRuleDraft({ name: "", signerAddress: SIGNER })).toThrow(
+      /name/i,
+    );
+  });
+
+  it("rejects a name over 100 characters", () => {
+    expect(() =>
+      validateContextRuleDraft({ name: "x".repeat(101), signerAddress: SIGNER }),
+    ).toThrow(/name/i);
+  });
+
+  it("rejects an invalid signer address", () => {
+    expect(() =>
+      validateContextRuleDraft({ name: "backup", signerAddress: "not-an-address" }),
+    ).toThrow(/signer/i);
   });
 });
 
@@ -114,6 +153,20 @@ describe("signerRemovalBlock", () => {
 
   it("permits removal when another signer remains", () => {
     expect(signerRemovalBlock(rule([SIGNER, OTHER]), 0)).toBeNull();
+  });
+});
+
+describe("ruleRemovalBlock", () => {
+  it("blocks removing the only context rule, which would brick the treasury", () => {
+    expect(ruleRemovalBlock([ruleWithId(0)], 0)).toMatch(/only context rule/i);
+  });
+
+  it("permits removal when another rule remains", () => {
+    expect(ruleRemovalBlock([ruleWithId(0), ruleWithId(1)], 0)).toBeNull();
+  });
+
+  it("rejects a rule id that isn't part of this treasury", () => {
+    expect(ruleRemovalBlock([ruleWithId(0), ruleWithId(1)], 5)).toMatch(/not part/i);
   });
 });
 
