@@ -18,7 +18,10 @@ type WalletKit = {
     onWalletSelected: (option: WalletOption) => Promise<void> | void;
   }) => void;
   setWallet?: (walletId: string) => void;
-  getAddress: () => Promise<WalletAddressResult>;
+  /** `skipRequestAccess` suppresses the kit's `requestAccess()` call, and with
+   * it Freighter's approval popup -- required for any read that is not a
+   * deliberate user action (see getConnectedAddress). */
+  getAddress: (params?: { skipRequestAccess?: boolean }) => Promise<WalletAddressResult>;
   signAuthEntry?: (
     preimageXdr: string,
     options: { address: string; networkPassphrase: string },
@@ -136,11 +139,22 @@ export function disconnectWallet() {
  * without requiring a manual disconnect/reconnect. Swallows errors (a
  * locked or disconnected extension) rather than throwing, since a poll
  * failing once is not the caller's problem.
+ *
+ * `skipRequestAccess: true` is what makes polling safe, and is not optional
+ * here. The kit's FreighterModule.getAddress calls `requestAccess()` first
+ * unless told not to (verified in
+ * `@creit.tech/stellar-wallets-kit@1.9.5/modules/freighter.module.mjs`), and
+ * `requestAccess()` opens the extension's approval popup whenever the
+ * currently selected account has not yet granted this origin -- which is
+ * exactly the situation right after someone switches accounts in Freighter,
+ * the one case this poll exists to detect. Without this flag the poll opened
+ * a new popup every tick, stacking windows faster than they could be
+ * dismissed. Read-only address reads must never prompt.
  */
 export async function getConnectedAddress(): Promise<string | null> {
   if (!kitHandle?.kit) return null;
   try {
-    const addressResult = await kitHandle.kit.getAddress();
+    const addressResult = await kitHandle.kit.getAddress({ skipRequestAccess: true });
     return typeof addressResult === "string"
       ? addressResult
       : (addressResult.address ?? addressResult.publicKey ?? null);

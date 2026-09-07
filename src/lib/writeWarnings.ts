@@ -36,8 +36,17 @@ export function collectWriteWarnings(
   ) {
     warnings.push({
       severity: "warn",
-      message:
-        "The connected wallet is not the treasury owner. This write will be rejected at submission, not at simulation.",
+      // "admin", not "signer": policy_engine and recovery_manager gate their
+      // writes on a plain `Address::require_auth()` against their own admin
+      // key, with no involvement from the SmartAccount's context rules -- so
+      // being a signer on a rule grants nothing here. The owner is named as
+      // the reference because under this project's Tier 1 deploy the owner,
+      // policy admin and recovery admin are the same key; that is a property
+      // of how these treasuries are deployed, not something the contracts
+      // enforce, hence the hedge rather than a flat "you are not the admin".
+      message: `This write is authorized by the target contract's own admin key, not by the SmartAccount's signers. The connected wallet is not the treasury owner${
+        context.ownerAddress ? ` (${context.ownerAddress})` : ""
+      }, which is also the policy and recovery admin on a treasury deployed this way. Simulation cannot check this: it will be rejected on-chain after you sign, and the fee is still charged.`,
     });
   }
 
