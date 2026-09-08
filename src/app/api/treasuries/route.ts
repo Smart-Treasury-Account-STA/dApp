@@ -8,7 +8,7 @@ import {
   validateCreateTreasuryInput,
 } from "@/lib/treasuryRegistry/store";
 import type { CreateTreasuryInput } from "@/lib/treasuryRegistry/types";
-import { verifyTreasuryOwnership } from "@/lib/treasuryRegistry/verify";
+import { verifyTreasuryRegistration } from "@/lib/treasuryRegistry/verify";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,10 +43,11 @@ export async function GET(request: Request) {
 
 /**
  * No admin-token gate, unlike `/api/relayer/*` — the on-chain ownership
- * check inside `verifyTreasuryOwnership` *is* the access control here.
- * Anyone can submit a registration claim, but it's only persisted once
- * `smart_account.get_owner()` at the claimed address actually matches the
- * claimed owner, which only the real deployer's transaction could produce.
+ * check inside `verifyTreasuryRegistration` *is* the access control here.
+ * Anyone can submit a registration claim, but it's only persisted once every
+ * address in it -- owner, policy engine, intent registry, recovery manager
+ * and both adapters -- matches what the smart_account's own instance storage
+ * says it is wired to, which only a real deployment could produce.
  */
 export async function POST(request: Request) {
   try {
@@ -59,7 +60,7 @@ export async function POST(request: Request) {
     // trip below -- a cleaner, faster rejection than letting a malformed
     // address surface as an opaque simulation error from loadOwner.
     validateCreateTreasuryInput(body);
-    await verifyTreasuryOwnership({ ...body, createdAt: new Date().toISOString() });
+    await verifyTreasuryRegistration({ ...body, createdAt: new Date().toISOString() });
     const treasury = await createTreasury(body);
     return NextResponse.json({ treasury });
   } catch (error) {

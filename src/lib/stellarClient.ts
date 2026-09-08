@@ -705,6 +705,79 @@ export async function loadOwner(
   return typeof result.value === "string" ? result.value : null;
 }
 
+/** The contracts a `smart_account` is actually wired to, read from its own
+ * instance storage. Every field is nullable: a contract that isn't a
+ * smart_account, or one whose storage layout changed, must surface as "not
+ * found" rather than as a silent match. */
+export type SmartAccountLinks = {
+  owner: string | null;
+  policyEngine: string | null;
+  intentRegistry: string | null;
+  recoveryManager: string | null;
+  transferAdapter: string | null;
+  splitAdapter: string | null;
+};
+
+/**
+ * Reads a smart_account's linked contract set straight from its instance
+ * storage, with no simulation and no contract call.
+ *
+ * `smart_account` exposes no getter for these addresses -- which is why the
+ * treasury registry originally could not check a claimed contract set -- but
+ * they are plain ledger state, under the keys this reads. Two properties make
+ * this the right source rather than the deploy transaction's `DeployedAccount`
+ * return value: it has no retention window (the transaction leaves the RPC's
+ * ~7 day history and becomes unreadable), and it reflects the account's
+ * *current* wiring rather than its wiring at deploy time.
+ *
+ * Returns `null` when there is no contract instance at `smartAccountId` at
+ * all. Individual fields come back `null` when a key is absent, so a caller
+ * comparing against a claim can tell "wired to something else" apart from
+ * "not wired at all"; neither may be treated as a match.
+ */
+export async function loadSmartAccountLinks(
+  smartAccountId: string,
+): Promise<SmartAccountLinks | null> {
+  const key = xdr.LedgerKey.contractData(
+    new xdr.LedgerKeyContractData({
+      contract: new Address(smartAccountId).toScAddress(),
+      key: xdr.ScVal.scvLedgerKeyContractInstance(),
+      durability: xdr.ContractDataDurability.persistent(),
+    }),
+  );
+
+  const response = await getServer().getLedgerEntries(key);
+  const entry = response.entries[0];
+  if (!entry) return null;
+
+  const storage = entry.val.contractData().val().instance().storage() ?? [];
+
+  // Keys are either a bare symbol (`PolicyEngine`) or a two-symbol vec
+  // (`["Adapter", "transfer"]`); `scValToNative` renders those as a string and
+  // a string array respectively. Verified against the live testnet instance of
+  // CCMPGTBA...ODUDL, whose 11 entries this parse reproduces exactly.
+  const byKey = new Map<string, unknown>();
+  for (const item of storage) {
+    const rawKey = scValToNative(item.key()) as unknown;
+    const name = Array.isArray(rawKey) ? rawKey.join("/") : String(rawKey);
+    byKey.set(name, scValToNative(item.val()) as unknown);
+  }
+
+  const address = (name: string) => {
+    const value = byKey.get(name);
+    return typeof value === "string" ? value : null;
+  };
+
+  return {
+    owner: address("Owner"),
+    policyEngine: address("PolicyEngine"),
+    intentRegistry: address("IntentRegistry"),
+    recoveryManager: address("RecoveryManager"),
+    transferAdapter: address("Adapter/transfer"),
+    splitAdapter: address("Adapter/split"),
+  };
+}
+
 export async function loadSignerId(
   sourceAddress: string,
   signerAddress: string,

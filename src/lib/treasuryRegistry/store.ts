@@ -95,20 +95,20 @@ export async function getTreasury(smartAccountId: string) {
  * Thrown when a second registration attempt for an already-registered
  * `smartAccountId` disagrees with the stored record on any field.
  *
- * `verifyTreasuryOwnership` (the endpoint's access control) can only check
- * that the claimed owner matches `smart_account.get_owner()` on-chain --
- * there is no getter to also verify the claimed policyEngineId/
- * intentRegistryId/etc are the *real* ones this specific smart_account was
- * deployed with (see toContractSet's doc comment). Anyone who has observed
- * a real deploy_account transaction knows its real owner address (public,
- * on a public ledger), so they can pass ownership verification while
- * supplying a fabricated sub-contract set. Silently returning the
- * first-registered record for a repeat call (the ordinary idempotent-create
- * pattern used elsewhere in this codebase, e.g. relayer/store.ts) would let
- * that fabricated record win a race against the legitimate deployer's own
- * registration call and stay permanently in place, undetected. Rejecting a
- * disagreeing second claim instead doesn't prevent the race outright, but
- * it turns a silent data-integrity failure into a visible one.
+ * This is a consistency check, no longer a security boundary.
+ * `verifyTreasuryRegistration` (the endpoint's access control) now compares
+ * every claimed address against the smart_account's own instance storage
+ * before a row is ever written, so a fabricated sub-contract set is rejected
+ * there rather than having to be out-raced here. Earlier revisions could not:
+ * they checked only `get_owner()`, and a deploy transaction is public, so
+ * anyone could pass that check while supplying invented sub-contracts.
+ *
+ * It still earns its place. Two claims can disagree without either being
+ * fabricated -- a treasury re-wired between registrations, say -- and
+ * silently returning the first-registered record (the ordinary
+ * idempotent-create pattern used elsewhere in this codebase, e.g.
+ * relayer/store.ts) would hide that the stored contract set no longer
+ * matches the chain. Rejecting the disagreement makes it visible.
  */
 export class TreasuryConflictError extends Error {
   constructor(smartAccountId: string) {
