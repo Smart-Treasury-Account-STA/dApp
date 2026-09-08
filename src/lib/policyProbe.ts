@@ -5,7 +5,7 @@ export type SimulatePolicyFn = (input: ProbeInput) => Promise<void>;
 
 const CODE_TO_REASON: Record<number, PolicyProbeReason> = {
   2003: "asset",
-  2004: "recipient",
+  2004: "destination",
   2005: "amount",
   2006: "version",
   2008: "operation",
@@ -13,19 +13,19 @@ const CODE_TO_REASON: Record<number, PolicyProbeReason> = {
 
 /**
  * Whether a rejection is about the payment as a whole rather than about the
- * one recipient being checked when it surfaced.
+ * one destination being checked when it surfaced.
  *
- * `execute_split_payment` validates policy once per recipient, so a caller
- * looping over recipients meets a whole-payment rejection on the *first* one
- * and would naturally report it as "recipient 1 was rejected". That sends the
+ * `execute_split_payment` validates policy once per destination, so a caller
+ * looping over them meets a whole-payment rejection on the *first* one and
+ * would naturally report it as "destination 1 was rejected". That sends the
  * operator off to edit an address that is not the problem: the asset, the
- * operation and the policy version are identical for every recipient, so the
- * next one would fail the same way. Only `recipient` and `amount` vary per
+ * operation and the policy version are identical for every destination, so
+ * the next one would fail the same way. Only `destination` and `amount` vary per
  * entry; `unknown` is treated as whole-payment because an unrecognised code
  * must not be blamed on a specific line.
  */
 export function isWholePaymentReason(reason: PolicyProbeReason): boolean {
-  return reason !== "recipient" && reason !== "amount";
+  return reason !== "destination" && reason !== "amount";
 }
 
 export function classifyProbeFailure(message: string): PolicyProbeVerdict {
@@ -55,7 +55,7 @@ export async function probePolicy(
 /**
  * Discovers the asset's `max_single_transfer` by probing.
  *
- * `validate_policy` checks the amount cap before the recipient, so the
+ * `validate_policy` checks the amount cap before the destination, so the
  * destination is irrelevant here and a disallowed one does not disturb the
  * search. Escalates by powers of ten to bracket the cap, then bisects. Returns
  * null when the rejection is on some other dimension, which means the cap is
@@ -67,7 +67,7 @@ export async function findAmountCap(
 ): Promise<bigint | null> {
   const accepts = async (amount: bigint) => {
     const verdict = await probePolicy(simulate, { ...input, amount: amount.toString() });
-    if (verdict.allowed || verdict.reason === "recipient") return true;
+    if (verdict.allowed || verdict.reason === "destination") return true;
     if (verdict.reason === "amount") return false;
     return null;
   };

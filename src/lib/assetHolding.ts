@@ -79,7 +79,7 @@ export function describeAssetReadiness(
   return { ready: true };
 }
 
-/** Sums a split's per-recipient amounts, ignoring entries that are not yet a
+/** Sums a split's per-destination amounts, ignoring entries that are not yet a
  * valid number -- a half-typed form must not read as a huge total and block
  * the button for the wrong reason. */
 export function totalRequested(amounts: string[]): bigint {

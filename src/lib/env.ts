@@ -15,7 +15,7 @@ export type StellarConfig = {
   networkPassphrase: string;
   explorerBaseUrl: string;
   contracts: ContractSet;
-  testRecipient: string;
+  testDestination: string;
   /** account_factory's contract id -- lets a connected wallet deploy its own
    * treasury. Optional (not part of the hard-required set below) so an
    * environment that hasn't configured it yet doesn't fail the whole app;
@@ -108,8 +108,12 @@ export function readStellarConfig(source: Source): StellarConfig {
     Object.entries(CONTRACT_KEYS).map(([field, key]) => [field, contractId(key)]),
   ) as ContractSet;
 
-  const testRecipient = required("NEXT_PUBLIC_TEST_RECIPIENT");
-  if (testRecipient && !StrKey.isValidEd25519PublicKey(testRecipient)) {
+  // The env key keeps its published name -- renaming it would break every
+  // deployment's configured variable for a vocabulary change. The field this
+  // reads into follows the rest of the code: one payment target is a
+  // `destination`.
+  const testDestination = required("NEXT_PUBLIC_TEST_RECIPIENT");
+  if (testDestination && !StrKey.isValidEd25519PublicKey(testDestination)) {
     issues.push("NEXT_PUBLIC_TEST_RECIPIENT must be a Stellar account id starting with G.");
   }
 
@@ -125,7 +129,7 @@ export function readStellarConfig(source: Source): StellarConfig {
     networkPassphrase,
     explorerBaseUrl,
     contracts,
-    testRecipient,
+    testDestination,
     accountFactoryId,
     relayerExecutorAddress,
   };

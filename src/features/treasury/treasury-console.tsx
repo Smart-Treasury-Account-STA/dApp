@@ -82,14 +82,14 @@ export function TreasuryConsole({
   const [relayerSessionActive, setRelayerSessionActive] = useState(false);
   const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>({
     asset: contracts.staAsset,
-    destination: STELLAR_CONFIG.testRecipient,
+    destination: STELLAR_CONFIG.testDestination,
     amount: "5000000",
     nonce: makeNonce(),
     expectedPolicyVersion: 1,
   });
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft>({
     asset: contracts.staAsset,
-    destination: STELLAR_CONFIG.testRecipient,
+    destination: STELLAR_CONFIG.testDestination,
     amount: "1000000",
     nonce: makeNonce(),
     expectedPolicyVersion: 1,
@@ -101,8 +101,8 @@ export function TreasuryConsole({
   });
   const [splitDraft, setSplitDraft] = useState<SplitDraft>({
     asset: contracts.staAsset,
-    recipients: [
-      { destination: STELLAR_CONFIG.testRecipient, amount: "1000000" },
+    destinations: [
+      { destination: STELLAR_CONFIG.testDestination, amount: "1000000" },
       { destination: "", amount: "" },
     ],
     nonce: makeNonce(),

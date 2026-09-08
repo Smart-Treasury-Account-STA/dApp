@@ -74,16 +74,16 @@ export function validateSplitDraft(draft: SplitDraft) {
   if (!Number.isSafeInteger(draft.expectedPolicyVersion) || draft.expectedPolicyVersion < 1) {
     throw new Error("Policy version must be a positive integer.");
   }
-  if (draft.recipients.length < 2) {
-    throw new Error("A split needs at least two recipients — use a plain payment for one.");
+  if (draft.destinations.length < 2) {
+    throw new Error("A split needs at least two destinations — use a plain payment for one.");
   }
-  draft.recipients.forEach((recipient, index) => {
-    assertAddress(`Recipient ${index + 1}`, recipient.destination);
-    parsePositiveBigInt(`Amount ${index + 1}`, recipient.amount);
+  draft.destinations.forEach((entry, index) => {
+    assertAddress(`Destination ${index + 1}`, entry.destination);
+    parsePositiveBigInt(`Amount ${index + 1}`, entry.amount);
   });
-  const destinations = draft.recipients.map((recipient) => recipient.destination);
-  if (new Set(destinations).size !== destinations.length) {
-    throw new Error("Split recipients must be distinct addresses.");
+  const addresses = draft.destinations.map((entry) => entry.destination);
+  if (new Set(addresses).size !== addresses.length) {
+    throw new Error("Split destinations must be distinct addresses.");
   }
 }
 

@@ -8,7 +8,7 @@ import {
   validateContextRuleDraft,
   validateGuardianDraft,
   validateOperationDraft,
-  validateRecipientDraft,
+  validateDestinationDraft,
   validateSignerDraft,
   validateVersionBump,
 } from "./writeDrafts";
@@ -108,9 +108,9 @@ describe("validateAssetRuleDraft", () => {
   });
 });
 
-describe("validateRecipientDraft", () => {
-  it("rejects a malformed recipient", () => {
-    expect(() => validateRecipientDraft({ recipient: "nope", allowed: true })).toThrow(
+describe("validateDestinationDraft", () => {
+  it("rejects a malformed destination", () => {
+    expect(() => validateDestinationDraft({ destination: "nope", allowed: true })).toThrow(
       /valid Stellar/i,
     );
   });

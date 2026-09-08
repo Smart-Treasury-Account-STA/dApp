@@ -65,8 +65,13 @@ export function validateAssetRuleDraft({
   }
 }
 
-export function validateRecipientDraft({ recipient }: { recipient: string; allowed: boolean }) {
-  assertAddress("Recipient", recipient);
+export function validateDestinationDraft({
+  destination,
+}: {
+  destination: string;
+  allowed: boolean;
+}) {
+  assertAddress("Destination", destination);
 }
 
 export function validateOperationDraft({ operation }: { operation: string; allowed: boolean }) {

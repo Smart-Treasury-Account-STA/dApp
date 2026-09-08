@@ -11,20 +11,20 @@ import type { ProbeInput } from "@/types";
 /**
  * Stands in for the deployed policy engine. Mirrors validate_policy's real
  * check order: version, amount > 0, operation, asset (enabled then cap),
- * recipient. Rejects with the same message shape the RPC returns.
+ * destination. Rejects with the same message shape the RPC returns.
  */
 function fakeEngine({
   cap = 10_000_000n,
   version = 1,
   allowedOperation = "transfer",
   allowedAsset = "ASSET_OK",
-  allowedRecipient = "DEST_OK",
+  allowedDestination = "DEST_OK",
 }: {
   cap?: bigint;
   version?: number;
   allowedOperation?: string;
   allowedAsset?: string;
-  allowedRecipient?: string;
+  allowedDestination?: string;
 } = {}) {
   return async (input: ProbeInput) => {
     const fail = (code: number) => {
@@ -35,7 +35,7 @@ function fakeEngine({
     if (input.operation !== allowedOperation) fail(2008);
     if (input.asset !== allowedAsset) fail(2003);
     if (BigInt(input.amount) > cap) fail(2005);
-    if (input.destination !== allowedRecipient) fail(2004);
+    if (input.destination !== allowedDestination) fail(2004);
   };
 }
 
@@ -65,7 +65,7 @@ describe("classifyProbeFailure", () => {
     });
     expect(classifyProbeFailure("Error(Contract, #2004)")).toEqual({
       allowed: false,
-      reason: "recipient",
+      reason: "destination",
       code: 2004,
     });
     expect(classifyProbeFailure("Error(Contract, #2006)")).toEqual({
@@ -84,21 +84,21 @@ describe("classifyProbeFailure", () => {
 });
 
 describe("isWholePaymentReason", () => {
-  it("treats the per-recipient dimensions as belonging to that recipient", () => {
-    expect(isWholePaymentReason("recipient")).toBe(false);
+  it("treats the per-destination dimensions as belonging to that destination", () => {
+    expect(isWholePaymentReason("destination")).toBe(false);
     expect(isWholePaymentReason("amount")).toBe(false);
   });
 
   it("treats asset, operation and version as belonging to the whole payment", () => {
-    // A split checks policy once per recipient, so these surface on whichever
-    // recipient happens to be first -- blaming that entry sends the operator
+    // A split checks policy once per destination, so these surface on whichever
+    // destination happens to be first -- blaming that entry sends the operator
     // to edit an address that was never the problem.
     expect(isWholePaymentReason("asset")).toBe(true);
     expect(isWholePaymentReason("operation")).toBe(true);
     expect(isWholePaymentReason("version")).toBe(true);
   });
 
-  it("does not blame a recipient for a code it could not classify", () => {
+  it("does not blame a destination for a code it could not classify", () => {
     expect(isWholePaymentReason("unknown")).toBe(true);
   });
 });
@@ -115,7 +115,7 @@ describe("probePolicy", () => {
       destination: "DEST_BAD",
       amount: "1",
     });
-    expect(verdict).toEqual({ allowed: false, reason: "recipient", code: 2004 });
+    expect(verdict).toEqual({ allowed: false, reason: "destination", code: 2004 });
   });
 });
 
@@ -135,7 +135,7 @@ describe("findAmountCap", () => {
     expect(cap).toBeNull();
   });
 
-  it("ignores the recipient, which validate_policy checks after the cap", async () => {
+  it("ignores the destination, which validate_policy checks after the cap", async () => {
     const cap = await findAmountCap(fakeEngine({ cap: 500n }), {
       ...base,
       destination: "DEST_BAD",

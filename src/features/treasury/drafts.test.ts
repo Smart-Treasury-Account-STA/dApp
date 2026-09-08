@@ -21,7 +21,7 @@ const payment = {
 
 const split = {
   asset: contract,
-  recipients: [
+  destinations: [
     { destination: account, amount: "2000000" },
     { destination: account2, amount: "3000000" },
   ],
@@ -98,35 +98,35 @@ describe("validateSplitDraft", () => {
     expect(() => validateSplitDraft({ ...split, asset: "nope" })).toThrow(/Asset contract/);
   });
 
-  it("rejects a single recipient — use a plain payment instead", () => {
+  it("rejects a single destination — use a plain payment instead", () => {
     expect(() =>
-      validateSplitDraft({ ...split, recipients: [split.recipients[0]] }),
-    ).toThrow(/at least two recipients/);
+      validateSplitDraft({ ...split, destinations: [split.destinations[0]] }),
+    ).toThrow(/at least two destinations/);
   });
 
-  it("rejects a malformed recipient address", () => {
+  it("rejects a malformed destination address", () => {
     expect(() =>
       validateSplitDraft({
         ...split,
-        recipients: [{ destination: "nope", amount: "1" }, split.recipients[1]],
+        destinations: [{ destination: "nope", amount: "1" }, split.destinations[1]],
       }),
-    ).toThrow(/Recipient 1/);
+    ).toThrow(/Destination 1/);
   });
 
-  it("rejects a zero or negative recipient amount", () => {
+  it("rejects a zero or negative destination amount", () => {
     expect(() =>
       validateSplitDraft({
         ...split,
-        recipients: [{ destination: account, amount: "0" }, split.recipients[1]],
+        destinations: [{ destination: account, amount: "0" }, split.destinations[1]],
       }),
     ).toThrow(/Amount 1/);
   });
 
-  it("rejects duplicate recipient addresses — matches the contract's own DuplicateRecipient check", () => {
+  it("rejects duplicate destination addresses — matches the contract's own DuplicateRecipient check", () => {
     expect(() =>
       validateSplitDraft({
         ...split,
-        recipients: [
+        destinations: [
           { destination: account, amount: "1000000" },
           { destination: account, amount: "2000000" },
         ],

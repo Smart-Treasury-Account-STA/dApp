@@ -91,18 +91,18 @@ export function PaymentSection({
   });
 
   async function onPolicyCheck() {
-    const source = wallet.address ?? STELLAR_CONFIG.testRecipient;
+    const source = wallet.address ?? STELLAR_CONFIG.testDestination;
     onNotice(await simulatePolicy(source, draft, contracts));
   }
 
   async function onTransferSimulation() {
-    const source = wallet.address ?? STELLAR_CONFIG.testRecipient;
+    const source = wallet.address ?? STELLAR_CONFIG.testDestination;
     onNotice(await simulateTransfer(source, draft, contracts));
   }
 
   async function onNonceCheck() {
     try {
-      const source = wallet.address ?? STELLAR_CONFIG.testRecipient;
+      const source = wallet.address ?? STELLAR_CONFIG.testDestination;
       const used = await checkNonce(source, draft.nonce, contracts);
       onNotice({
         ok: !used,

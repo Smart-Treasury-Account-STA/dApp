@@ -128,9 +128,9 @@ export function explainContractError(message: string) {
     // Adapter codes, read from the deployed contracts' own specs.
     6002: "Transfer adapter rejected the amount.",
     7002: "Split adapter rejected the amount.",
-    7003: "A split needs at least one recipient.",
-    7004: "Too many recipients for one split.",
-    7005: "Each recipient needs exactly one amount.",
+    7003: "A split needs at least one destination.",
+    7004: "Too many destinations for one split.",
+    7005: "Each destination needs exactly one amount.",
     7006: "The split's total amount overflows.",
     3007: "Execution window is not open yet.",
     3008: "Execution window already expired.",

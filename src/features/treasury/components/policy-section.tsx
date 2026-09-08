@@ -29,7 +29,7 @@ import { fetchRelayerJobs } from "@/features/treasury/relayer-client";
 import {
   validateAssetRuleDraft,
   validateOperationDraft,
-  validateRecipientDraft,
+  validateDestinationDraft,
   validateVersionBump,
 } from "@/features/treasury/writeDrafts";
 import { FormField, SectionHeader } from "@/features/treasury/components/primitives";
@@ -52,7 +52,7 @@ const KNOWN_OPERATIONS = ["transfer", "split"] as const;
 const REASON_LABEL: Record<string, string> = {
   operation: "operation not allowed",
   asset: "asset not allowed",
-  recipient: "recipient not allowed",
+  destination: "destination not allowed",
   amount: "amount above cap",
   version: "policy version mismatch",
   unknown: "not readable",
@@ -76,11 +76,11 @@ export function PolicySection({
     asset: contracts.staAsset,
     maxSingleTransfer: "10000000",
   });
-  const [recipientDraft, setRecipientDraft] = useState(STELLAR_CONFIG.testRecipient);
+  const [destinationDraft, setDestinationDraft] = useState(STELLAR_CONFIG.testDestination);
   const [operationDraft, setOperationDraft] = useState<string>(KNOWN_OPERATIONS[0]);
   const [nextVersion, setNextVersion] = useState(String(currentVersion + 1));
 
-  // Checks exactly the asset/recipient/operation combination currently
+  // Checks exactly the asset/destination/operation combination currently
   // typed into the three fields below -- not a separate list to manage.
   // Editing any of those three fields and re-running this is how you see
   // whether that specific combination is allowed right now; there is
@@ -91,13 +91,13 @@ export function PolicySection({
       const simulate = simulatePolicyProbe(wallet.address, contracts);
       const input = {
         asset: assetDraft.asset,
-        destination: recipientDraft,
+        destination: destinationDraft,
         operation: operationDraft,
         expectedVersion: currentVersion,
       };
       const verdict = await probePolicy(simulate, { ...input, amount: "1" });
       const cap =
-        verdict.allowed || verdict.reason === "recipient"
+        verdict.allowed || verdict.reason === "destination"
           ? await findAmountCap(simulate, input)
           : null;
       return { verdict, cap: cap === null ? null : cap.toString() };
@@ -200,11 +200,11 @@ export function PolicySection({
       </p>
       <p className="mb-4 text-xs text-muted-foreground">
         <strong className="text-foreground">A payment needs all three gates open at once</strong> —
-        its asset, its recipient, and its operation are each checked against a separate
+        its asset, its destination, and its operation are each checked against a separate
         allowlist further down (three independent writes, not one combined
         &ldquo;rule&rdquo;). The check below always tests whatever is currently typed into
         the <strong className="text-foreground">Asset contract</strong>,{" "}
-        <strong className="text-foreground">Recipient</strong>, and{" "}
+        <strong className="text-foreground">Destination</strong>, and{" "}
         <strong className="text-foreground">Operation</strong> fields below it — edit any of
         the three and check again to see how that combination is treated right now.
       </p>
@@ -221,7 +221,7 @@ export function PolicySection({
         {checkMutation.data ? (
           <p className="mt-3 text-sm">
             <code className="text-xs">{assetDraft.asset.slice(0, 9)}…</code> →{" "}
-            <code className="text-xs">{recipientDraft.slice(0, 9)}…</code> ·{" "}
+            <code className="text-xs">{destinationDraft.slice(0, 9)}…</code> ·{" "}
             {operationDraft}:{" "}
             <strong>
               {checkMutation.data.verdict.allowed
@@ -277,35 +277,39 @@ export function PolicySection({
           </Button>
         </div>
 
-        <FormField label="Recipient" onChange={setRecipientDraft} value={recipientDraft} />
+        <FormField
+          label="Destination"
+          onChange={setDestinationDraft}
+          value={destinationDraft}
+        />
         <div className="flex gap-2">
           <Button
             onClick={() =>
               submit(() => {
-                validateRecipientDraft({ recipient: recipientDraft, allowed: true });
+                validateDestinationDraft({ destination: destinationDraft, allowed: true });
                 return setRecipientAllowedOperation({
-                  recipient: recipientDraft,
+                  recipient: destinationDraft,
                   allowed: true,
                   contracts,
                 });
               })
             }
           >
-            Allow recipient
+            Allow destination
           </Button>
           <Button
             onClick={() =>
               submit(() => {
-                validateRecipientDraft({ recipient: recipientDraft, allowed: false });
+                validateDestinationDraft({ destination: destinationDraft, allowed: false });
                 return setRecipientAllowedOperation({
-                  recipient: recipientDraft,
+                  recipient: destinationDraft,
                   allowed: false,
                   contracts,
                 });
               })
             }
           >
-            Remove recipient
+            Remove destination
           </Button>
         </div>
 

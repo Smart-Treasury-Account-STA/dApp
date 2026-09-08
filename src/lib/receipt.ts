@@ -26,7 +26,9 @@ function summarizeEvents(receipt: TransactionReceipt): string | null {
   }
   const split = findEvent(parsed, "splt_ok");
   if (split) {
-    return `Split ${split.asset} across ${split.recipient_count} recipient${split.recipient_count === 1 ? "" : "s"}.`;
+    // `recipient_count` is `SplitExecuted`'s own field name; the sentence it
+    // feeds uses this dApp's word for the same thing.
+    return `Split ${split.asset} across ${split.recipient_count} destination${split.recipient_count === 1 ? "" : "s"}.`;
   }
   const scheduled = findEvent(parsed, "auto_ok");
   if (scheduled) {

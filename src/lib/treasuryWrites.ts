@@ -133,6 +133,14 @@ export function setAssetRuleOperation({
   };
 }
 
+/**
+ * Adds or removes one address from `policy_engine`'s allowlist.
+ *
+ * Keeps the contract's word — the entrypoint is `set_recipient_allowed` and
+ * its refusal is `RecipientNotAllowed` (#2004). Everywhere the operator can
+ * see, the same address is a *destination*; the contract's spelling stops at
+ * this call boundary.
+ */
 export function setRecipientAllowedOperation({
   allowed,
   recipient,
@@ -150,7 +158,7 @@ export function setRecipientAllowedOperation({
     strategy: "source-account",
     summary: allowed
       ? `Allow payments to ${recipient}.`
-      : `Remove ${recipient} from the recipient allowlist.`,
+      : `Remove ${recipient} from the destination allowlist.`,
   };
 }
 

@@ -232,7 +232,7 @@ export function ScheduleSection({
   });
 
   async function onScheduleSimulation() {
-    const source = wallet.address ?? STELLAR_CONFIG.testRecipient;
+    const source = wallet.address ?? STELLAR_CONFIG.testDestination;
     onNotice(await simulateSchedule(source, draft, contracts));
   }
 

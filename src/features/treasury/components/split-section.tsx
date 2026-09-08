@@ -16,7 +16,7 @@ import { signAuthEntry, signTransaction } from "@/lib/wallet";
 import type { SimulationResult, SplitDraft, WalletState } from "@/types";
 import { FormField, SectionHeader } from "@/features/treasury/components/primitives";
 
-function emptyRecipient() {
+function emptyDestination() {
   return { destination: "", amount: "" };
 }
 
@@ -41,7 +41,7 @@ export function SplitSection({
   const readiness = assetHolding
     ? describeAssetReadiness(
         assetHolding,
-        totalRequested(draft.recipients.map((recipient) => recipient.amount)),
+        totalRequested(draft.destinations.map((entry) => entry.amount)),
       )
     : null;
   const blocked = readiness && !readiness.ready ? readiness : null;
@@ -91,30 +91,30 @@ export function SplitSection({
   }
 
   async function onSplitSimulation() {
-    const source = wallet.address ?? STELLAR_CONFIG.testRecipient;
+    const source = wallet.address ?? STELLAR_CONFIG.testDestination;
     onNotice(await simulateSplit(source, draft, contracts));
   }
 
-  function updateRecipient(index: number, field: "destination" | "amount", value: string) {
+  function updateDestination(index: number, field: "destination" | "amount", value: string) {
     onDraftChange((current) => ({
       ...current,
-      recipients: current.recipients.map((recipient, i) =>
-        i === index ? { ...recipient, [field]: value } : recipient,
+      destinations: current.destinations.map((entry, i) =>
+        i === index ? { ...entry, [field]: value } : entry,
       ),
     }));
   }
 
-  function addRecipient() {
+  function addDestination() {
     onDraftChange((current) => ({
       ...current,
-      recipients: [...current.recipients, emptyRecipient()],
+      destinations: [...current.destinations, emptyDestination()],
     }));
   }
 
-  function removeRecipient(index: number) {
+  function removeDestination(index: number) {
     onDraftChange((current) => ({
       ...current,
-      recipients: current.recipients.filter((_, i) => i !== index),
+      destinations: current.destinations.filter((_, i) => i !== index),
     }));
   }
 
@@ -133,23 +133,23 @@ export function SplitSection({
       />
 
       <div className="grid gap-3">
-        {draft.recipients.map((recipient, index) => (
+        {draft.destinations.map((entry, index) => (
           <div className="grid grid-cols-[1fr_1fr_auto] items-end gap-2 max-sm:grid-cols-1" key={index}>
             <FormField
-              label={`Recipient ${index + 1}`}
-              onChange={(value) => updateRecipient(index, "destination", value)}
-              value={recipient.destination}
+              label={`Destination ${index + 1}`}
+              onChange={(value) => updateDestination(index, "destination", value)}
+              value={entry.destination}
             />
             <FormField
               label="Amount"
-              onChange={(value) => updateRecipient(index, "amount", value)}
-              value={recipient.amount}
+              onChange={(value) => updateDestination(index, "amount", value)}
+              value={entry.amount}
             />
             <Button
-              disabled={draft.recipients.length <= 2}
-              onClick={() => removeRecipient(index)}
+              disabled={draft.destinations.length <= 2}
+              onClick={() => removeDestination(index)}
               size="icon"
-              title="Remove recipient"
+              title="Remove destination"
               type="button"
               variant="secondary"
             >
@@ -157,9 +157,9 @@ export function SplitSection({
             </Button>
           </div>
         ))}
-        <Button className="justify-self-start" onClick={addRecipient} type="button" variant="secondary">
+        <Button className="justify-self-start" onClick={addDestination} type="button" variant="secondary">
           <Plus size={16} />
-          Add recipient
+          Add destination
         </Button>
       </div>
 

@@ -466,8 +466,11 @@ function transferArgs(draft: PaymentDraft) {
 function splitArgs(draft: SplitDraft) {
   return [
     addressScVal(draft.asset),
-    xdr.ScVal.scvVec(draft.recipients.map((recipient) => addressScVal(recipient.destination))),
-    xdr.ScVal.scvVec(draft.recipients.map((recipient) => i128ScVal(recipient.amount))),
+    // `split_adapter::execute_split` names this argument `recipients`; the
+    // value it carries is this dApp's `destinations` list. The contract's
+    // spelling stops at the call boundary.
+    xdr.ScVal.scvVec(draft.destinations.map((entry) => addressScVal(entry.destination))),
+    xdr.ScVal.scvVec(draft.destinations.map((entry) => i128ScVal(entry.amount))),
     u64ScVal(draft.nonce),
     u32ScVal(draft.expectedPolicyVersion),
   ];
@@ -1290,7 +1293,7 @@ export async function simulatePolicy(
       ok: true,
       title: "Policy simulation passed",
       detail:
-        "Asset, recipient, amount, operation, and expected policy version are accepted on testnet.",
+        "Asset, destination, amount, operation, and expected policy version are accepted on testnet.",
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1307,11 +1310,11 @@ export async function simulatePolicy(
 }
 
 /**
- * Checks policy for every recipient/amount pair, matching how
+ * Checks policy for every destination/amount pair, matching how
  * `execute_split_payment` validates on-chain — it calls
- * `policy_engine.validate_policy` once per recipient with `operation:
+ * `policy_engine.validate_policy` once per destination with `operation:
  * "split"`, not once for the whole batch (see contracts/smart_account/src/lib.rs).
- * Reports the first rejection found, in recipient order.
+ * Reports the first rejection found, in destination order.
  */
 export async function simulateSplitPolicy(
   sourceAddress: string,
@@ -1321,14 +1324,14 @@ export async function simulateSplitPolicy(
   const invalid = validationFailure(() => validateSplitDraft(draft));
   if (invalid) return invalid;
 
-  for (const [index, recipient] of draft.recipients.entries()) {
+  for (const [index, entry] of draft.destinations.entries()) {
     try {
       await simulateContractCall(sourceAddress, contracts.policyEngine, "validate_policy", [
         policyCheckScVal(
           {
             asset: draft.asset,
-            destination: recipient.destination,
-            amount: recipient.amount,
+            destination: entry.destination,
+            amount: entry.amount,
             nonce: "1",
             expectedPolicyVersion: draft.expectedPolicyVersion,
           },
@@ -1338,9 +1341,9 @@ export async function simulateSplitPolicy(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const failure = describeSimulationFailure(message);
-      // Only `recipient` and `amount` belong to the entry being checked. The
+      // Only `destination` and `amount` belong to the entry being checked. The
       // asset, the operation and the policy version are the same for every
-      // recipient, so naming this one would send the operator to edit an
+      // destination, so naming this one would send the operator to edit an
       // address that is not the problem -- the loop simply stopped here first.
       const verdict = classifyProbeFailure(message);
       const wholePayment = isWholePaymentReason(verdict.allowed ? "unknown" : verdict.reason);
@@ -1349,11 +1352,11 @@ export async function simulateSplitPolicy(
         title: failure.rejectedByContract
           ? wholePayment
             ? "Policy rejected this split payment"
-            : `Policy rejected recipient ${index + 1}`
+            : `Policy rejected destination ${index + 1}`
           : "Policy check could not run",
         detail:
           failure.rejectedByContract && wholePayment
-            ? `${failure.detail} It applies to the whole payment, not to recipient ${index + 1} — every recipient would be rejected the same way.`
+            ? `${failure.detail} It applies to the whole payment, not to destination ${index + 1} — every destination would be rejected the same way.`
             : failure.detail,
         diagnostic: message,
       };
@@ -1363,7 +1366,7 @@ export async function simulateSplitPolicy(
   return {
     ok: true,
     title: "Policy simulation passed",
-    detail: `Every recipient, amount, and the expected policy version are accepted on testnet.`,
+    detail: `Every destination, amount, and the expected policy version are accepted on testnet.`,
   };
 }
 

@@ -34,14 +34,14 @@ export type PaymentDraft = {
   expectedPolicyVersion: number;
 };
 
-export type SplitRecipient = {
+export type SplitDestination = {
   destination: string;
   amount: string;
 };
 
 export type SplitDraft = {
   asset: string;
-  recipients: SplitRecipient[];
+  destinations: SplitDestination[];
   nonce: string;
   expectedPolicyVersion: number;
 };
@@ -108,7 +108,7 @@ export type WalletSigning = {
 export type PolicyProbeReason =
   | "operation"
   | "asset"
-  | "recipient"
+  | "destination"
   | "amount"
   | "version"
   | "unknown";
