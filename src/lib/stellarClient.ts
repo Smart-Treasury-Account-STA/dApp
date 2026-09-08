@@ -18,6 +18,7 @@ import { STELLAR_CONFIG } from "@/config";
 import { validatePaymentDraft, validateScheduleDraft, validateSplitDraft } from "@/features/treasury/drafts";
 import { countAuthContexts, selectInvocationForAddress } from "@/lib/authTree";
 import type { ContractSet } from "@/lib/env";
+import type { AssetHolding } from "@/lib/assetHolding";
 import { describeSimulationFailure } from "@/lib/format";
 import { classifyProbeFailure, isWholePaymentReason } from "@/lib/policyProbe";
 import { structScVal } from "@/lib/scval";
@@ -704,6 +705,61 @@ export async function loadOwner(
 ): Promise<string | null> {
   const result = await simulateContractCall(sourceAddress, contracts.smartAccount, "get_owner");
   return typeof result.value === "string" ? result.value : null;
+}
+
+/**
+ * Reads a holder's balance and authorization flag for a Stellar Asset
+ * Contract, as `describeAssetReadiness` consumes them.
+ *
+ * Two reads because they answer different questions and fail differently:
+ * `balance` raises the token's own `#13` when there is no trustline at all,
+ * while `authorized` reports the issuer's flag on an entry that does exist.
+ * A contract address (a treasury) never needs a trustline -- the token keeps
+ * it a balance entry with an authorization flag -- but a classic `G...`
+ * account does, which is why "missing" and "deauthorized" are separate states
+ * rather than one "cannot receive".
+ *
+ * Failures other than `#13` come back as nulls rather than throwing: this
+ * feeds a status panel, and an RPC hiccup must not read as "the issuer said
+ * no". `describeAssetReadiness` treats a null authorization as acceptable for
+ * the same reason.
+ */
+export async function loadAssetHolding(
+  sourceAddress: string,
+  holder: string,
+  assetContractId: string,
+): Promise<AssetHolding> {
+  let balance: bigint | null = null;
+  let missing = false;
+
+  try {
+    const result = await simulateContractCall(sourceAddress, assetContractId, "balance", [
+      addressScVal(holder),
+    ]);
+    balance =
+      typeof result.value === "bigint"
+        ? result.value
+        : typeof result.value === "string" || typeof result.value === "number"
+          ? BigInt(result.value)
+          : null;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // #13 is the token's TrustlineMissing -- verified against the live testnet
+    // SAC, alongside #8/#10/#11 (see explainContractError's own note).
+    missing = /Error\(Contract, #13\)/.test(message);
+  }
+
+  let authorized: boolean | null = null;
+  try {
+    const result = await simulateContractCall(sourceAddress, assetContractId, "authorized", [
+      addressScVal(holder),
+    ]);
+    authorized = typeof result.value === "boolean" ? result.value : null;
+  } catch {
+    authorized = null;
+  }
+
+  return { balance, authorized, missing };
 }
 
 /** The contracts a `smart_account` is actually wired to, read from its own

@@ -36,7 +36,12 @@ import type {
   SimulationResult,
   SplitDraft,
 } from "@/types";
-import { useContextRules, useTreasurySnapshot } from "@/features/treasury/queries";
+import {
+  useAssetHolding,
+  useContextRules,
+  useTreasurySnapshot,
+} from "@/features/treasury/queries";
+import { describeAssetReadiness } from "@/lib/assetHolding";
 import { useWallet } from "@/providers/wallet-provider";
 import { GuardiansSection } from "@/features/treasury/components/guardians-section";
 import { PaymentSection } from "@/features/treasury/components/payment-section";
@@ -106,6 +111,12 @@ export function TreasuryConsole({
 
   const snapshotQuery = useTreasurySnapshot(wallet.address, contracts);
   const rulesQuery = useContextRules(wallet.address, contracts);
+  // The token contract's gate on the treasury's own holding -- checked before
+  // any policy this project owns, and not reflected anywhere in TreasuryStatus.
+  const assetHoldingQuery = useAssetHolding(wallet.address, contracts);
+  const assetReadiness = assetHoldingQuery.data
+    ? describeAssetReadiness(assetHoldingQuery.data)
+    : null;
 
   const policyVersion = snapshotQuery.data?.policyVersion ?? null;
   const latestLedger = snapshotQuery.data?.latestLedger ?? null;
@@ -294,6 +305,7 @@ export function TreasuryConsole({
         </header>
 
         <TreasurySection
+          assetReadiness={assetReadiness}
           connected={wallet.connected}
           contracts={contracts}
           error={snapshotQuery.error}
@@ -311,6 +323,7 @@ export function TreasuryConsole({
 
         <section className="grid grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)] gap-5 max-xl:grid-cols-1">
           <PaymentSection
+            assetHolding={assetHoldingQuery.data ?? null}
             contracts={contracts}
             draft={paymentDraft}
             onDraftChange={setPaymentDraft}
@@ -329,6 +342,7 @@ export function TreasuryConsole({
         </section>
 
         <SplitSection
+          assetHolding={assetHoldingQuery.data ?? null}
           contracts={contracts}
           draft={splitDraft}
           onDraftChange={setSplitDraft}

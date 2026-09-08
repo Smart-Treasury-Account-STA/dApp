@@ -6,6 +6,8 @@ import { useMutation } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { STELLAR_CONFIG } from "@/config";
+import { describeAssetReadiness, totalRequested } from "@/lib/assetHolding";
+import type { AssetHolding } from "@/lib/assetHolding";
 import type { ContractSet } from "@/lib/env";
 import { makeNonce } from "@/lib/format";
 import { describeReceipt } from "@/lib/receipt";
@@ -19,18 +21,31 @@ function emptyRecipient() {
 }
 
 export function SplitSection({
+  assetHolding,
   contracts = STELLAR_CONFIG.contracts,
   draft,
   onDraftChange,
   onNotice,
   wallet,
 }: {
+  /** Null while loading or disconnected — an unknown holding never blocks. */
+  assetHolding: AssetHolding | null;
   contracts?: ContractSet;
   draft: SplitDraft;
   onDraftChange: Dispatch<SetStateAction<SplitDraft>>;
   onNotice: (notice: SimulationResult | null) => void;
   wallet: WalletState;
 }) {
+  // Checked against the split's own total, not just "can it send anything":
+  // a treasury with a balance can still be short for this particular batch.
+  const readiness = assetHolding
+    ? describeAssetReadiness(
+        assetHolding,
+        totalRequested(draft.recipients.map((recipient) => recipient.amount)),
+      )
+    : null;
+  const blocked = readiness && !readiness.ready ? readiness : null;
+
   const submitSplitMutation = useMutation({
     mutationFn: async () => {
       if (!wallet.address) {
@@ -166,6 +181,17 @@ export function SplitSection({
         />
       </div>
 
+      {/* The token's own gate, checked before any policy this project owns.
+          Shown here as well as in the Treasury panel because this is where the
+          operator is about to act, and because only here is the requested
+          total known. */}
+      {blocked ? (
+        <p className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs leading-relaxed text-warning">
+          {blocked.message} Policy check and simulation still work — they read
+          the policy engine, which is a separate gate.
+        </p>
+      ) : null}
+
       <div className="flex flex-wrap gap-2">
         <Button onClick={onPolicyCheck} variant="secondary">
           <ClipboardCheck size={18} />
@@ -176,8 +202,9 @@ export function SplitSection({
           Simulate
         </Button>
         <Button
-          disabled={!wallet.connected || submitSplitMutation.isPending}
+          disabled={!wallet.connected || submitSplitMutation.isPending || blocked !== null}
           onClick={() => submitSplitMutation.mutate()}
+          title={blocked?.message}
         >
           {submitSplitMutation.isPending ? (
             <Loader2 className="animate-spin" size={18} />

@@ -13,6 +13,7 @@ import {
 
 import { Separator } from "@/components/ui/separator";
 import { buildContractList, STELLAR_CONFIG } from "@/config";
+import type { AssetReadiness } from "@/lib/assetHolding";
 import type { ContractSet } from "@/lib/env";
 import { formatNumber, truncateAddress } from "@/lib/format";
 import type { SmartAccountAuthPlan } from "@/lib/smartAccountAuth";
@@ -34,6 +35,7 @@ export type TreasurySnapshot = {
 };
 
 export function TreasurySection({
+  assetReadiness,
   connected,
   contracts = STELLAR_CONFIG.contracts,
   error,
@@ -42,6 +44,8 @@ export function TreasurySection({
   isPending,
   snapshot,
 }: {
+  /** Null while the holding is still loading, or when no wallet is connected. */
+  assetReadiness: AssetReadiness | null;
   connected: boolean;
   contracts?: ContractSet;
   error: unknown;
@@ -105,6 +109,27 @@ export function TreasurySection({
           />
         </div>
       ))}
+
+      {/* The token contract's own gate, which nothing in `status` reflects: a
+          treasury the issuer has not authorized and one that is merely empty
+          look identical there, and the difference only surfaces as a failed
+          payment. Kept out of the Metric grid because it needs a sentence, not
+          a value. */}
+      {assetReadiness && !assetReadiness.ready ? (
+        <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
+          <strong>
+            Asset {truncateAddress(contracts.staAsset)}:{" "}
+            {assetReadiness.reason === "missing"
+              ? "no trustline"
+              : assetReadiness.reason === "deauthorized"
+                ? "not authorized"
+                : "no balance"}
+            .
+          </strong>{" "}
+          {assetReadiness.message} No payment, split or scheduled execution of this
+          asset can succeed from this treasury until that is resolved.
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-2 max-lg:grid-cols-1">
         {buildContractList(contracts).map(([name, address]) => (

@@ -5,7 +5,12 @@ import { useQuery } from "@tanstack/react-query";
 import { STELLAR_CONFIG } from "@/config";
 import { fetchMyTreasuries, fetchTreasury } from "@/features/treasury/treasuryRegistryClient";
 import type { ContractSet } from "@/lib/env";
-import { loadContextRules, loadOwner, loadTreasurySnapshot } from "@/lib/stellarClient";
+import {
+  loadAssetHolding,
+  loadContextRules,
+  loadOwner,
+  loadTreasurySnapshot,
+} from "@/lib/stellarClient";
 import type { TreasuryAuthority } from "@/types";
 
 // Keyed by both the connected wallet address AND the treasury's own
@@ -19,6 +24,8 @@ export const treasuryKeys = {
     ["treasury", "rules", address, smartAccountId] as const,
   authority: (address: string, smartAccountId: string) =>
     ["treasury", "authority", address, smartAccountId] as const,
+  assetHolding: (address: string, holder: string, assetContractId: string) =>
+    ["treasury", "assetHolding", address, holder, assetContractId] as const,
 };
 
 export function useTreasurySnapshot(
@@ -31,6 +38,28 @@ export function useTreasurySnapshot(
     enabled: address !== null,
     staleTime: 10_000,
     refetchInterval: 30_000,
+  });
+}
+
+/**
+ * The treasury's own balance and authorization for an asset — the token
+ * contract's gate, which is checked before any policy this project owns and
+ * is invisible in `TreasuryStatus`.
+ *
+ * Defaults to the treasury itself as holder, which is what every payment
+ * screen needs: funds leave the smart account, never the connected wallet.
+ */
+export function useAssetHolding(
+  address: string | null,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  holder?: string,
+) {
+  const target = holder ?? contracts.smartAccount;
+  return useQuery({
+    queryKey: treasuryKeys.assetHolding(address ?? "disconnected", target, contracts.staAsset),
+    queryFn: () => loadAssetHolding(address as string, target, contracts.staAsset),
+    enabled: address !== null,
+    staleTime: 15_000,
   });
 }
 

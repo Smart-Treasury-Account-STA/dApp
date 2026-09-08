@@ -13,6 +13,8 @@ import { useMutation } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { STELLAR_CONFIG } from "@/config";
+import { describeAssetReadiness, totalRequested } from "@/lib/assetHolding";
+import type { AssetHolding } from "@/lib/assetHolding";
 import type { ContractSet } from "@/lib/env";
 import { makeNonce } from "@/lib/format";
 import { describeReceipt } from "@/lib/receipt";
@@ -27,18 +29,26 @@ import type { PaymentDraft, SimulationResult, WalletState } from "@/types";
 import { FormField, SectionHeader } from "@/features/treasury/components/primitives";
 
 export function PaymentSection({
+  assetHolding,
   contracts = STELLAR_CONFIG.contracts,
   draft,
   onDraftChange,
   onNotice,
   wallet,
 }: {
+  /** Null while loading or disconnected — an unknown holding never blocks. */
+  assetHolding: AssetHolding | null;
   contracts?: ContractSet;
   draft: PaymentDraft;
   onDraftChange: Dispatch<SetStateAction<PaymentDraft>>;
   onNotice: (notice: SimulationResult | null) => void;
   wallet: WalletState;
 }) {
+  const readiness = assetHolding
+    ? describeAssetReadiness(assetHolding, totalRequested([draft.amount]))
+    : null;
+  const blocked = readiness && !readiness.ready ? readiness : null;
+
   const submitTransferMutation = useMutation({
     mutationFn: async () => {
       if (!wallet.address) {
@@ -162,6 +172,14 @@ export function PaymentSection({
         value={draft.nonce}
       />
 
+      {/* The token's own gate, checked before any policy this project owns. */}
+      {blocked ? (
+        <p className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs leading-relaxed text-warning">
+          {blocked.message} Policy check and simulation still work — they read
+          the policy engine, which is a separate gate.
+        </p>
+      ) : null}
+
       <div className="flex flex-wrap gap-2">
         <Button onClick={onPolicyCheck} variant="secondary">
           <ClipboardCheck size={18} />
@@ -176,8 +194,9 @@ export function PaymentSection({
           Simulate
         </Button>
         <Button
-          disabled={!wallet.connected || submitTransferMutation.isPending}
+          disabled={!wallet.connected || submitTransferMutation.isPending || blocked !== null}
           onClick={() => submitTransferMutation.mutate()}
+          title={blocked?.message}
         >
           {submitTransferMutation.isPending ? (
             <Loader2 className="animate-spin" size={18} />
