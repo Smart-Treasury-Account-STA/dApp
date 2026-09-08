@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyProbeFailure, findAmountCap, probePolicy } from "./policyProbe";
+import {
+  classifyProbeFailure,
+  findAmountCap,
+  isWholePaymentReason,
+  probePolicy,
+} from "./policyProbe";
 import type { ProbeInput } from "@/types";
 
 /**
@@ -75,6 +80,26 @@ describe("classifyProbeFailure", () => {
       allowed: false,
       reason: "unknown",
     });
+  });
+});
+
+describe("isWholePaymentReason", () => {
+  it("treats the per-recipient dimensions as belonging to that recipient", () => {
+    expect(isWholePaymentReason("recipient")).toBe(false);
+    expect(isWholePaymentReason("amount")).toBe(false);
+  });
+
+  it("treats asset, operation and version as belonging to the whole payment", () => {
+    // A split checks policy once per recipient, so these surface on whichever
+    // recipient happens to be first -- blaming that entry sends the operator
+    // to edit an address that was never the problem.
+    expect(isWholePaymentReason("asset")).toBe(true);
+    expect(isWholePaymentReason("operation")).toBe(true);
+    expect(isWholePaymentReason("version")).toBe(true);
+  });
+
+  it("does not blame a recipient for a code it could not classify", () => {
+    expect(isWholePaymentReason("unknown")).toBe(true);
   });
 });
 

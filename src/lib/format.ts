@@ -102,11 +102,30 @@ export function explainContractError(message: string) {
   if (!match) return null;
   const code = Number(match[1]);
   const errors: Record<number, string> = {
+    // 1-13: the Stellar Asset Contract's own errors, raised by the token
+    // itself rather than by anything in this project -- no contract here uses
+    // the low range (policy_engine 2000s, transfer_adapter 6000s,
+    // split_adapter 7000s, smart_account/intent_registry 3000s, treasury
+    // 8000s, account_factory 10000s), so there is no collision of the kind
+    // explainSmartAccountError below warns about. Each of these four was
+    // reproduced against the live testnet SAC rather than taken from memory;
+    // codes not listed fall through to the generic message on purpose.
+    8: "Amount must be positive.",
+    10: "The treasury's balance of this asset is too low.",
+    11: "The treasury's trustline for this asset is not authorized. The asset issuer requires authorization and has not granted it to this treasury yet.",
+    13: "The treasury has no trustline for this asset.",
     2003: "Asset is not allowlisted by policy.",
     2004: "Destination is not allowlisted by policy.",
     2005: "Amount is above the configured single-transfer cap.",
     2006: "Policy version changed. Refresh policy and ask the signer to review again.",
     2008: "This operation is disabled by policy.",
+    // Adapter codes, read from the deployed contracts' own specs.
+    6002: "Transfer adapter rejected the amount.",
+    7002: "Split adapter rejected the amount.",
+    7003: "A split needs at least one recipient.",
+    7004: "Too many recipients for one split.",
+    7005: "Each recipient needs exactly one amount.",
+    7006: "The split's total amount overflows.",
     3007: "Execution window is not open yet.",
     3008: "Execution window already expired.",
     3009: "This child execution was already consumed.",

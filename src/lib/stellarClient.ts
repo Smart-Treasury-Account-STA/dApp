@@ -19,6 +19,7 @@ import { validatePaymentDraft, validateScheduleDraft, validateSplitDraft } from 
 import { countAuthContexts, selectInvocationForAddress } from "@/lib/authTree";
 import type { ContractSet } from "@/lib/env";
 import { describeSimulationFailure } from "@/lib/format";
+import { classifyProbeFailure, isWholePaymentReason } from "@/lib/policyProbe";
 import { structScVal } from "@/lib/scval";
 import { validationFailure } from "@/lib/simulationResult";
 import { selectRuleForSigner } from "@/lib/smartAccountAuth";
@@ -1103,12 +1104,23 @@ export async function simulateSplitPolicy(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const failure = describeSimulationFailure(message);
+      // Only `recipient` and `amount` belong to the entry being checked. The
+      // asset, the operation and the policy version are the same for every
+      // recipient, so naming this one would send the operator to edit an
+      // address that is not the problem -- the loop simply stopped here first.
+      const verdict = classifyProbeFailure(message);
+      const wholePayment = isWholePaymentReason(verdict.allowed ? "unknown" : verdict.reason);
       return {
         ok: false,
         title: failure.rejectedByContract
-          ? `Policy rejected recipient ${index + 1}`
+          ? wholePayment
+            ? "Policy rejected this split payment"
+            : `Policy rejected recipient ${index + 1}`
           : "Policy check could not run",
-        detail: failure.detail,
+        detail:
+          failure.rejectedByContract && wholePayment
+            ? `${failure.detail} It applies to the whole payment, not to recipient ${index + 1} — every recipient would be rejected the same way.`
+            : failure.detail,
         diagnostic: message,
       };
     }

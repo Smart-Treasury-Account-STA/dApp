@@ -1,4 +1,5 @@
 import type { PolicyProbeReason, PolicyProbeVerdict, ProbeInput } from "@/types";
+export type { PolicyProbeReason };
 
 export type SimulatePolicyFn = (input: ProbeInput) => Promise<void>;
 
@@ -9,6 +10,23 @@ const CODE_TO_REASON: Record<number, PolicyProbeReason> = {
   2006: "version",
   2008: "operation",
 };
+
+/**
+ * Whether a rejection is about the payment as a whole rather than about the
+ * one recipient being checked when it surfaced.
+ *
+ * `execute_split_payment` validates policy once per recipient, so a caller
+ * looping over recipients meets a whole-payment rejection on the *first* one
+ * and would naturally report it as "recipient 1 was rejected". That sends the
+ * operator off to edit an address that is not the problem: the asset, the
+ * operation and the policy version are identical for every recipient, so the
+ * next one would fail the same way. Only `recipient` and `amount` vary per
+ * entry; `unknown` is treated as whole-payment because an unrecognised code
+ * must not be blamed on a specific line.
+ */
+export function isWholePaymentReason(reason: PolicyProbeReason): boolean {
+  return reason !== "recipient" && reason !== "amount";
+}
 
 export function classifyProbeFailure(message: string): PolicyProbeVerdict {
   const match = message.match(/Error\(Contract, #(\d+)\)/);

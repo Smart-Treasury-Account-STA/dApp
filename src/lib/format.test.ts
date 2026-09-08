@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { describeSimulationFailure, explainSmartAccountError } from "./format";
+import {
+  describeSimulationFailure,
+  explainContractError,
+  explainSmartAccountError,
+} from "./format";
 
 describe("describeSimulationFailure", () => {
   it("attributes a contract error code to the contract, with its meaning", () => {
@@ -60,6 +64,40 @@ describe("describeSimulationFailure", () => {
     const result = describeSimulationFailure("Bad union switch: 1");
 
     expect(result.detail).toMatch(/archiv/i);
+  });
+});
+
+describe("explainContractError — Stellar Asset Contract codes", () => {
+  // These four were reproduced against the live testnet SAC. The token raises
+  // them from a range no contract in this project uses, and before they were
+  // mapped an operator saw only "Contract rejected with code #11", which says
+  // nothing about what to do.
+  it("explains a deauthorized trustline (#11) rather than echoing the number", () => {
+    const result = explainContractError("HostError: Error(Contract, #11)");
+
+    expect(result).toMatch(/trustline/i);
+    expect(result).toMatch(/not authorized/i);
+    expect(result).not.toMatch(/code #11/);
+  });
+
+  it("explains an insufficient balance (#10)", () => {
+    expect(explainContractError("HostError: Error(Contract, #10)")).toMatch(/balance/i);
+  });
+
+  it("explains a missing trustline (#13)", () => {
+    expect(explainContractError("HostError: Error(Contract, #13)")).toMatch(/no trustline/i);
+  });
+
+  it("explains a negative amount (#8)", () => {
+    expect(explainContractError("HostError: Error(Contract, #8)")).toMatch(/positive/i);
+  });
+
+  it("still falls back to the raw code for an asset error that was not verified", () => {
+    // Guessing at an unreproduced code risks showing a confidently wrong
+    // explanation, which is worse than showing the number.
+    expect(explainContractError("HostError: Error(Contract, #9)")).toBe(
+      "Contract rejected with code #9.",
+    );
   });
 });
 
