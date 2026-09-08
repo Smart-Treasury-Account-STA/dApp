@@ -98,7 +98,13 @@ export function describeSimulationFailure(message: string): SimulationFailure {
 }
 
 export function explainContractError(message: string) {
-  const match = message.match(/#(\d{4})/);
+  // `\d+`, not `\d{4}`: the Stellar Asset Contract's own codes are one or two
+  // digits, so a four-digit-only pattern never matched them and every token
+  // rejection -- a deauthorized trustline, an empty balance -- reached the
+  // operator as the bare "Contract rejected with code #11" that
+  // describeSimulationFailure falls back to. It also mis-read a five-digit
+  // code (account_factory's 10000s) as its first four digits.
+  const match = message.match(/#(\d+)/);
   if (!match) return null;
   const code = Number(match[1]);
   const errors: Record<number, string> = {
