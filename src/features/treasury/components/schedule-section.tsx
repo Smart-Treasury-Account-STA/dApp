@@ -206,6 +206,17 @@ export function ScheduleSection({
         title="Scheduled payment"
       />
 
+      <FormField
+        label="Asset contract"
+        onChange={(asset) => onDraftChange((current) => ({ ...current, asset }))}
+        value={draft.asset}
+      />
+      <FormField
+        label="Destination"
+        onChange={(destination) => onDraftChange((current) => ({ ...current, destination }))}
+        value={draft.destination}
+      />
+
       <div className="grid grid-cols-5 gap-3 max-xl:grid-cols-2 max-sm:grid-cols-1">
         <FormField
           action={
