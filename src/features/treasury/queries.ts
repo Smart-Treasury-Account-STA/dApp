@@ -9,6 +9,7 @@ import {
   loadAssetHolding,
   loadContextRules,
   loadOwner,
+  loadScheduledIntents,
   loadTreasurySnapshot,
 } from "@/lib/stellarClient";
 import type { TreasuryAuthority } from "@/types";
@@ -26,6 +27,8 @@ export const treasuryKeys = {
     ["treasury", "authority", address, smartAccountId] as const,
   assetHolding: (address: string, holder: string, assetContractId: string) =>
     ["treasury", "assetHolding", address, holder, assetContractId] as const,
+  scheduledIntents: (address: string, intentRegistryId: string) =>
+    ["treasury", "scheduledIntents", address, intentRegistryId] as const,
 };
 
 export function useTreasurySnapshot(
@@ -58,6 +61,26 @@ export function useAssetHolding(
   return useQuery({
     queryKey: treasuryKeys.assetHolding(address ?? "disconnected", target, contracts.staAsset),
     queryFn: () => loadAssetHolding(address as string, target, contracts.staAsset),
+    enabled: address !== null,
+    staleTime: 15_000,
+  });
+}
+
+/**
+ * Every scheduled payment the registry still has creation events for.
+ *
+ * Keyed on the registry rather than the smart account: the ids come from that
+ * contract's event stream, and two treasuries never share one. Not polled --
+ * an intent's state changes only when someone creates, cancels, or executes
+ * one, and each of those paths invalidates this key itself.
+ */
+export function useScheduledIntents(
+  address: string | null,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
+) {
+  return useQuery({
+    queryKey: treasuryKeys.scheduledIntents(address ?? "disconnected", contracts.intentRegistry),
+    queryFn: () => loadScheduledIntents(address as string, contracts),
     enabled: address !== null,
     staleTime: 15_000,
   });

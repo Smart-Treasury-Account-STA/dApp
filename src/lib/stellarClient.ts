@@ -21,6 +21,9 @@ import type { ContractSet } from "@/lib/env";
 import type { AssetHolding } from "@/lib/assetHolding";
 import { describeSimulationFailure } from "@/lib/format";
 import { classifyProbeFailure, isWholePaymentReason } from "@/lib/policyProbe";
+import type { LedgerClock } from "@/lib/ledgerClock";
+import { collectIntentIds } from "@/lib/scheduledIntents";
+import type { IntentEvent, ScheduledIntentRecord } from "@/lib/scheduledIntents";
 import { structScVal } from "@/lib/scval";
 import { validationFailure } from "@/lib/simulationResult";
 import { selectRuleForSigner } from "@/lib/smartAccountAuth";
@@ -954,6 +957,24 @@ export async function approveAndSubmitTransfer(
   });
 }
 
+/**
+ * Raised when the intent ID in the form is already taken on-chain.
+ *
+ * A class rather than a message so the caller can recognise the one failure
+ * that is fixed by regenerating the ID, and do it, instead of asking the
+ * operator to read an error and work that out. It happens routinely: the
+ * schedule form only regenerates its ID after a *successful* submission, so
+ * every retry after a confirmed creation carries a spent one.
+ */
+export class ScheduledIntentExistsError extends Error {
+  constructor(readonly intentId: string) {
+    super(
+      `Intent ${intentId.slice(0, 8)} already exists on-chain. Intent IDs are single-use — a new one has been generated.`,
+    );
+    this.name = "ScheduledIntentExistsError";
+  }
+}
+
 export async function approveAndSubmitSchedule(
   wallet: WalletSigning,
   draft: ScheduleDraft,
@@ -966,7 +987,7 @@ export async function approveAndSubmitSchedule(
   }
   const exists = await checkScheduledIntentExists(wallet.address, draft.intentId, contracts);
   if (exists) {
-    throw new Error("Scheduled intent already exists on-chain.");
+    throw new ScheduledIntentExistsError(draft.intentId);
   }
 
   return signAndSubmitContractInvocation({
@@ -1074,6 +1095,163 @@ export async function loadIntentPolicyVersion(
   } catch {
     return null;
   }
+}
+
+function readOptionalNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readOptionalString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/** Decodes one `ScheduledIntent` field-by-field rather than by shape.
+ *
+ * The deployed registry carries fields this workspace's source does not
+ * declare (`interval_ledgers`), so anything absent has to read as "unknown"
+ * instead of failing the whole row.
+ */
+function readScheduledIntent(intentId: string, value: SimulationValue): ScheduledIntentRecord {
+  const raw = getRecord(value);
+
+  return {
+    intentId,
+    asset: readOptionalString(raw.asset),
+    destination: readOptionalString(raw.destination),
+    amount: typeof raw.amount === "bigint" ? raw.amount : null,
+    startLedger: readOptionalNumber(raw.start_ledger),
+    endLedger: readOptionalNumber(raw.end_ledger),
+    maxExecutions: readOptionalNumber(raw.max_executions),
+    executionCount: readOptionalNumber(raw.execution_count),
+    policyVersion: readOptionalNumber(raw.policy_version),
+    cancelled: Boolean(raw.cancelled),
+    unreadable: false,
+  };
+}
+
+/** The ledger a `getEvents` cursor has reached — its leading TOID's high 32
+ * bits. Paging stops on this rather than on an empty page: RPC scans a bounded
+ * slice per request and returns an empty page with a cursor whenever that
+ * slice held no matching event, which happens routinely mid-scan. */
+function cursorLedger(cursor: string): number {
+  try {
+    return Number(BigInt(cursor.split("-")[0]) >> 32n);
+  } catch {
+    return Number.MAX_SAFE_INTEGER;
+  }
+}
+
+function decodeEventTopics(topics: xdr.ScVal[]): unknown[] {
+  return topics.map((topic) => {
+    try {
+      return scValToNative(topic);
+    } catch {
+      return null;
+    }
+  });
+}
+
+/** Hard stop on a scan that would otherwise walk the whole retention window
+ * one bounded slice at a time. 60 pages covers the testnet window in practice;
+ * hitting it truncates the list rather than hanging the panel. */
+const MAX_EVENT_PAGES = 60;
+
+/**
+ * Every scheduled payment this treasury's registry still has events for,
+ * hydrated with its current on-chain state.
+ *
+ * Two sources because neither one answers the question alone: the event
+ * stream is the only place the *set* of intent ids exists (`intent_registry`
+ * has no enumeration entrypoint), while `get_intent` is the only place their
+ * current state does. See `lib/scheduledIntents.ts` for why, and for the
+ * retention horizon this inherits.
+ *
+ * `latestLedger` comes back with the rows because every status the caller can
+ * derive is relative to it, and reading it separately would let the window
+ * comparison drift against the events it is judging. `clock` and
+ * `retentionLedgers` travel with them for the same reason: both are what this
+ * particular read saw, not a constant restated in the UI.
+ */
+export async function loadScheduledIntents(
+  sourceAddress: string,
+  contracts: ContractSet = STELLAR_CONFIG.contracts,
+): Promise<{
+  intents: ScheduledIntentRecord[];
+  latestLedger: number;
+  clock: LedgerClock;
+  retentionLedgers: number | undefined;
+  truncated: boolean;
+}> {
+  const server = getServer();
+  const health = await server.getHealth();
+  const filters = [{ type: "contract" as const, contractIds: [contracts.intentRegistry] }];
+
+  const events: IntentEvent[] = [];
+  let latestLedger = health.latestLedger;
+  let cursor: string | undefined;
+  let truncated = false;
+
+  for (let page = 0; page < MAX_EVENT_PAGES; page += 1) {
+    const response = await server.getEvents(
+      cursor
+        ? { filters, limit: 200, cursor }
+        : { filters, limit: 200, startLedger: health.oldestLedger },
+    );
+
+    latestLedger = response.latestLedger ?? latestLedger;
+    for (const event of response.events) {
+      events.push({ topics: decodeEventTopics(event.topic) });
+    }
+
+    if (!response.cursor || cursorLedger(response.cursor) >= latestLedger) break;
+    cursor = response.cursor;
+    truncated = page === MAX_EVENT_PAGES - 1;
+  }
+
+  const intents = await Promise.all(
+    collectIntentIds(events).map(async (intentId) => {
+      try {
+        const result = await simulateContractCall(
+          sourceAddress,
+          contracts.intentRegistry,
+          "get_intent",
+          [bytesN32ScVal(intentId)],
+        );
+        return readScheduledIntent(intentId, result.value);
+      } catch {
+        // The id was announced on-chain, so the row stays: an intent that
+        // cannot be read is not the same as one that was never created.
+        return {
+          intentId,
+          asset: null,
+          destination: null,
+          amount: null,
+          startLedger: null,
+          endLedger: null,
+          maxExecutions: null,
+          executionCount: null,
+          policyVersion: null,
+          cancelled: false,
+          unreadable: true,
+        } satisfies ScheduledIntentRecord;
+      }
+    }),
+  );
+
+  return {
+    intents,
+    latestLedger,
+    // The reference is "the ledger this read saw, at the moment it saw it".
+    // The SDK's typed `getHealth` response carries no close time, and the
+    // latest ledger closed within one close interval of now anyway -- an error
+    // far smaller than the projection's own drift over a schedule window.
+    clock: {
+      referenceLedger: latestLedger,
+      referenceCloseTime: Math.floor(Date.now() / 1000),
+    },
+    retentionLedgers: health.ledgerRetentionWindow,
+    truncated,
+  };
 }
 
 /**
