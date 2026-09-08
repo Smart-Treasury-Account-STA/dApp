@@ -50,29 +50,7 @@ import { inspectScheduleWindow } from "@/lib/scheduleWindow";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
 import { FormField, SectionHeader } from "@/features/treasury/components/primitives";
-
-/** `computeLedgerWindow`'s own defaults, restated as the selects' initial
- * choice so the two cannot drift apart silently. */
-const DEFAULT_START_DELAY_SECONDS = 120;
-const DEFAULT_DURATION_SECONDS = 3_600;
-
-const START_DELAY_CHOICES = [
-  { seconds: 60, label: "1 minute" },
-  { seconds: DEFAULT_START_DELAY_SECONDS, label: "2 minutes" },
-  { seconds: 600, label: "10 minutes" },
-  { seconds: 3_600, label: "1 hour" },
-  { seconds: 86_400, label: "1 day" },
-];
-
-const DURATION_CHOICES = [
-  { seconds: 600, label: "10 minutes" },
-  { seconds: DEFAULT_DURATION_SECONDS, label: "1 hour" },
-  { seconds: 21_600, label: "6 hours" },
-  { seconds: 86_400, label: "1 day" },
-  { seconds: 604_800, label: "7 days" },
-];
 
 const INTENT_STATUS_VARIANTS = {
   active: "success",
@@ -132,8 +110,6 @@ export function ScheduleSection({
   };
   const eventRetentionDays = retentionDays(intentsQuery.data?.retentionLedgers);
 
-  const [startDelaySeconds, setStartDelaySeconds] = useState(String(DEFAULT_START_DELAY_SECONDS));
-  const [durationSeconds, setDurationSeconds] = useState(String(DEFAULT_DURATION_SECONDS));
   // Pinned at each fresh ledger read, never recomputed from `Date.now()` on
   // render: a clock whose close time advanced while its ledger stayed put
   // would make every displayed time creep forward on its own.
@@ -354,10 +330,10 @@ export function ScheduleSection({
 
   function onUseLedgerWindow() {
     return withFreshClock((clock) => {
-      const { startLedger, endLedger } = computeLedgerWindow(clock.referenceLedger, {
-        startDelaySeconds: Number(startDelaySeconds),
-        durationSeconds: Number(durationSeconds),
-      });
+      // `computeLedgerWindow`'s own defaults: +2 minutes, one hour long. The
+      // two datetime fields are what a window other than that is set with —
+      // presets here would only restrict what they already express freely.
+      const { startLedger, endLedger } = computeLedgerWindow(clock.referenceLedger);
       onDraftChange((current) => ({
         ...current,
         startLedger: String(startLedger),
@@ -455,33 +431,7 @@ export function ScheduleSection({
           Window — pick it in wall-clock terms, sign it in ledgers
         </span>
 
-        <div className="grid grid-cols-4 gap-3 max-xl:grid-cols-2 max-sm:grid-cols-1">
-          <div className="grid gap-2">
-            <Label>Starts in</Label>
-            <Select
-              onChange={(event) => setStartDelaySeconds(event.target.value)}
-              value={startDelaySeconds}
-            >
-              {START_DELAY_CHOICES.map((choice) => (
-                <option key={choice.seconds} value={choice.seconds}>
-                  {choice.label}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div className="grid gap-2">
-            <Label>Lasts</Label>
-            <Select
-              onChange={(event) => setDurationSeconds(event.target.value)}
-              value={durationSeconds}
-            >
-              {DURATION_CHOICES.map((choice) => (
-                <option key={choice.seconds} value={choice.seconds}>
-                  {choice.label}
-                </option>
-              ))}
-            </Select>
-          </div>
+        <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
           <div className="grid gap-2">
             <Label>Opens at</Label>
             <Input
@@ -501,8 +451,9 @@ export function ScheduleSection({
         </div>
 
         <small className="text-muted-foreground">
-          Both rows write into the ledger fields above, which stay the values that get signed.
-          Each conversion reads the current ledger first, so a form left open does not drift.
+          These write into the ledger fields above, which stay the values that get signed. Each
+          conversion reads the current ledger first, so a form left open does not drift. The
+          resolution is one ledger, about {LEDGER_CLOSE_SECONDS}s.
         </small>
 
         {draftWindow ? (

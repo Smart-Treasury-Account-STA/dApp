@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { STELLAR_CONFIG } from "@/config";
 import type { ContractSet } from "@/lib/env";
+import { isTerminalRelayerJob } from "@/lib/relayer/jobStatus";
+import { truncateAddress } from "@/lib/format";
 import type { SimulationResult } from "@/types";
 import {
   closeRelayerSession,
@@ -224,7 +226,9 @@ export function RelayerSection({
               key={`${job.intentId}-${job.childSequence}`}
             >
               <div className="grid gap-1">
-                <strong>{job.intentId}</strong>
+                <strong className="font-mono text-sm" title={job.intentId}>
+                  {truncateAddress(job.intentId, 8, 8)}
+                </strong>
                 <span className="text-sm text-muted-foreground">
                   child_sequence {job.childSequence}
                 </span>
@@ -235,9 +239,18 @@ export function RelayerSection({
                 ledgers {job.startLedger} - {job.endLedger}
               </small>
               <Button
-                disabled={!sessionActive || executeRelayerMutation.isPending}
+                disabled={
+                  !sessionActive ||
+                  isTerminalRelayerJob(job) ||
+                  executeRelayerMutation.isPending
+                }
                 onClick={() => executeRelayerMutation.mutate(job.intentId)}
                 size="sm"
+                title={
+                  isTerminalRelayerJob(job)
+                    ? `This job is ${job.status} and will not run again.`
+                    : undefined
+                }
                 variant="secondary"
               >
                 <RadioTower size={16} />

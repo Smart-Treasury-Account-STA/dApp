@@ -14,6 +14,7 @@ import { Buffer } from "buffer";
 
 import { STELLAR_CONFIG } from "@/config";
 import type { ContractSet } from "@/lib/env";
+import { isTerminalRelayerJob } from "@/lib/relayer/jobStatus";
 import { getRelayerJob, listRelayerJobs, updateRelayerJob } from "@/lib/relayer/store";
 import { addressCredentialsEntry, contractInvocation, randomAuthNonce } from "@/lib/stellarClient";
 import { findEvent, parseContractEvents } from "sta-sdk";
@@ -183,10 +184,6 @@ export async function readQueueableScheduledIntent(
     endLedger: numeric(intent.end_ledger ?? intent.endLedger, 0),
     maxExecutions: numeric(intent.max_executions ?? intent.maxExecutions, 0),
   };
-}
-
-function isTerminal(job: RelayerJobRecord) {
-  return job.status === "blocked" || job.status === "executed";
 }
 
 export async function executeRelayerJob(job: RelayerJobRecord) {
@@ -382,7 +379,7 @@ export async function runDueRelayerJobs(limit = 5): Promise<RelayerRunResult> {
   const dueJobs = jobs
     .filter(
       (job) =>
-        !isTerminal(job) &&
+        !isTerminalRelayerJob(job) &&
         job.status !== "executing" &&
         job.executionCount < job.maxExecutions &&
         latestLedger.sequence >= job.startLedger &&
