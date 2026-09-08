@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 
 import { NextResponse } from "next/server";
 
+import { hasValidRelayerSession } from "@/lib/relayer/auth";
 import {
   RELAYER_SESSION_COOKIE,
   RELAYER_SESSION_TTL_SECONDS,
@@ -15,6 +16,19 @@ function tokensMatch(a: string, b: string) {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
   return left.length === right.length && timingSafeEqual(left, right);
+}
+
+/**
+ * Reports whether the caller's session cookie is still live.
+ *
+ * Unauthenticated on purpose: it *is* the authentication check, and it
+ * reveals nothing a caller does not already hold — only whether the cookie
+ * they already sent is valid. Without it the console cannot know, because the
+ * cookie is httpOnly and every relayer-gated button would sit disabled after
+ * a refresh while the server kept accepting the calls behind them.
+ */
+export async function GET(request: Request) {
+  return NextResponse.json({ active: hasValidRelayerSession(request) });
 }
 
 export async function POST(request: Request) {

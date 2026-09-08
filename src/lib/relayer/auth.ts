@@ -33,6 +33,24 @@ function readCookie(request: Request, name: string): string | undefined {
 }
 
 /**
+ * Whether this request carries a live relayer *session* cookie.
+ *
+ * Deliberately blind to `x-relayer-token`: that header authorizes one CLI
+ * mutation, it is not a session. Reporting it as one would let the console
+ * claim an unlock that no subsequent browser request could reproduce.
+ *
+ * Exists so the console can ask the server whether the httpOnly cookie it
+ * cannot read is still valid — without it, a page refresh shows a locked
+ * session while the server would still accept the call.
+ */
+export function hasValidRelayerSession(request: Request): boolean {
+  const adminToken = process.env.RELAYER_ADMIN_TOKEN;
+  if (!adminToken) return false;
+
+  return verifySessionValue(adminToken, readCookie(request, RELAYER_SESSION_COOKIE));
+}
+
+/**
  * Authorizes a relayer mutation via either credential:
  * - the `x-relayer-token` header, matched against `RELAYER_ADMIN_TOKEN` with a
  *   timing-safe comparison (used by the `pnpm relayer:run` CLI), or

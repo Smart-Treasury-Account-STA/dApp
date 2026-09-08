@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { requireRelayerAdmin } from "@/lib/relayer/auth";
+import { hasValidRelayerSession, requireRelayerAdmin } from "@/lib/relayer/auth";
 import { RELAYER_SESSION_COOKIE, createSessionValue } from "@/lib/relayer/session";
 
 const adminToken = "correct-horse-battery-staple";
@@ -65,6 +65,50 @@ describe("requireRelayerAdmin", () => {
     delete process.env.RELAYER_ADMIN_TOKEN;
     expect(() => requireRelayerAdmin(request({ token: adminToken }))).toThrow(
       "RELAYER_ADMIN_TOKEN must be configured before mutating relayer jobs.",
+    );
+  });
+});
+
+describe("hasValidRelayerSession", () => {
+  beforeEach(() => {
+    process.env.RELAYER_ADMIN_TOKEN = adminToken;
+  });
+
+  afterEach(() => {
+    delete process.env.RELAYER_ADMIN_TOKEN;
+  });
+
+  it("reports a live session cookie", () => {
+    const value = createSessionValue(adminToken);
+    expect(hasValidRelayerSession(request({ cookie: `${RELAYER_SESSION_COOKIE}=${value}` }))).toBe(
+      true,
+    );
+  });
+
+  it("reports no session when the cookie is absent", () => {
+    expect(hasValidRelayerSession(request())).toBe(false);
+  });
+
+  it("reports no session for an expired cookie", () => {
+    const now = Math.floor(Date.now() / 1000);
+    const value = createSessionValue(adminToken, now - 60 * 60 * 24);
+    expect(hasValidRelayerSession(request({ cookie: `${RELAYER_SESSION_COOKIE}=${value}` }))).toBe(
+      false,
+    );
+  });
+
+  it("ignores the header token — this answers about the browser session only", () => {
+    // The CLI's `x-relayer-token` authorizes a mutation but is not a session;
+    // reporting it as one would make the console claim an unlock that no
+    // subsequent browser request can reproduce.
+    expect(hasValidRelayerSession(request({ token: adminToken }))).toBe(false);
+  });
+
+  it("reports no session when the server has no admin token configured", () => {
+    delete process.env.RELAYER_ADMIN_TOKEN;
+    const value = createSessionValue(adminToken);
+    expect(hasValidRelayerSession(request({ cookie: `${RELAYER_SESSION_COOKIE}=${value}` }))).toBe(
+      false,
     );
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { KeyRound, LockKeyhole, RadioTower, Workflow } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
   executeRelayerJob,
   fetchRelayerJobs,
   openRelayerSession,
+  probeRelayerSession,
   runDueRelayerJobs,
 } from "@/features/treasury/relayer-client";
 import { SectionHeader, StatusBadge } from "@/features/treasury/components/primitives";
@@ -37,15 +38,40 @@ export function RelayerSection({
   // and never lives in component state that outlives the submit.
   const [relayerUnlockInput, setRelayerUnlockInput] = useState("");
   const relayerJobsQueryKey = ["relayer-jobs", contracts.smartAccount];
+  // Not keyed by treasury: the session authorizes the relayer API as a whole,
+  // not one treasury's jobs.
+  const sessionProbeQueryKey = ["relayer-session"];
 
   const relayerJobsQuery = useQuery({
     queryKey: relayerJobsQueryKey,
     queryFn: () => fetchRelayerJobs(contracts.smartAccount),
   });
 
+  // The session cookie is httpOnly and outlives the page, so a fresh load has
+  // to ask the server whether it is still unlocked. Without this every
+  // relayer-gated control sits disabled after a refresh while the server
+  // keeps accepting the calls behind them.
+  const sessionProbe = useQuery({
+    queryKey: sessionProbeQueryKey,
+    queryFn: probeRelayerSession,
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    if (sessionProbe.data === undefined) return;
+    onSessionActiveChange(sessionProbe.data);
+    // Only when the probed answer itself changes. `onSessionActiveChange` is a
+    // fresh closure on every parent render, and depending on it would push
+    // state upward in a loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionProbe.data]);
+
   const openRelayerSessionMutation = useMutation({
     mutationFn: openRelayerSession,
     onSuccess: () => {
+      // Keep the probe's cache in step with what just happened, so a later
+      // refetch or remount cannot re-assert the previous answer.
+      queryClient.setQueryData(sessionProbeQueryKey, true);
       onSessionActiveChange(true);
       onNotice({
         ok: true,
@@ -55,6 +81,7 @@ export function RelayerSection({
       });
     },
     onError: (error) => {
+      queryClient.setQueryData(sessionProbeQueryKey, false);
       onSessionActiveChange(false);
       onNotice({
         ok: false,
@@ -73,6 +100,7 @@ export function RelayerSection({
   const closeRelayerSessionMutation = useMutation({
     mutationFn: closeRelayerSession,
     onSuccess: () => {
+      queryClient.setQueryData(sessionProbeQueryKey, false);
       onSessionActiveChange(false);
       onNotice({
         ok: true,

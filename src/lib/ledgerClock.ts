@@ -45,6 +45,53 @@ export function estimateLedgerTime(ledger: number | null, clock: LedgerClock): D
   return new Date(seconds * 1000);
 }
 
+/**
+ * The first ledger expected to close at or after `at` — the inverse of
+ * {@link estimateLedgerTime}.
+ *
+ * Rounds up on purpose. A moment one second past a close already belongs to
+ * the next ledger, and rounding down would open a window earlier, or close it
+ * later, than the operator picked.
+ *
+ * Callers must build `clock` from a freshly read ledger. A cached one drifts,
+ * and the ledger this returns is what gets signed.
+ */
+export function ledgerForTime(at: Date, clock: LedgerClock): number | null {
+  const time = at.getTime();
+  if (!Number.isFinite(time)) return null;
+  if (!clock.referenceLedger || !clock.referenceCloseTime) return null;
+
+  const offset = Math.ceil((time / 1000 - clock.referenceCloseTime) / LEDGER_CLOSE_SECONDS);
+  return Math.max(1, clock.referenceLedger + offset);
+}
+
+function pad(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+/**
+ * A date as `<input type="datetime-local">` wants it: `YYYY-MM-DDTHH:mm`, in
+ * the viewer's own timezone.
+ *
+ * Built from the local getters rather than sliced off `toISOString()`, which
+ * is UTC — the input parses its value as local time, so an ISO slice would
+ * shift the displayed moment by the timezone offset.
+ */
+export function toDatetimeLocalValue(at: Date): string {
+  return [
+    `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`,
+    `${pad(at.getHours())}:${pad(at.getMinutes())}`,
+  ].join("T");
+}
+
+/** The date a `datetime-local` input holds, or null when it holds nothing
+ * usable — the field is empty while being typed into. */
+export function fromDatetimeLocalValue(value: string): Date | null {
+  if (!value) return null;
+  const at = new Date(value);
+  return Number.isFinite(at.getTime()) ? at : null;
+}
+
 function formatDuration(seconds: number): string {
   if (seconds >= SECONDS_PER_DAY) {
     const days = Math.floor(seconds / SECONDS_PER_DAY);

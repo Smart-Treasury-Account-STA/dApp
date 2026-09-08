@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { describeLedgerOffset, estimateLedgerTime, retentionDays } from "./ledgerClock";
+import {
+  describeLedgerOffset,
+  estimateLedgerTime,
+  fromDatetimeLocalValue,
+  ledgerForTime,
+  retentionDays,
+  toDatetimeLocalValue,
+} from "./ledgerClock";
 import type { LedgerClock } from "./ledgerClock";
 
 // 2026-09-08T12:00:00Z at ledger 4_569_000.
@@ -56,6 +63,60 @@ describe("describeLedgerOffset", () => {
 
   it("says nothing for an unknown ledger", () => {
     expect(describeLedgerOffset(null, clock)).toBe("");
+  });
+});
+
+describe("ledgerForTime", () => {
+  it("is the inverse of estimateLedgerTime at the reference", () => {
+    const at = estimateLedgerTime(clock.referenceLedger, clock) as Date;
+    expect(ledgerForTime(at, clock)).toBe(clock.referenceLedger);
+  });
+
+  it("round-trips a ledger that lands on a close boundary", () => {
+    const at = estimateLedgerTime(4_569_720, clock) as Date;
+    expect(ledgerForTime(at, clock)).toBe(4_569_720);
+  });
+
+  it("rounds up, so the chosen moment is inside the window rather than before it", () => {
+    // One second past a close is already the next ledger's territory: a start
+    // rounded down would open the window earlier than the operator picked.
+    const at = new Date((clock.referenceCloseTime + 1) * 1000);
+    expect(ledgerForTime(at, clock)).toBe(clock.referenceLedger + 1);
+  });
+
+  it("projects backward for a moment already past", () => {
+    const at = new Date((clock.referenceCloseTime - 600) * 1000);
+    expect(ledgerForTime(at, clock)).toBe(clock.referenceLedger - 120);
+  });
+
+  it("returns null for an unusable date or clock", () => {
+    expect(ledgerForTime(new Date(Number.NaN), clock)).toBeNull();
+    expect(
+      ledgerForTime(new Date(), { referenceLedger: 0, referenceCloseTime: 0 }),
+    ).toBeNull();
+  });
+});
+
+describe("datetime-local round trip", () => {
+  it("formats in local time, not UTC", () => {
+    // `new Date(value)` parses a datetime-local string as local time, so
+    // slicing `toISOString()` would shift the field by the timezone offset.
+    const at = new Date(2026, 8, 8, 15, 34);
+    expect(toDatetimeLocalValue(at)).toBe("2026-09-08T15:34");
+  });
+
+  it("pads every component to a fixed width", () => {
+    expect(toDatetimeLocalValue(new Date(2026, 0, 2, 3, 4))).toBe("2026-01-02T03:04");
+  });
+
+  it("round-trips through the input's own value format", () => {
+    const at = new Date(2026, 8, 8, 15, 34);
+    expect(fromDatetimeLocalValue(toDatetimeLocalValue(at))?.getTime()).toBe(at.getTime());
+  });
+
+  it("rejects an empty or malformed value", () => {
+    expect(fromDatetimeLocalValue("")).toBeNull();
+    expect(fromDatetimeLocalValue("not a date")).toBeNull();
   });
 });
 

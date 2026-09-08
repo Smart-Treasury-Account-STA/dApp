@@ -71,3 +71,22 @@ export async function openRelayerSession(token: string) {
 export async function closeRelayerSession() {
   await fetch("/api/relayer/session", { method: "DELETE", credentials: "same-origin" });
 }
+
+/**
+ * Whether the httpOnly relayer session cookie is still live.
+ *
+ * The console cannot read that cookie, so on a fresh page it has no way to
+ * know it is already unlocked. Answers `false` on any transport failure: a
+ * console that wrongly believes it is unlocked shows enabled buttons that
+ * fail at the server.
+ */
+export async function probeRelayerSession(): Promise<boolean> {
+  try {
+    const response = await fetch("/api/relayer/session", { credentials: "same-origin" });
+    if (!response.ok) return false;
+    const payload = (await response.json()) as { active?: boolean };
+    return payload.active === true;
+  } catch {
+    return false;
+  }
+}
