@@ -1,5 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 
+import type { Database } from '@/lib/db'
+import { treasuries } from '@/lib/db/schema'
+import { createTestDatabase } from '@/lib/db/testing'
 import {
   TreasuryConflictError,
   createTreasury,
@@ -12,75 +23,22 @@ import {
 import type { CreateTreasuryInput } from '@/lib/treasuryRegistry/types'
 
 /**
- * Stands in for Postgres at the `@/lib/db` seam, the way this file used to
- * stand in for the filesystem at `node:fs/promises`. It reproduces only the
- * semantics `store.ts` actually depends on -- primary-key conflict on INSERT,
- * equality filtering, `created_at DESC` ordering -- so the behavioural
- * assertions below (idempotency, conflict rejection, per-owner filtering)
- * still mean exactly what they meant when the store wrote a JSON file.
+ * These tests run against PGlite -- a real Postgres, in-process -- migrated
+ * from the same files that migrate production.
  *
- * It is a double for Postgres, not a proof of the SQL: the statements
- * themselves are verified against the real database by running them there.
+ * They used to run against a hand-written double that matched on SQL text.
+ * That proved the store's logic but not its SQL, so the SQL was checked once
+ * by hand against Neon and the check deleted, leaving CI blind to schema
+ * drift. Only `getDb` is replaced here; every statement below is really
+ * planned and executed by Postgres.
  */
-const dbState = vi.hoisted(() => ({ rows: [] as Record<string, unknown>[] }))
+const harness = vi.hoisted(() => ({ db: null as unknown as Database }))
 
-vi.mock('@/lib/db', () => ({
-  toIsoString: (value: unknown) =>
-    value instanceof Date ? value.toISOString() : String(value),
-  query: vi.fn(async (text: string, params: unknown[] = []) => {
-    if (text.includes('INSERT INTO treasuries')) {
-      const [
-        smart_account_id,
-        policy_engine_id,
-        intent_registry_id,
-        recovery_manager_id,
-        transfer_adapter_id,
-        split_adapter_id,
-        owner_address,
-        executor_address,
-        deploy_tx_hash,
-      ] = params as string[]
-      // ON CONFLICT (smart_account_id) DO NOTHING: the loser gets no row back.
-      if (
-        dbState.rows.some((row) => row.smart_account_id === smart_account_id)
-      ) {
-        return []
-      }
-      const row = {
-        smart_account_id,
-        policy_engine_id,
-        intent_registry_id,
-        recovery_manager_id,
-        transfer_adapter_id,
-        split_adapter_id,
-        owner_address,
-        executor_address,
-        deploy_tx_hash,
-        created_at: new Date(),
-      }
-      dbState.rows.push(row)
-      return [row]
-    }
-
-    // Detached copies, as a real driver returns -- see the same note in
-    // `relayer/store.test.ts`.
-    if (text.includes('WHERE smart_account_id = $1')) {
-      return dbState.rows
-        .filter((row) => row.smart_account_id === params[0])
-        .map((row) => ({ ...row }))
-    }
-
-    if (text.includes('WHERE owner_address = $1')) {
-      return dbState.rows
-        .filter((row) => row.owner_address === params[0])
-        .map((row) => ({ ...row }))
-    }
-
-    return dbState.rows.map((row) => ({ ...row }))
-  }),
+vi.mock('@/lib/db', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/db')>()),
+  getDb: () => harness.db,
 }))
 
-// Real testnet addresses (distinct contract instances / accounts) --
 // StrKey validates a real base32 checksum, not just the leading character,
 // so a synthetic "C" + padding string fails validation.
 const CONTRACTS = {
@@ -96,6 +54,7 @@ const CONTRACTS = {
   SPLIT: 'CDHTNPBXUMPCKUJ76HQ767MDRD4IVRRH4H5DOF4JUOO36QKSV4GXFRMR',
   STA: 'CCOUVA654JH2V6B7LNTKHJP5DF3QA553RS2IIWXSGPDFH2N3QILIVU5L',
 } as const
+
 const ACCOUNTS = {
   OWNER: 'GCWFJKLE45TMVZS42TMIYKAORKGBWE74753YPOSCC5ESJR2G2UMBXBDB',
   OWNER1: 'GDU3LDGZOCJIB6MIKQWK5AICFFEWVC2FJ2BDEVXG37XXSKWIZ7OXVCAS',
@@ -122,8 +81,20 @@ function input(
   }
 }
 
-beforeEach(() => {
-  dbState.rows = []
+let close: () => Promise<void>
+
+beforeAll(async () => {
+  const { db, client } = await createTestDatabase()
+  harness.db = db
+  close = () => client.close()
+})
+
+afterAll(async () => {
+  await close()
+})
+
+beforeEach(async () => {
+  await harness.db.delete(treasuries)
 })
 
 describe('validateCreateTreasuryInput', () => {
@@ -160,6 +131,12 @@ describe('createTreasury', () => {
     expect(stored).toEqual(record)
   })
 
+  it('exposes createdAt as an ISO string, not the Date the driver returns', async () => {
+    const record = await createTreasury(input())
+    expect(typeof record.createdAt).toBe('string')
+    expect(new Date(record.createdAt).toISOString()).toBe(record.createdAt)
+  })
+
   it('is idempotent by smartAccountId — an identical second create returns the original record unchanged', async () => {
     const first = await createTreasury(input())
     const second = await createTreasury(input())
@@ -170,11 +147,7 @@ describe('createTreasury', () => {
   })
 
   it('rejects a second claim for an already-registered smartAccountId whose fields disagree with the stored record', async () => {
-    // The registration endpoint's access control (verifyTreasuryOwnership)
-    // can only confirm the claimed owner matches on-chain get_owner() -- it
-    // cannot verify the claimed sub-contract addresses are the *real* ones
-    // pinned to this smart_account (no on-chain getter exists for that). A
-    // silent idempotent-return here would let a fabricated second claim win
+    // A silent idempotent-return here would let a fabricated second claim win
     // a race against the legitimate deployer's own registration and stick
     // around undetected -- this must reject loudly instead.
     await createTreasury(input())
@@ -184,6 +157,18 @@ describe('createTreasury', () => {
 
     const stored = await getTreasury(CONTRACTS.SMART)
     expect(stored?.ownerAddress).toBe(ACCOUNTS.OWNER)
+  })
+
+  it('lets the primary key, not the application, pick the winner of a concurrent registration', async () => {
+    // Both calls are in flight before either completes, which is the shape
+    // two serverless instances produce. Exactly one row may exist afterwards.
+    const results = await Promise.allSettled([
+      createTreasury(input()),
+      createTreasury(input()),
+    ])
+
+    expect(results.every((result) => result.status === 'fulfilled')).toBe(true)
+    expect(await listTreasuries()).toHaveLength(1)
   })
 
   it('does not collide across two different treasuries', async () => {

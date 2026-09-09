@@ -1,0 +1,239 @@
+{
+  "id": "638cdf95-59e2-4679-8cd5-1fc9395973a4",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.relayer_jobs": {
+      "name": "relayer_jobs",
+      "schema": "",
+      "columns": {
+        "smart_account_id": {
+          "name": "smart_account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "intent_id": {
+          "name": "intent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "child_sequence": {
+          "name": "child_sequence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "start_ledger": {
+          "name": "start_ledger",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "end_ledger": {
+          "name": "end_ledger",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "max_executions": {
+          "name": "max_executions",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "execution_count": {
+          "name": "execution_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tx_hash": {
+          "name": "tx_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {
+        "relayer_jobs_updated_at_idx": {
+          "name": "relayer_jobs_updated_at_idx",
+          "columns": [
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "first"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "relayer_jobs_pkey": {
+          "name": "relayer_jobs_pkey",
+          "columns": [
+            "smart_account_id",
+            "intent_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "relayer_jobs_status_check": {
+          "name": "relayer_jobs_status_check",
+          "value": "\"relayer_jobs\".\"status\" = ANY (ARRAY['scheduled'::text, 'ready'::text, 'executing'::text, 'executed'::text, 'blocked'::text, 'failed'::text])"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.treasuries": {
+      "name": "treasuries",
+      "schema": "",
+      "columns": {
+        "smart_account_id": {
+          "name": "smart_account_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "policy_engine_id": {
+          "name": "policy_engine_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "intent_registry_id": {
+          "name": "intent_registry_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recovery_manager_id": {
+          "name": "recovery_manager_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "transfer_adapter_id": {
+          "name": "transfer_adapter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "split_adapter_id": {
+          "name": "split_adapter_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_address": {
+          "name": "owner_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "executor_address": {
+          "name": "executor_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deploy_tx_hash": {
+          "name": "deploy_tx_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "treasuries_owner_address_created_at_idx": {
+          "name": "treasuries_owner_address_created_at_idx",
+          "columns": [
+            {
+              "expression": "owner_address",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "first"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

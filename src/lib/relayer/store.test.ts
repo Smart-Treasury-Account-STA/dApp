@@ -1,99 +1,36 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { eq } from 'drizzle-orm'
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 
+import type { Database } from '@/lib/db'
+import { relayerJobs } from '@/lib/db/schema'
+import { createTestDatabase } from '@/lib/db/testing'
 import {
   createRelayerJob,
   getRelayerJob,
+  listRelayerJobsForTreasury,
   updateRelayerJob,
   validateRelayerJobInput,
 } from '@/lib/relayer/store'
 
 /**
- * Postgres double at the `@/lib/db` seam -- see the equivalent in
- * `treasuryRegistry/store.test.ts`. Reproduces the composite-key conflict on
- * INSERT and the optimistic `version` check on UPDATE, which is what the
- * compound-key and idempotency assertions below actually exercise.
+ * Runs against PGlite, a real Postgres in-process -- see the same note in
+ * `treasuryRegistry/store.test.ts`. It matters most here: the optimistic
+ * `version` check below is a claim about what Postgres does when two writers
+ * race, which a hand-written double could only assert about itself.
  */
-const dbState = vi.hoisted(() => ({ rows: [] as Record<string, unknown>[] }))
+const harness = vi.hoisted(() => ({ db: null as unknown as Database }))
 
-vi.mock('@/lib/db', () => ({
-  toIsoString: (value: unknown) =>
-    value instanceof Date ? value.toISOString() : String(value),
-  query: vi.fn(async (text: string, params: unknown[] = []) => {
-    const find = (smartAccountId: unknown, intentId: unknown) =>
-      dbState.rows.find(
-        (row) =>
-          row.smart_account_id === smartAccountId && row.intent_id === intentId
-      )
-
-    if (text.includes('INSERT INTO relayer_jobs')) {
-      const [
-        smart_account_id,
-        intent_id,
-        start_ledger,
-        end_ledger,
-        max_executions,
-        note,
-      ] = params as [string, string, number, number, number, string]
-      // ON CONFLICT (smart_account_id, intent_id) DO NOTHING.
-      if (find(smart_account_id, intent_id)) return []
-      const now = new Date()
-      const row = {
-        smart_account_id,
-        intent_id,
-        child_sequence: 1,
-        start_ledger,
-        end_ledger,
-        max_executions,
-        execution_count: 0,
-        status: 'scheduled',
-        note,
-        tx_hash: null,
-        created_at: now,
-        updated_at: now,
-        version: 0,
-      }
-      dbState.rows.push(row)
-      return [row]
-    }
-
-    if (text.includes('UPDATE relayer_jobs')) {
-      const [smart_account_id, intent_id] = params as [string, string]
-      const row = find(smart_account_id, intent_id)
-      const expectedVersion = params[10]
-      // The optimistic guard: a writer holding a stale version updates no row.
-      if (!row || row.version !== expectedVersion) return []
-      Object.assign(row, {
-        child_sequence: params[2],
-        start_ledger: params[3],
-        end_ledger: params[4],
-        max_executions: params[5],
-        execution_count: params[6],
-        status: params[7],
-        note: params[8],
-        tx_hash: params[9],
-        updated_at: new Date(),
-        version: (row.version as number) + 1,
-      })
-      return [row]
-    }
-
-    // Reads return detached copies, as a real driver does. Handing back the
-    // stored object would let the caller observe a concurrent writer's change
-    // through the row it already read, which is exactly what the optimistic
-    // version check exists to detect -- the double must not paper over it.
-    if (text.includes('WHERE smart_account_id = $1 AND intent_id = $2')) {
-      const row = find(params[0], params[1])
-      return row ? [{ ...row }] : []
-    }
-
-    if (text.includes('WHERE smart_account_id = $1')) {
-      return dbState.rows
-        .filter((row) => row.smart_account_id === params[0])
-        .map((row) => ({ ...row }))
-    }
-
-    return dbState.rows.map((row) => ({ ...row }))
-  }),
+vi.mock('@/lib/db', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/db')>()),
+  getDb: () => harness.db,
 }))
 
 const SMART_ACCOUNT_ID =
@@ -108,6 +45,22 @@ const validInput = {
   endLedger: 200,
   maxExecutions: 1,
 }
+
+let close: () => Promise<void>
+
+beforeAll(async () => {
+  const { db, client } = await createTestDatabase()
+  harness.db = db
+  close = () => client.close()
+})
+
+afterAll(async () => {
+  await close()
+})
+
+beforeEach(async () => {
+  await harness.db.delete(relayerJobs)
+})
 
 describe('validateRelayerJobInput', () => {
   it('accepts a well formed input', () => {
@@ -158,10 +111,6 @@ describe('validateRelayerJobInput', () => {
 })
 
 describe('createRelayerJob / getRelayerJob — compound (smartAccountId, intentId) key', () => {
-  beforeEach(() => {
-    dbState.rows = []
-  })
-
   it('does not collide when two different treasuries schedule the same intentId', async () => {
     const jobA = await createRelayerJob(validInput)
     const jobB = await createRelayerJob({
@@ -191,52 +140,131 @@ describe('createRelayerJob / getRelayerJob — compound (smartAccountId, intentI
       await getRelayerJob(SMART_ACCOUNT_ID_2, validInput.intentId)
     ).toBeNull()
   })
+
+  it('normalizes a 0x prefixed intent id to the stored form', async () => {
+    const created = await createRelayerJob({
+      ...validInput,
+      intentId: `0x${'A'.repeat(64)}`,
+    })
+    expect(created.intentId).toBe('a'.repeat(64))
+    expect(
+      await getRelayerJob(SMART_ACCOUNT_ID, `0X${'a'.repeat(64)}`)
+    ).toEqual(created)
+  })
+
+  it('omits txHash entirely while the column is NULL, rather than exposing null', async () => {
+    const created = await createRelayerJob(validInput)
+    expect('txHash' in created).toBe(false)
+  })
+
+  it('starts a job scheduled, at version 0, with no executions', async () => {
+    await createRelayerJob(validInput)
+    const [row] = await harness.db.select().from(relayerJobs)
+    expect(row.status).toBe('scheduled')
+    expect(row.version).toBe(0)
+    expect(row.executionCount).toBe(0)
+    expect(row.childSequence).toBe(1)
+  })
+
+  it('lets Postgres reject a status the record type does not allow', async () => {
+    // The CHECK is the backstop for writers that do not go through this
+    // store. Drizzle wraps driver errors, so the constraint name is on the
+    // cause rather than the message.
+    await createRelayerJob(validInput)
+
+    const rejection = await harness.db
+      .update(relayerJobs)
+      .set({ status: 'bogus' as never })
+      .where(eq(relayerJobs.intentId, validInput.intentId))
+      .then(
+        () => null,
+        (error: unknown) => error
+      )
+
+    expect(rejection).toBeInstanceOf(Error)
+    const cause = (rejection as Error).cause
+    expect(String(cause instanceof Error ? cause.message : cause)).toMatch(
+      /relayer_jobs_status_check/
+    )
+
+    const [row] = await harness.db.select().from(relayerJobs)
+    expect(row.status).toBe('scheduled')
+  })
+})
+
+describe('listRelayerJobsForTreasury', () => {
+  it('returns only the jobs of the given treasury', async () => {
+    await createRelayerJob(validInput)
+    await createRelayerJob({
+      ...validInput,
+      smartAccountId: SMART_ACCOUNT_ID_2,
+    })
+
+    const jobs = await listRelayerJobsForTreasury(SMART_ACCOUNT_ID)
+    expect(jobs).toHaveLength(1)
+    expect(jobs[0].smartAccountId).toBe(SMART_ACCOUNT_ID)
+  })
 })
 
 describe('updateRelayerJob — optimistic concurrency', () => {
-  beforeEach(() => {
-    dbState.rows = []
-  })
-
-  it('re-applies the mutation instead of overwriting a writer that committed first', async () => {
-    // The lost update this replaced a per-process write queue to prevent: two
-    // relayer runs on two serverless instances both read executionCount 0 and
-    // both write 1, so one execution vanishes from the count.
+  it('loses no execution when two writers increment the same job at once', async () => {
+    // The lost update a per-process write queue could not prevent: two relayer
+    // runs on two serverless instances both read executionCount 0 and both
+    // write 1, so one execution vanishes from the count. Both calls are in
+    // flight together here, against a real Postgres, so the version check is
+    // what has to catch it -- the callback may therefore run more than twice.
     await createRelayerJob(validInput)
 
-    let calls = 0
-    const updated = await updateRelayerJob(
-      SMART_ACCOUNT_ID,
-      validInput.intentId,
-      (current) => {
-        calls += 1
-        if (calls === 1) {
-          // Another writer commits between our SELECT and our UPDATE: it bumps
-          // the count and the version, so our UPDATE matches no row.
-          const row = dbState.rows[0]
-          row.execution_count = 1
-          row.version = (row.version as number) + 1
-        }
-        return { ...current, executionCount: current.executionCount + 1 }
-      }
-    )
+    const increment = () =>
+      updateRelayerJob(SMART_ACCOUNT_ID, validInput.intentId, (current) => ({
+        ...current,
+        executionCount: current.executionCount + 1,
+      }))
 
-    expect(calls).toBe(2)
-    // 2, not 1: the retry incremented the *winner's* count rather than
-    // clobbering it back down with a value read before that write.
-    expect(updated.executionCount).toBe(2)
+    await Promise.all([increment(), increment()])
+
+    const [row] = await harness.db.select().from(relayerJobs)
+    expect(row.executionCount).toBe(2)
+    expect(row.version).toBe(2)
   })
 
   it('gives up rather than looping forever when it never wins', async () => {
     await createRelayerJob(validInput)
 
-    await expect(
-      updateRelayerJob(SMART_ACCOUNT_ID, validInput.intentId, (current) => {
-        const row = dbState.rows[0]
-        row.version = (row.version as number) + 1
-        return current
-      })
-    ).rejects.toThrow(/modified concurrently/)
+    // A reader permanently out of date: every UPDATE it drives matches the
+    // version predicate against a value no row holds, so no attempt can win.
+    // Narrow on purpose -- the retry cap is this function's own logic, not a
+    // claim about Postgres, so it does not need a real competing writer.
+    const live = harness.db
+    const staleReader = new Proxy(live, {
+      get(target, property) {
+        if (property !== 'select') {
+          const value = Reflect.get(target, property)
+          return typeof value === 'function' ? value.bind(target) : value
+        }
+        return () => ({
+          from: () => ({
+            where: async () => {
+              const rows = await live.select().from(relayerJobs)
+              return rows.map((row) => ({ ...row, version: row.version + 99 }))
+            },
+          }),
+        })
+      },
+    }) as Database
+
+    harness.db = staleReader
+    try {
+      await expect(
+        updateRelayerJob(
+          SMART_ACCOUNT_ID,
+          validInput.intentId,
+          (current) => current
+        )
+      ).rejects.toThrow(/modified concurrently/)
+    } finally {
+      harness.db = live
+    }
   })
 
   it('throws when the job does not exist', async () => {
@@ -247,5 +275,16 @@ describe('updateRelayerJob — optimistic concurrency', () => {
         (current) => current
       )
     ).rejects.toThrow('Relayer job not found.')
+  })
+
+  it('bumps the version on every successful write', async () => {
+    await createRelayerJob(validInput)
+    await updateRelayerJob(SMART_ACCOUNT_ID, validInput.intentId, (job) => ({
+      ...job,
+      status: 'ready',
+    }))
+    const [row] = await harness.db.select().from(relayerJobs)
+    expect(row.version).toBe(1)
+    expect(row.status).toBe('ready')
   })
 })

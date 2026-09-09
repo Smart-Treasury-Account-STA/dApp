@@ -1,6 +1,8 @@
 import { StrKey } from '@stellar/stellar-sdk'
+import { desc, eq } from 'drizzle-orm'
 
-import { query, toIsoString } from '@/lib/db'
+import { getDb, toIsoString } from '@/lib/db'
+import { treasuries } from '@/lib/db/schema'
 import type {
   CreateTreasuryInput,
   TreasuryRecord,
@@ -10,35 +12,14 @@ export { toContractSet } from '@/lib/treasuryRegistry/types'
 
 const TX_HASH_PATTERN = /^[0-9a-fA-F]{64}$/
 
-const COLUMNS = `smart_account_id, policy_engine_id, intent_registry_id, recovery_manager_id,
-    transfer_adapter_id, split_adapter_id, owner_address, executor_address, deploy_tx_hash, created_at`
+type TreasuryRow = typeof treasuries.$inferSelect
 
-type TreasuryRow = {
-  smart_account_id: string
-  policy_engine_id: string
-  intent_registry_id: string
-  recovery_manager_id: string
-  transfer_adapter_id: string
-  split_adapter_id: string
-  owner_address: string
-  executor_address: string
-  deploy_tx_hash: string
-  created_at: unknown
-}
-
+/** The row is already camelCase through Drizzle; only `createdAt` needs
+ * converting, because the API has exposed ISO strings since before there was
+ * a database. */
 function toRecord(row: TreasuryRow): TreasuryRecord {
-  return {
-    smartAccountId: row.smart_account_id,
-    policyEngineId: row.policy_engine_id,
-    intentRegistryId: row.intent_registry_id,
-    recoveryManagerId: row.recovery_manager_id,
-    transferAdapterId: row.transfer_adapter_id,
-    splitAdapterId: row.split_adapter_id,
-    ownerAddress: row.owner_address,
-    executorAddress: row.executor_address,
-    deployTxHash: row.deploy_tx_hash,
-    createdAt: toIsoString(row.created_at),
-  }
+  const { createdAt, ...rest } = row
+  return { ...rest, createdAt: toIsoString(createdAt) }
 }
 
 export function validateCreateTreasuryInput(input: CreateTreasuryInput) {
@@ -72,25 +53,27 @@ export function validateCreateTreasuryInput(input: CreateTreasuryInput) {
 }
 
 export async function listTreasuries() {
-  const rows = await query<TreasuryRow>(
-    `SELECT ${COLUMNS} FROM treasuries ORDER BY created_at DESC`
-  )
+  const rows = await getDb()
+    .select()
+    .from(treasuries)
+    .orderBy(desc(treasuries.createdAt))
   return rows.map(toRecord)
 }
 
 export async function listTreasuriesByOwner(ownerAddress: string) {
-  const rows = await query<TreasuryRow>(
-    `SELECT ${COLUMNS} FROM treasuries WHERE owner_address = $1 ORDER BY created_at DESC`,
-    [ownerAddress]
-  )
+  const rows = await getDb()
+    .select()
+    .from(treasuries)
+    .where(eq(treasuries.ownerAddress, ownerAddress))
+    .orderBy(desc(treasuries.createdAt))
   return rows.map(toRecord)
 }
 
 export async function getTreasury(smartAccountId: string) {
-  const rows = await query<TreasuryRow>(
-    `SELECT ${COLUMNS} FROM treasuries WHERE smart_account_id = $1`,
-    [smartAccountId]
-  )
+  const rows = await getDb()
+    .select()
+    .from(treasuries)
+    .where(eq(treasuries.smartAccountId, smartAccountId))
   return rows.length > 0 ? toRecord(rows[0]) : null
 }
 
@@ -144,29 +127,17 @@ function recordsMatch(a: TreasuryRecord, b: CreateTreasuryInput): boolean {
 export async function createTreasury(input: CreateTreasuryInput) {
   validateCreateTreasuryInput(input)
 
-  // `ON CONFLICT DO NOTHING` is what closes the registration race the class
-  // doc above describes: the primary key decides a single winner inside one
+  // `onConflictDoNothing` is what closes the registration race the class doc
+  // above describes: the primary key decides a single winner inside one
   // statement, so a fabricated claim and the legitimate deployer's own call
   // can no longer both believe they wrote the row. An empty result means this
   // caller lost -- read the winner and let `recordsMatch` decide whether that
   // is an ordinary idempotent retry or a genuine disagreement.
-  const inserted = await query<TreasuryRow>(
-    `INSERT INTO treasuries (${COLUMNS})
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
-     ON CONFLICT (smart_account_id) DO NOTHING
-     RETURNING ${COLUMNS}`,
-    [
-      input.smartAccountId,
-      input.policyEngineId,
-      input.intentRegistryId,
-      input.recoveryManagerId,
-      input.transferAdapterId,
-      input.splitAdapterId,
-      input.ownerAddress,
-      input.executorAddress,
-      input.deployTxHash,
-    ]
-  )
+  const inserted = await getDb()
+    .insert(treasuries)
+    .values(input)
+    .onConflictDoNothing({ target: treasuries.smartAccountId })
+    .returning()
 
   if (inserted.length > 0) {
     return toRecord(inserted[0])

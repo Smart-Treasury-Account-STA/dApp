@@ -86,6 +86,7 @@ Server-only relayer variables:
 - Wallet connection is isolated in `src/lib/wallet.ts`.
 - SmartAccount custom authorization planning is isolated in `src/lib/smartAccountAuth.ts`.
 - Scheduled relayer queue, durable store, authorization guard, and executor logic live in `src/lib/relayer`.
+- Postgres access goes through Drizzle. `src/lib/db/schema.ts` is the single source of truth for the database shape: migrations are generated from it and the stores query through it, so a column cannot exist in one place and not the other.
 - The operator console lives in `src/features/treasury/treasury-console.tsx`.
 - Browser calls to this app's own API routes go through `apiUrl()` in `src/lib/basePath.ts`, which prepends the base path that `next/link` and the router apply on their own.
 
@@ -98,6 +99,30 @@ The dApp treats `smart_account` as a Soroban custom account. Payment and schedul
 5. Assemble Entry A with the contract-specific `AuthPayload`.
 6. Collect one delegated signer Entry B per required signer.
 7. Prepare, submit, and track the transaction from typed contract events.
+
+## Database
+
+Neon Postgres through Drizzle, one branch per environment. The schema lives in
+`src/lib/db/schema.ts`; migrations are generated from it into
+`src/lib/db/migrations` and committed.
+
+```bash
+pnpm db:generate   # after changing the schema, writes a migration
+pnpm db:migrate    # applies pending migrations to DATABASE_URL
+pnpm db:baseline   # one-time, for a database whose tables predate Drizzle
+```
+
+`db:migrate` targets whatever `DATABASE_URL` points at, so each branch is
+migrated separately. For a Neon branch:
+
+```bash
+DATABASE_URL="$(neon connection-string <branch> --project-id <id> \
+  --database-name <db> --role-name <role>)" pnpm db:migrate
+```
+
+Store tests run against PGlite, a real Postgres in-process, migrated from
+those same files. A schema change that the queries do not match therefore
+fails in CI rather than in production.
 
 ## Deployment
 

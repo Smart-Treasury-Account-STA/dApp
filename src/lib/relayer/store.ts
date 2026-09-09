@@ -1,6 +1,8 @@
 import { StrKey } from '@stellar/stellar-sdk'
+import { and, desc, eq, sql } from 'drizzle-orm'
 
-import { query, toIsoString } from '@/lib/db'
+import { getDb, toIsoString } from '@/lib/db'
+import { relayerJobs } from '@/lib/db/schema'
 import type {
   CreateRelayerJobInput,
   RelayerJobRecord,
@@ -8,47 +10,24 @@ import type {
 
 const INTENT_ID_PATTERN = /^(0x)?[0-9a-fA-F]{64}$/
 
-const COLUMNS = `smart_account_id, intent_id, child_sequence, start_ledger, end_ledger,
-    max_executions, execution_count, status, note, tx_hash, created_at, updated_at`
-
 /** How many times `updateRelayerJob` retries a lost optimistic-version race
  * before giving up. Each retry re-reads and re-applies the caller's mutation,
  * so a retry is only needed when another writer committed in between; more
  * than a couple of those in a row means real contention, not a hiccup. */
 const UPDATE_RETRIES = 5
 
-type RelayerJobRow = {
-  smart_account_id: string
-  intent_id: string
-  child_sequence: number
-  start_ledger: number
-  end_ledger: number
-  max_executions: number
-  execution_count: number
-  status: RelayerJobRecord['status']
-  note: string
-  tx_hash: string | null
-  created_at: unknown
-  updated_at: unknown
-}
+type RelayerJobRow = typeof relayerJobs.$inferSelect
 
 function toRecord(row: RelayerJobRow): RelayerJobRecord {
+  const { createdAt, updatedAt, txHash, version: _version, ...rest } = row
   return {
-    smartAccountId: row.smart_account_id,
-    intentId: row.intent_id,
-    childSequence: row.child_sequence,
-    startLedger: row.start_ledger,
-    endLedger: row.end_ledger,
-    maxExecutions: row.max_executions,
-    executionCount: row.execution_count,
-    status: row.status,
-    note: row.note,
+    ...rest,
     // `txHash` is optional on the record, and was simply absent from the JSON
     // before there was a database -- a NULL column must stay absent, not
     // become `undefined`-valued or `null`, so the API JSON is byte-identical.
-    ...(row.tx_hash === null ? {} : { txHash: row.tx_hash }),
-    createdAt: toIsoString(row.created_at),
-    updatedAt: toIsoString(row.updated_at),
+    ...(txHash === null ? {} : { txHash }),
+    createdAt: toIsoString(createdAt),
+    updatedAt: toIsoString(updatedAt),
   }
 }
 
@@ -61,6 +40,14 @@ function normalizeIntentId(intentId: string) {
 // ids, which a single-key model would silently merge.
 function jobKey(smartAccountId: string, intentId: string) {
   return `${smartAccountId}:${normalizeIntentId(intentId)}`
+}
+
+/** The composite primary key, as a reusable predicate. */
+function jobMatches(smartAccountId: string, normalizedIntentId: string) {
+  return and(
+    eq(relayerJobs.smartAccountId, smartAccountId),
+    eq(relayerJobs.intentId, normalizedIntentId)
+  )
 }
 
 function assertSafeInteger(name: string, value: number) {
@@ -92,25 +79,27 @@ export function validateRelayerJobInput(input: CreateRelayerJobInput) {
 }
 
 export async function listRelayerJobs() {
-  const rows = await query<RelayerJobRow>(
-    `SELECT ${COLUMNS} FROM relayer_jobs ORDER BY updated_at DESC`
-  )
+  const rows = await getDb()
+    .select()
+    .from(relayerJobs)
+    .orderBy(desc(relayerJobs.updatedAt))
   return rows.map(toRecord)
 }
 
 export async function listRelayerJobsForTreasury(smartAccountId: string) {
-  const rows = await query<RelayerJobRow>(
-    `SELECT ${COLUMNS} FROM relayer_jobs WHERE smart_account_id = $1 ORDER BY updated_at DESC`,
-    [smartAccountId]
-  )
+  const rows = await getDb()
+    .select()
+    .from(relayerJobs)
+    .where(eq(relayerJobs.smartAccountId, smartAccountId))
+    .orderBy(desc(relayerJobs.updatedAt))
   return rows.map(toRecord)
 }
 
 export async function getRelayerJob(smartAccountId: string, intentId: string) {
-  const rows = await query<RelayerJobRow>(
-    `SELECT ${COLUMNS} FROM relayer_jobs WHERE smart_account_id = $1 AND intent_id = $2`,
-    [smartAccountId, normalizeIntentId(intentId)]
-  )
+  const rows = await getDb()
+    .select()
+    .from(relayerJobs)
+    .where(jobMatches(smartAccountId, normalizeIntentId(intentId)))
   return rows.length > 0 ? toRecord(rows[0]) : null
 }
 
@@ -120,20 +109,24 @@ export async function createRelayerJob(input: CreateRelayerJobInput) {
   // Idempotent by (smartAccountId, intentId), as before -- the composite
   // primary key now enforces it, so a duplicate POST cannot create a second
   // job even from two instances at once.
-  const inserted = await query<RelayerJobRow>(
-    `INSERT INTO relayer_jobs (${COLUMNS})
-     VALUES ($1, $2, 1, $3, $4, $5, 0, 'scheduled', $6, NULL, now(), now())
-     ON CONFLICT (smart_account_id, intent_id) DO NOTHING
-     RETURNING ${COLUMNS}`,
-    [
-      input.smartAccountId,
-      normalizeIntentId(input.intentId),
-      input.startLedger,
-      input.endLedger,
-      input.maxExecutions,
-      'Queued for executor-gated scheduled payment execution.',
-    ]
-  )
+  const inserted = await getDb()
+    .insert(relayerJobs)
+    .values({
+      smartAccountId: input.smartAccountId,
+      intentId: normalizeIntentId(input.intentId),
+      childSequence: 1,
+      startLedger: input.startLedger,
+      endLedger: input.endLedger,
+      maxExecutions: input.maxExecutions,
+      executionCount: 0,
+      status: 'scheduled',
+      note: 'Queued for executor-gated scheduled payment execution.',
+      txHash: null,
+    })
+    .onConflictDoNothing({
+      target: [relayerJobs.smartAccountId, relayerJobs.intentId],
+    })
+    .returning()
 
   if (inserted.length > 0) {
     return toRecord(inserted[0])
@@ -151,12 +144,11 @@ export async function createRelayerJob(input: CreateRelayerJobInput) {
 /**
  * Applies `update` to a job and persists the result.
  *
- * The callback signature is unchanged, but the read-modify-write underneath it
- * is now guarded by an optimistic `version` column rather than a per-process
- * write queue. That queue only ever serialized writers inside one Node
- * process; two relayer runs on two serverless instances could both read
- * `executionCount: 0` and both write `1`, losing an execution. Here the
- * `UPDATE` matches on the version it read, so a writer that was overtaken
+ * The read-modify-write is guarded by an optimistic `version` column rather
+ * than a per-process write queue. That queue only ever serialized writers
+ * inside one Node process; two relayer runs on two serverless instances could
+ * both read `executionCount: 0` and both write `1`, losing an execution. Here
+ * the UPDATE matches on the version it read, so a writer that was overtaken
  * updates no row, re-reads, and re-applies its mutation to the winner's state.
  *
  * `update` must therefore be free of side effects: it can run more than once.
@@ -170,11 +162,10 @@ export async function updateRelayerJob(
   const normalizedIntentId = normalizeIntentId(intentId)
 
   for (let attempt = 0; attempt < UPDATE_RETRIES; attempt += 1) {
-    const current = await query<RelayerJobRow & { version: number }>(
-      `SELECT ${COLUMNS}, version FROM relayer_jobs
-       WHERE smart_account_id = $1 AND intent_id = $2`,
-      [smartAccountId, normalizedIntentId]
-    )
+    const current = await getDb()
+      .select()
+      .from(relayerJobs)
+      .where(jobMatches(smartAccountId, normalizedIntentId))
     if (current.length === 0) {
       throw new Error('Relayer job not found.')
     }
@@ -184,27 +175,27 @@ export async function updateRelayerJob(
       updatedAt: new Date().toISOString(),
     })
 
-    const written = await query<RelayerJobRow>(
-      `UPDATE relayer_jobs
-       SET child_sequence = $3, start_ledger = $4, end_ledger = $5, max_executions = $6,
-           execution_count = $7, status = $8, note = $9, tx_hash = $10,
-           updated_at = now(), version = version + 1
-       WHERE smart_account_id = $1 AND intent_id = $2 AND version = $11
-       RETURNING ${COLUMNS}`,
-      [
-        smartAccountId,
-        normalizedIntentId,
-        updated.childSequence,
-        updated.startLedger,
-        updated.endLedger,
-        updated.maxExecutions,
-        updated.executionCount,
-        updated.status,
-        updated.note,
-        updated.txHash ?? null,
-        current[0].version,
-      ]
-    )
+    const written = await getDb()
+      .update(relayerJobs)
+      .set({
+        childSequence: updated.childSequence,
+        startLedger: updated.startLedger,
+        endLedger: updated.endLedger,
+        maxExecutions: updated.maxExecutions,
+        executionCount: updated.executionCount,
+        status: updated.status,
+        note: updated.note,
+        txHash: updated.txHash ?? null,
+        updatedAt: sql`now()`,
+        version: sql`${relayerJobs.version} + 1`,
+      })
+      .where(
+        and(
+          jobMatches(smartAccountId, normalizedIntentId),
+          eq(relayerJobs.version, current[0].version)
+        )
+      )
+      .returning()
 
     if (written.length > 0) {
       return toRecord(written[0])
