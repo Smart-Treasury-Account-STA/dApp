@@ -13,6 +13,22 @@ describe("inspectScheduleWindow", () => {
     expect(inspect(1_100, 1_800)).toEqual([]);
   });
 
+  it("blocks a window that closes before it opens", () => {
+    // Reachable now that the two bounds are picked as independent dates:
+    // nothing stops an operator choosing a closing moment before the opening
+    // one, and `validateScheduleDraft` would only name ledger fields the form
+    // no longer shows.
+    const notices = inspect(1_800, 1_100);
+
+    expect(notices).toHaveLength(1);
+    expect(notices[0].level).toBe("error");
+    expect(notices[0].message).toMatch(/before it opens/i);
+  });
+
+  it("blocks a single-ledger window that opens and closes at once", () => {
+    expect(inspect(1_100, 1_100)[0]).toMatchObject({ level: "error" });
+  });
+
   it("blocks a window that has already closed", () => {
     // `execute_scheduled_payment` can never fire inside it, so creating the
     // intent only spends fees. This is the one case worth refusing outright.

@@ -43,6 +43,19 @@ export function inspectScheduleWindow({
     return [];
   }
 
+  // Checked before anything about the current ledger: a window whose end
+  // precedes its start is malformed rather than late, and saying "already
+  // closed" would send the operator to move the wrong bound. Reachable since
+  // the two bounds became independently picked dates.
+  if (startLedger >= endLedger) {
+    return [
+      {
+        level: "error",
+        message: "This window closes before it opens. Move the closing moment after the opening one.",
+      },
+    ];
+  }
+
   // Both bounds are inclusive on-chain: `mark_child_executed` refuses only
   // `sequence < start_ledger` and `sequence > end_ledger`, so a window whose
   // end equals the current ledger is still live for this one ledger.

@@ -126,13 +126,17 @@ export function ScheduleSection({
   // Only once both fields hold a real ledger: a half-typed window would render
   // a date that moves under the operator on every keystroke.
   const draftWindow =
-    /^\d+$/.test(draft.startLedger) && /^\d+$/.test(draft.endLedger)
+    Number(draft.startLedger) > 0 && Number(draft.endLedger) > 0
       ? { startLedger: Number(draft.startLedger), endLedger: Number(draft.endLedger) }
       : null;
   const windowNotices = draftWindow
     ? inspectScheduleWindow({ ...draftWindow, latestLedger: formClock.referenceLedger })
     : [];
-  const windowBlocked = windowNotices.some((notice) => notice.level === "error");
+  // A draft starts with no window at all. That is not an error to shout
+  // about, but it is still nothing to sign, so it blocks the button without
+  // colouring the panel red.
+  const windowBlocked =
+    draftWindow === null || windowNotices.some((notice) => notice.level === "error");
 
   const submitScheduleMutation = useMutation({
     mutationFn: async () => {
@@ -376,7 +380,7 @@ export function ScheduleSection({
         value={draft.destination}
       />
 
-      <div className="grid grid-cols-5 gap-3 max-xl:grid-cols-2 max-sm:grid-cols-1">
+      <div className="grid grid-cols-4 gap-3 max-xl:grid-cols-2 max-sm:grid-cols-1">
         <FormField
           action={
             <Button
@@ -401,16 +405,6 @@ export function ScheduleSection({
           value={draft.amount}
         />
         <FormField
-          label="Start ledger"
-          onChange={(startLedger) => onDraftChange((current) => ({ ...current, startLedger }))}
-          value={draft.startLedger}
-        />
-        <FormField
-          label="End ledger"
-          onChange={(endLedger) => onDraftChange((current) => ({ ...current, endLedger }))}
-          value={draft.endLedger}
-        />
-        <FormField
           label="Max executions"
           onChange={(maxExecutions) =>
             onDraftChange((current) => ({ ...current, maxExecutions }))
@@ -428,7 +422,7 @@ export function ScheduleSection({
 
       <div className="grid gap-3 rounded-md border bg-background p-3">
         <span className="text-xs font-semibold uppercase text-muted-foreground">
-          Window — pick it in wall-clock terms, sign it in ledgers
+          Execution window
         </span>
 
         <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
@@ -451,17 +445,31 @@ export function ScheduleSection({
         </div>
 
         <small className="text-muted-foreground">
-          These write into the ledger fields above, which stay the values that get signed. Each
-          conversion reads the current ledger first, so a form left open does not drift. The
-          resolution is one ledger, about {LEDGER_CLOSE_SECONDS}s.
+          Each pick reads the current ledger first and converts against it, so a form left open
+          does not drift. The resolution is one ledger, about {LEDGER_CLOSE_SECONDS}s — finer
+          than that is not expressible on-chain.
         </small>
 
         {draftWindow ? (
-          <small className="text-muted-foreground">
-            This window opens {formatLedgerMoment(draftWindow.startLedger, formClock)} and closes{" "}
-            {formatLedgerMoment(draftWindow.endLedger, formClock)}.
+          <small className="grid gap-0.5 text-muted-foreground">
+            <span>
+              Opens {formatLedgerMoment(draftWindow.startLedger, formClock)}, closes{" "}
+              {formatLedgerMoment(draftWindow.endLedger, formClock)}.
+            </span>
+            <span>
+              Signed as ledgers{" "}
+              <code className="text-xs">
+                {draftWindow.startLedger} - {draftWindow.endLedger}
+              </code>
+              . These are the `u32` values the intent stores; the dates above are a reading of
+              them.
+            </span>
           </small>
-        ) : null}
+        ) : (
+          <small className="text-muted-foreground">
+            No window set yet. Pick both moments, or take the default with the button below.
+          </small>
+        )}
 
         {windowNotices.map((notice) => (
           <div
@@ -481,7 +489,7 @@ export function ScheduleSection({
       <div className="flex flex-wrap gap-2">
         <Button onClick={onUseLedgerWindow} variant="secondary">
           <Workflow size={18} />
-          Use current ledger
+          Default window
         </Button>
         <Button onClick={onScheduleSimulation}>
           <CalendarClock size={18} />
