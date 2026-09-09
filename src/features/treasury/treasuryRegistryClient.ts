@@ -1,9 +1,16 @@
-import type { CreateTreasuryInput, TreasuryRecord } from "@/lib/treasuryRegistry/types";
+import { apiUrl } from "@/lib/basePath";
+import type {
+  CreateTreasuryInput,
+  TreasuryRecord,
+} from "@/lib/treasuryRegistry/types";
 
 export async function fetchMyTreasuries(owner: string) {
-  const response = await fetch(`/api/treasuries?owner=${encodeURIComponent(owner)}`, {
-    cache: "no-store",
-  });
+  const response = await fetch(
+    apiUrl(`/api/treasuries?owner=${encodeURIComponent(owner)}`),
+    {
+      cache: "no-store",
+    },
+  );
   if (!response.ok) {
     throw new Error("Could not load your treasuries.");
   }
@@ -12,9 +19,12 @@ export async function fetchMyTreasuries(owner: string) {
 }
 
 export async function fetchTreasury(smartAccountId: string) {
-  const response = await fetch(`/api/treasuries/${encodeURIComponent(smartAccountId)}`, {
-    cache: "no-store",
-  });
+  const response = await fetch(
+    apiUrl(`/api/treasuries/${encodeURIComponent(smartAccountId)}`),
+    {
+      cache: "no-store",
+    },
+  );
   if (!response.ok) {
     throw new Error("Treasury not found.");
   }
@@ -23,7 +33,7 @@ export async function fetchTreasury(smartAccountId: string) {
 }
 
 export async function registerTreasury(input: CreateTreasuryInput) {
-  const response = await fetch("/api/treasuries", {
+  const response = await fetch(apiUrl("/api/treasuries"), {
     method: "POST",
     credentials: "same-origin",
     headers: { "content-type": "application/json" },
@@ -31,7 +41,9 @@ export async function registerTreasury(input: CreateTreasuryInput) {
   });
   if (!response.ok) {
     const payload = (await response.json()) as { error?: string };
-    throw new Error(payload.error ?? "Could not register the deployed treasury.");
+    throw new Error(
+      payload.error ?? "Could not register the deployed treasury.",
+    );
   }
   const payload = (await response.json()) as { treasury: TreasuryRecord };
   return payload.treasury;

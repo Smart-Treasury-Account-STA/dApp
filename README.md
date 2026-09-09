@@ -32,7 +32,7 @@ pnpm install
 pnpm dev
 ```
 
-Open `http://localhost:3000`.
+Open `http://localhost:3000/app`. The app is built with `basePath: "/app"` (see `next.config.ts`): in production the marketing site owns `smarttreasury.io` and proxies `/app/*` to this deployment, so every route, asset, and API handler carries that prefix on every origin, including the project's own Vercel domain (where `/` redirects to `/app`).
 
 ## Validation
 
@@ -47,10 +47,10 @@ pnpm build
 Start the Next.js app, configure the server-only relayer variables, then run due scheduled payments from an operator shell or scheduler:
 
 ```bash
-RELAYER_APP_URL=http://localhost:3000 pnpm relayer:run
+RELAYER_APP_URL=http://localhost:3000/app pnpm relayer:run
 ```
 
-The runner calls `POST /api/relayer/run` with `x-relayer-token`. It submits only jobs whose ledger window is open, checks `intent_registry.get_intent` and `intent_registry.is_child_executed` before submission, and advances the local `childSequence` only after a terminal successful transaction.
+The runner calls `POST <RELAYER_APP_URL>/api/relayer/run` with `x-relayer-token`. It submits only jobs whose ledger window is open, checks `intent_registry.get_intent` and `intent_registry.is_child_executed` before submission, and advances the local `childSequence` only after a terminal successful transaction.
 
 ## Environment Variables
 
@@ -75,7 +75,7 @@ Server-only relayer variables:
 
 - `RELAYER_EXECUTOR_SECRET`: Stellar secret key for the plain executor account configured in `intent_registry`.
 - `RELAYER_ADMIN_TOKEN`: required token for relayer queue, execute, and run endpoints through `x-relayer-token`.
-- `RELAYER_APP_URL`: app base URL used by `pnpm relayer:run`.
+- `RELAYER_APP_URL`: app base URL used by `pnpm relayer:run`, including the `/app` base path (`https://smarttreasury.io/app` in production).
 
 ## Architecture
 
@@ -87,6 +87,7 @@ Server-only relayer variables:
 - SmartAccount custom authorization planning is isolated in `src/lib/smartAccountAuth.ts`.
 - Scheduled relayer queue, durable store, authorization guard, and executor logic live in `src/lib/relayer`.
 - The operator console lives in `src/features/treasury/treasury-console.tsx`.
+- Browser calls to this app's own API routes go through `apiUrl()` in `src/lib/basePath.ts`, which prepends the base path that `next/link` and the router apply on their own.
 
 The dApp treats `smart_account` as a Soroban custom account. Payment and scheduled-payment execution are therefore modeled as:
 
@@ -101,3 +102,5 @@ The dApp treats `smart_account` as a Soroban custom account. Payment and schedul
 ## Deployment
 
 Deploy to Vercel by default. Configure the same environment variables in Vercel project settings for preview and production deployments.
+
+Production is reached through the marketing site (`org/marketing`), which owns `smarttreasury.io` and rewrites `/app/*` to this project's Vercel origin. That proxy needs the production deployment to be reachable without Vercel Deployment Protection, or with a protection bypass configured on the marketing side.

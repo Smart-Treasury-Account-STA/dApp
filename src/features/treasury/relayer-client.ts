@@ -1,8 +1,14 @@
-import type { CreateRelayerJobInput, RelayerJobRecord } from "@/lib/relayer/types";
+import { apiUrl } from "@/lib/basePath";
+import type {
+  CreateRelayerJobInput,
+  RelayerJobRecord,
+} from "@/lib/relayer/types";
 
 export async function fetchRelayerJobs(smartAccountId: string) {
   const response = await fetch(
-    `/api/relayer/jobs?smartAccountId=${encodeURIComponent(smartAccountId)}`,
+    apiUrl(
+      `/api/relayer/jobs?smartAccountId=${encodeURIComponent(smartAccountId)}`,
+    ),
     { cache: "no-store" },
   );
   if (!response.ok) {
@@ -13,7 +19,7 @@ export async function fetchRelayerJobs(smartAccountId: string) {
 }
 
 export async function queueRelayerJob(input: CreateRelayerJobInput) {
-  const response = await fetch("/api/relayer/jobs", {
+  const response = await fetch(apiUrl("/api/relayer/jobs"), {
     method: "POST",
     credentials: "same-origin",
     headers: { "content-type": "application/json" },
@@ -27,9 +33,14 @@ export async function queueRelayerJob(input: CreateRelayerJobInput) {
   return payload.job;
 }
 
-export async function executeRelayerJob(smartAccountId: string, intentId: string) {
+export async function executeRelayerJob(
+  smartAccountId: string,
+  intentId: string,
+) {
   const response = await fetch(
-    `/api/relayer/jobs/${intentId}/execute?smartAccountId=${encodeURIComponent(smartAccountId)}`,
+    apiUrl(
+      `/api/relayer/jobs/${intentId}/execute?smartAccountId=${encodeURIComponent(smartAccountId)}`,
+    ),
     {
       method: "POST",
       credentials: "same-origin",
@@ -44,7 +55,7 @@ export async function executeRelayerJob(smartAccountId: string, intentId: string
 }
 
 export async function runDueRelayerJobs() {
-  const response = await fetch("/api/relayer/run", {
+  const response = await fetch(apiUrl("/api/relayer/run"), {
     method: "POST",
     credentials: "same-origin",
   });
@@ -57,7 +68,7 @@ export async function runDueRelayerJobs() {
 }
 
 export async function openRelayerSession(token: string) {
-  const response = await fetch("/api/relayer/session", {
+  const response = await fetch(apiUrl("/api/relayer/session"), {
     method: "POST",
     credentials: "same-origin",
     headers: { "content-type": "application/json" },
@@ -69,7 +80,10 @@ export async function openRelayerSession(token: string) {
 }
 
 export async function closeRelayerSession() {
-  await fetch("/api/relayer/session", { method: "DELETE", credentials: "same-origin" });
+  await fetch(apiUrl("/api/relayer/session"), {
+    method: "DELETE",
+    credentials: "same-origin",
+  });
 }
 
 /**
@@ -82,7 +96,9 @@ export async function closeRelayerSession() {
  */
 export async function probeRelayerSession(): Promise<boolean> {
   try {
-    const response = await fetch("/api/relayer/session", { credentials: "same-origin" });
+    const response = await fetch(apiUrl("/api/relayer/session"), {
+      credentials: "same-origin",
+    });
     if (!response.ok) return false;
     const payload = (await response.json()) as { active?: boolean };
     return payload.active === true;
