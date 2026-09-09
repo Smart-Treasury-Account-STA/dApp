@@ -1,11 +1,21 @@
 name: CI
 
+# Branch rule for this organization: `main` is mainnet (Vercel production),
+# `testnet` is testnet (Vercel preview). The build step pulls its
+# NEXT_PUBLIC_* configuration from the Vercel project instead of duplicating
+# it here, which needs three repository secrets:
+#   VERCEL_TOKEN       a Vercel account/team token
+#   VERCEL_ORG_ID      Vercel team id (Team Settings → General)
+#   VERCEL_PROJECT_ID  Vercel project id (Project Settings → General)
+# Both ids are also written by a local `vercel link` (`.vercel/repo.json` on
+# CLI 54, `.vercel/project.json` on older CLIs).
+
 on:
   pull_request:
   push:
     branches:
       - main
-      - master
+      - testnet
 
 jobs:
   validate:
@@ -13,17 +23,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.2
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       - name: Install dependencies
@@ -38,17 +46,27 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # A push to `main` builds with the Production environment; a push to
+      # `testnet` and every pull request build with the Preview environment,
+      # resolved for the branch being built so branch-scoped preview values
+      # apply the same way they do on Vercel's own deployments. The pulled
+      # `.env.local` is gitignored and loaded by `next build` automatically.
+      - name: Pull Vercel environment
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          # Branch names are user-controlled: keep them out of the script text.
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          GIT_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          if [ "$EVENT_NAME" = "push" ] && [ "$REF_NAME" = "main" ]; then
+            npx --yes vercel@54 env pull .env.local --yes --environment=production --token="$VERCEL_TOKEN"
+          else
+            npx --yes vercel@54 env pull .env.local --yes --environment=preview \
+              --git-branch="$GIT_BRANCH" --token="$VERCEL_TOKEN"
+          fi
+
       - name: Build
         run: pnpm build
-        env:
-          NEXT_PUBLIC_STELLAR_RPC_URL: https://soroban-testnet.stellar.org
-          NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015"
-          NEXT_PUBLIC_STELLAR_EXPLORER_URL: https://stellar.expert/explorer/testnet
-          NEXT_PUBLIC_SMART_ACCOUNT_ID: CB4KZJ3I4XANE6GWPAMXCNXQ34PTQWPXVKFBBMLNKV25GAOXQC7RQUMS
-          NEXT_PUBLIC_POLICY_ENGINE_ID: CC5FSUNWBNH3EIEELHO3A4ZPJZRAZCVMFNP3PVXO2YBWDNNLTFLWBVHC
-          NEXT_PUBLIC_INTENT_REGISTRY_ID: CDHTNPBXUMPCKUJ76HQ767MDRD4IVRRH4H5DOF4JUOO36QKSV4GXFRMR
-          NEXT_PUBLIC_RECOVERY_MANAGER_ID: CALI5XJASA66LKZPF3ZF7HOLGOFUWZYIHB6SENXCZ5Y7QVT7UQKKR6UM
-          NEXT_PUBLIC_TRANSFER_ADAPTER_ID: CAX766XYR56WO7Y4HFOHYQUO5AIN5QLHAHKJ3DINXM2WUQY5UE7KGE26
-          NEXT_PUBLIC_SPLIT_ADAPTER_ID: CAFTFU2E4MGZT6BLCVN2FAQB6GIBJRR5ICI7C7LZEMACBDUUTQKVHHV3
-          NEXT_PUBLIC_STA_ASSET_CONTRACT_ID: CCOUVA654JH2V6B7LNTKHJP5DF3QA553RS2IIWXSGPDFH2N3QILIVU5L
-          NEXT_PUBLIC_TEST_RECIPIENT: GAK3XILRBYBMBOCZMSLL2CLR6WPQLEIOC6ZCYYPTE4OIAX3PCFFO2YMU
