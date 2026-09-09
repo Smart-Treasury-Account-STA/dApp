@@ -1,5 +1,6 @@
 import type { ContractSet } from "@/lib/env";
 import { readStellarConfig } from "@/lib/env";
+import { describeNetwork } from "@/lib/network";
 
 export const STELLAR_CONFIG = {
   ...readStellarConfig({
@@ -24,6 +25,13 @@ export const STELLAR_CONFIG = {
   policyAdminHint: process.env.NEXT_PUBLIC_POLICY_ADMIN_HINT ?? null,
 };
 
+/**
+ * The Stellar network this deployment talks to, resolved from the configured
+ * passphrase. Every network name the UI shows comes from here, so a testnet
+ * deployment cannot label itself mainnet or the reverse.
+ */
+export const NETWORK = describeNetwork(STELLAR_CONFIG.networkPassphrase);
+
 export function buildContractList(contracts: ContractSet) {
   return [
     ["Smart Account", contracts.smartAccount],
@@ -32,7 +40,7 @@ export function buildContractList(contracts: ContractSet) {
     ["Recovery Manager", contracts.recoveryManager],
     ["Transfer Adapter", contracts.transferAdapter],
     ["Split Adapter", contracts.splitAdapter],
-    ["STA Test Asset", contracts.staAsset],
+    ["STA Asset", contracts.staAsset],
   ] as const;
 }
 

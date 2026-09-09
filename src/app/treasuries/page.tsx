@@ -194,7 +194,7 @@ export default function TreasuriesPage() {
           <p className="text-xs text-muted-foreground">
             Or use the{" "}
             <Link className="underline" href="/">
-              default testnet treasury
+              default treasury
             </Link>{" "}
             without deploying your own.
           </p>

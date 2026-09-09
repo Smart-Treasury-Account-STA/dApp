@@ -6,7 +6,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { STELLAR_CONFIG } from "@/config";
+import { NETWORK, STELLAR_CONFIG } from "@/config";
 import type { ExecutionStep, NetworkHealth, SimulationResult } from "@/types";
 import type { RelayerJobRecord } from "@/lib/relayer/types";
 
@@ -121,7 +121,7 @@ export function StatusPill({ health }: { health: NetworkHealth }) {
   const labels = {
     idle: "Not connected",
     loading: "Reading RPC",
-    ready: "Live testnet",
+    ready: `Live ${NETWORK.name}`,
     degraded: "RPC degraded",
   } satisfies Record<NetworkHealth, string>;
   const variants = {

@@ -40,7 +40,6 @@ type WalletKitModule = {
     selectedWalletId: string;
     modules: unknown[];
   }) => WalletKit;
-  WalletNetwork?: { TESTNET?: string };
   FREIGHTER_ID?: string;
   WalletType?: { freighter?: string };
   allowAllModules?: () => unknown[];
@@ -83,11 +82,19 @@ export async function selectWalletThroughModal(
   });
 }
 
-export async function connectWallet(): Promise<WalletState> {
+/**
+ * Opens the wallet selection modal and returns the connected wallet.
+ *
+ * `networkPassphrase` is the network the wallet will be asked to sign for.
+ * The kit's own `WalletNetwork` enum values are the passphrases themselves,
+ * so the configured passphrase is passed straight through. It is a parameter
+ * rather than a `@/config` import to keep this module free of environment
+ * validation, the same way `@/lib/constants` is.
+ */
+export async function connectWallet(networkPassphrase: string): Promise<WalletState> {
   const kitModule = (await import(
     "@creit.tech/stellar-wallets-kit"
   )) as unknown as WalletKitModule;
-  const network = kitModule.WalletNetwork?.TESTNET ?? "TESTNET";
   const modules =
     typeof kitModule.allowAllModules === "function"
       ? kitModule.allowAllModules()
@@ -96,7 +103,7 @@ export async function connectWallet(): Promise<WalletState> {
     kitModule.FREIGHTER_ID ?? kitModule.WalletType?.freighter ?? "freighter";
 
   const kit = new kitModule.StellarWalletsKit({
-    network,
+    network: networkPassphrase,
     selectedWalletId,
     modules,
   });

@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
+import { STELLAR_CONFIG } from "@/config";
 import {
   connectWallet as connectWalletImpl,
   disconnectWallet as disconnectWalletImpl,
@@ -45,7 +46,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [wallet, setWallet] = useState<WalletState>(initialWallet);
 
   const connect = useCallback(async () => {
-    const connected = await connectWalletImpl();
+    const connected = await connectWalletImpl(STELLAR_CONFIG.networkPassphrase);
     setWallet(connected);
     return connected;
   }, []);

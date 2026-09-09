@@ -14,7 +14,7 @@ import {
 } from "@stellar/stellar-sdk";
 import { Buffer } from "buffer";
 
-import { STELLAR_CONFIG } from "@/config";
+import { NETWORK, STELLAR_CONFIG } from "@/config";
 import { validatePaymentDraft, validateScheduleDraft, validateSplitDraft } from "@/features/treasury/drafts";
 import { countAuthContexts, selectInvocationForAddress } from "@/lib/authTree";
 import type { ContractSet } from "@/lib/env";
@@ -1293,7 +1293,7 @@ export async function simulatePolicy(
       ok: true,
       title: "Policy simulation passed",
       detail:
-        "Asset, destination, amount, operation, and expected policy version are accepted on testnet.",
+        `Asset, destination, amount, operation, and expected policy version are accepted on ${NETWORK.name}.`,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1366,7 +1366,7 @@ export async function simulateSplitPolicy(
   return {
     ok: true,
     title: "Policy simulation passed",
-    detail: `Every destination, amount, and the expected policy version are accepted on testnet.`,
+    detail: `Every destination, amount, and the expected policy version are accepted on ${NETWORK.name}.`,
   };
 }
 

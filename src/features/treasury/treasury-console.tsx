@@ -23,7 +23,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
-import { STELLAR_CONFIG } from "@/config";
+import { NETWORK, STELLAR_CONFIG } from "@/config";
 import { computeLedgerWindow } from "@/features/treasury/drafts";
 import type { ContractSet } from "@/lib/env";
 import { makeIntentId, makeNonce, truncateAddress } from "@/lib/format";
@@ -193,7 +193,7 @@ export function TreasuryConsole({
       setNotice({
         ok: true,
         title: "Wallet connected",
-        detail: `${truncateAddress(connected.address)} is connected on Stellar testnet.`,
+        detail: `${truncateAddress(connected.address)} is connected on ${NETWORK.label}.`,
       });
     } catch (error) {
       setNotice({
@@ -226,7 +226,7 @@ export function TreasuryConsole({
           <ShieldCheck className="text-emerald-300" size={26} />
           <div>
             <strong className="block">STA Console</strong>
-            <span className="text-xs text-slate-400">Stellar testnet</span>
+            <span className="text-xs text-slate-400">{NETWORK.label}</span>
           </div>
         </div>
 
@@ -271,7 +271,7 @@ export function TreasuryConsole({
         <header className="flex min-h-20 items-center justify-between gap-4 max-sm:flex-col max-sm:items-start">
           <div>
             <span className="mb-1 block text-xs font-bold uppercase text-muted-foreground">
-              Tranche 2 deliverable console
+              Operator console
             </span>
             <h1 className="text-3xl font-semibold tracking-normal max-sm:text-2xl">
               Smart Treasury Account operations
@@ -299,7 +299,7 @@ export function TreasuryConsole({
               variant="secondary"
             >
               <RefreshCcw size={18} />
-              Refresh testnet
+              Refresh
             </Button>
           </div>
         </header>

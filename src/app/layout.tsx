@@ -5,9 +5,9 @@ import { AppProviders } from "@/providers/app-providers";
 import "@/app/globals.css";
 
 export const metadata: Metadata = {
-  title: "STA Testnet Console",
+  title: "Smart Treasury Account",
   description:
-    "Smart Treasury Account testnet dApp for Stellar treasury operators.",
+    "Operator console for Smart Treasury Account: policy-controlled payments, approvals, scheduled operations, and recovery on Stellar.",
 };
 
 export default function RootLayout({

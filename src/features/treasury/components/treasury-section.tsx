@@ -226,7 +226,7 @@ export function CapabilitiesSection() {
         <span className="mb-1 block text-xs font-bold uppercase text-muted-foreground">
           Implementation boundary
         </span>
-        <h2 className="text-lg font-semibold">What this dApp enforces for Tranche 2</h2>
+        <h2 className="text-lg font-semibold">What this dApp enforces</h2>
       </div>
       <div className="grid grid-cols-4 gap-3 max-xl:grid-cols-2 max-sm:grid-cols-1">
         <Capability

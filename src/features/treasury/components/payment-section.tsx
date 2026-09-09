@@ -12,7 +12,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { useMutation } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
-import { STELLAR_CONFIG } from "@/config";
+import { NETWORK, STELLAR_CONFIG } from "@/config";
 import { describeAssetReadiness, totalRequested } from "@/lib/assetHolding";
 import type { AssetHolding } from "@/lib/assetHolding";
 import type { ContractSet } from "@/lib/env";
@@ -109,7 +109,7 @@ export function PaymentSection({
         title: used ? "Nonce already consumed" : "Nonce is fresh",
         detail: used
           ? "Generate another nonce before preparing this payment."
-          : "smart_account.is_nonce_used returned false on testnet.",
+          : `smart_account.is_nonce_used returned false on ${NETWORK.name}.`,
       });
     } catch (error) {
       onNotice({
