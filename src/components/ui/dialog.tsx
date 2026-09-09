@@ -34,7 +34,18 @@ export const DialogContent = React.forwardRef<
         // max-h/overflow: a staged write can stack a summary plus several
         // warnings (remove_context_rule produces two on its own) -- without
         // this the footer's Cancel/Sign buttons fall off a short viewport.
-        'border-border bg-card fixed top-1/2 left-1/2 z-50 grid max-h-[85vh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-lg border p-6 shadow-lg',
+        //
+        // grid-cols-[minmax(0,1fr)] + wrap-anywhere: a grid item defaults to
+        // `min-width: auto`, so one unbreakable token sets the column's
+        // minimum width. A 56-character strkey does exactly that -- warning
+        // messages interpolate one as plain text -- which pushed the column
+        // past `max-w-md`. The box stayed capped, so every child laid out at
+        // the wider column and was clipped at the right edge: the summary,
+        // the warnings, and the Sign button all lost their tails. The minmax
+        // lets the column shrink; wrap-anywhere (inherited, so it also covers
+        // text nodes no component wrapped in `<code>`) lets the token break
+        // instead of being cut off.
+        'border-border bg-card fixed top-1/2 left-1/2 z-50 grid max-h-[85vh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 grid-cols-[minmax(0,1fr)] gap-4 overflow-y-auto rounded-lg border p-6 wrap-anywhere shadow-lg',
         className
       )}
       ref={ref}
