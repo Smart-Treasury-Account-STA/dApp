@@ -1,5 +1,8 @@
-"use client";
+'use client'
 
+import type { Dispatch, SetStateAction } from 'react'
+
+import { useMutation } from '@tanstack/react-query'
 import {
   ClipboardCheck,
   KeyRound,
@@ -7,26 +10,27 @@ import {
   RefreshCcw,
   SendHorizontal,
   Wallet,
-} from "lucide-react";
-import type { Dispatch, SetStateAction } from "react";
-import { useMutation } from "@tanstack/react-query";
+} from 'lucide-react'
 
-import { Button } from "@/components/ui/button";
-import { NETWORK, STELLAR_CONFIG } from "@/config";
-import { describeAssetReadiness, totalRequested } from "@/lib/assetHolding";
-import type { AssetHolding } from "@/lib/assetHolding";
-import type { ContractSet } from "@/lib/env";
-import { makeNonce } from "@/lib/format";
-import { describeReceipt } from "@/lib/receipt";
+import { Button } from '@/components/ui/button'
+import { NETWORK, STELLAR_CONFIG } from '@/config'
+import {
+  FormField,
+  SectionHeader,
+} from '@/features/treasury/components/primitives'
+import { describeAssetReadiness, totalRequested } from '@/lib/assetHolding'
+import type { AssetHolding } from '@/lib/assetHolding'
+import type { ContractSet } from '@/lib/env'
+import { makeNonce } from '@/lib/format'
+import { describeReceipt } from '@/lib/receipt'
 import {
   approveAndSubmitTransfer,
   checkNonce,
   simulatePolicy,
   simulateTransfer,
-} from "@/lib/stellarClient";
-import { signAuthEntry, signTransaction } from "@/lib/wallet";
-import type { PaymentDraft, SimulationResult, WalletState } from "@/types";
-import { FormField, SectionHeader } from "@/features/treasury/components/primitives";
+} from '@/lib/stellarClient'
+import { signAuthEntry, signTransaction } from '@/lib/wallet'
+import type { PaymentDraft, SimulationResult, WalletState } from '@/types'
 
 export function PaymentSection({
   assetHolding,
@@ -37,22 +41,24 @@ export function PaymentSection({
   wallet,
 }: {
   /** Null while loading or disconnected — an unknown holding never blocks. */
-  assetHolding: AssetHolding | null;
-  contracts?: ContractSet;
-  draft: PaymentDraft;
-  onDraftChange: Dispatch<SetStateAction<PaymentDraft>>;
-  onNotice: (notice: SimulationResult | null) => void;
-  wallet: WalletState;
+  assetHolding: AssetHolding | null
+  contracts?: ContractSet
+  draft: PaymentDraft
+  onDraftChange: Dispatch<SetStateAction<PaymentDraft>>
+  onNotice: (notice: SimulationResult | null) => void
+  wallet: WalletState
 }) {
   const readiness = assetHolding
     ? describeAssetReadiness(assetHolding, totalRequested([draft.amount]))
-    : null;
-  const blocked = readiness && !readiness.ready ? readiness : null;
+    : null
+  const blocked = readiness && !readiness.ready ? readiness : null
 
   const submitTransferMutation = useMutation({
     mutationFn: async () => {
       if (!wallet.address) {
-        throw new Error("Connect an authorized Stellar wallet before submission.");
+        throw new Error(
+          'Connect an authorized Stellar wallet before submission.'
+        )
       }
       return approveAndSubmitTransfer(
         {
@@ -61,67 +67,70 @@ export function PaymentSection({
           signTransaction,
         },
         draft,
-        contracts,
-      );
+        contracts
+      )
     },
     onMutate: () => {
       onNotice({
         ok: true,
-        title: "Wallet approval requested",
+        title: 'Wallet approval requested',
         detail:
-          "Approve the SmartAccount authorization entry, then approve the prepared transaction envelope.",
-      });
+          'Approve the SmartAccount authorization entry, then approve the prepared transaction envelope.',
+      })
     },
     onSuccess: (receipt) => {
       onNotice(
         describeReceipt(receipt, {
-          confirmedTitle: "Payment confirmed",
-          submittedTitle: "Payment submitted",
-        }),
-      );
-      onDraftChange((current) => ({ ...current, nonce: makeNonce() }));
+          confirmedTitle: 'Payment confirmed',
+          submittedTitle: 'Payment submitted',
+        })
+      )
+      onDraftChange((current) => ({ ...current, nonce: makeNonce() }))
     },
     onError: (error) => {
       onNotice({
         ok: false,
-        title: "Payment submission failed",
+        title: 'Payment submission failed',
         detail: error instanceof Error ? error.message : String(error),
-      });
+      })
     },
-  });
+  })
 
   async function onPolicyCheck() {
-    const source = wallet.address ?? STELLAR_CONFIG.testDestination;
-    onNotice(await simulatePolicy(source, draft, contracts));
+    const source = wallet.address ?? STELLAR_CONFIG.testDestination
+    onNotice(await simulatePolicy(source, draft, contracts))
   }
 
   async function onTransferSimulation() {
-    const source = wallet.address ?? STELLAR_CONFIG.testDestination;
-    onNotice(await simulateTransfer(source, draft, contracts));
+    const source = wallet.address ?? STELLAR_CONFIG.testDestination
+    onNotice(await simulateTransfer(source, draft, contracts))
   }
 
   async function onNonceCheck() {
     try {
-      const source = wallet.address ?? STELLAR_CONFIG.testDestination;
-      const used = await checkNonce(source, draft.nonce, contracts);
+      const source = wallet.address ?? STELLAR_CONFIG.testDestination
+      const used = await checkNonce(source, draft.nonce, contracts)
       onNotice({
         ok: !used,
-        title: used ? "Nonce already consumed" : "Nonce is fresh",
+        title: used ? 'Nonce already consumed' : 'Nonce is fresh',
         detail: used
-          ? "Generate another nonce before preparing this payment."
+          ? 'Generate another nonce before preparing this payment.'
           : `smart_account.is_nonce_used returned false on ${NETWORK.name}.`,
-      });
+      })
     } catch (error) {
       onNotice({
         ok: false,
-        title: "Nonce check failed",
+        title: 'Nonce check failed',
         detail: error instanceof Error ? error.message : String(error),
-      });
+      })
     }
   }
 
   return (
-    <div id="payment" className="grid gap-4 rounded-lg border bg-card p-5 shadow-sm">
+    <div
+      id="payment"
+      className="bg-card grid gap-4 rounded-lg border p-5 shadow-sm"
+    >
       <SectionHeader
         eyebrow="Prepare -> simulate -> approve"
         icon={<SendHorizontal className="text-primary" size={22} />}
@@ -130,18 +139,24 @@ export function PaymentSection({
 
       <FormField
         label="Asset contract"
-        onChange={(asset) => onDraftChange((current) => ({ ...current, asset }))}
+        onChange={(asset) =>
+          onDraftChange((current) => ({ ...current, asset }))
+        }
         value={draft.asset}
       />
       <FormField
         label="Destination"
-        onChange={(destination) => onDraftChange((current) => ({ ...current, destination }))}
+        onChange={(destination) =>
+          onDraftChange((current) => ({ ...current, destination }))
+        }
         value={draft.destination}
       />
       <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
         <FormField
           label="Amount"
-          onChange={(amount) => onDraftChange((current) => ({ ...current, amount }))}
+          onChange={(amount) =>
+            onDraftChange((current) => ({ ...current, amount }))
+          }
           value={draft.amount}
         />
         <FormField
@@ -158,7 +173,9 @@ export function PaymentSection({
       <FormField
         action={
           <Button
-            onClick={() => onDraftChange((current) => ({ ...current, nonce: makeNonce() }))}
+            onClick={() =>
+              onDraftChange((current) => ({ ...current, nonce: makeNonce() }))
+            }
             size="icon"
             title="Generate nonce"
             type="button"
@@ -168,13 +185,15 @@ export function PaymentSection({
           </Button>
         }
         label="Nonce"
-        onChange={(nonce) => onDraftChange((current) => ({ ...current, nonce }))}
+        onChange={(nonce) =>
+          onDraftChange((current) => ({ ...current, nonce }))
+        }
         value={draft.nonce}
       />
 
       {/* The token's own gate, checked before any policy this project owns. */}
       {blocked ? (
-        <p className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs leading-relaxed text-warning">
+        <p className="border-warning/40 bg-warning/10 text-warning rounded-md border p-3 text-xs leading-relaxed">
           {blocked.message} Policy check and simulation still work — they read
           the policy engine, which is a separate gate.
         </p>
@@ -194,7 +213,11 @@ export function PaymentSection({
           Simulate
         </Button>
         <Button
-          disabled={!wallet.connected || submitTransferMutation.isPending || blocked !== null}
+          disabled={
+            !wallet.connected ||
+            submitTransferMutation.isPending ||
+            blocked !== null
+          }
           onClick={() => submitTransferMutation.mutate()}
           title={blocked?.message}
         >
@@ -207,5 +230,5 @@ export function PaymentSection({
         </Button>
       </div>
     </div>
-  );
+  )
 }

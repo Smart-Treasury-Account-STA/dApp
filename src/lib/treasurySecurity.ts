@@ -1,25 +1,29 @@
-import type { ContextRule } from "@/types";
+import type { ContextRule } from '@/types'
 
 export type WeakestRuleSummary = {
-  weakestUnanimousRule: { id: number; name: string; requiredSigners: number } | null;
-  policyGatedRuleIds: number[];
-};
+  weakestUnanimousRule: {
+    id: number
+    name: string
+    requiredSigners: number
+  } | null
+  policyGatedRuleIds: number[]
+}
 
 export type AuthorizingPath = {
   /** Rules the connected wallet is a readable signer on. */
-  rules: ContextRule[];
+  rules: ContextRule[]
   /** A rule this wallet can satisfy by itself: no policy, and it is the
    * only signer. Non-null means one wallet signature is provably enough. */
-  soleSignerRule: ContextRule | null;
+  soleSignerRule: ContextRule | null
   /** Rules the wallet is on whose real threshold this dApp cannot read. */
-  policyGatedRules: ContextRule[];
+  policyGatedRules: ContextRule[]
   /** Rules the wallet is on that require every one of two or more signers. */
-  unanimousMultiSignerRules: ContextRule[];
+  unanimousMultiSignerRules: ContextRule[]
   /** True only when a rejection is certain: the wallet is on at least one
    * readable rule, none of them is satisfiable by this wallet alone, and
    * none of them defers to a policy that might still accept one signature. */
-  blocked: boolean;
-};
+  blocked: boolean
+}
 
 /**
  * A treasury's real security ceiling is its weakest independent context
@@ -39,18 +43,18 @@ export type AuthorizingPath = {
  * the "weakest" comparison against a rule whose exact requirement is known.
  */
 export function computeWeakestRule(rules: ContextRule[]): WeakestRuleSummary {
-  const unanimousRules = rules.filter((rule) => rule.policyCount === 0);
+  const unanimousRules = rules.filter((rule) => rule.policyCount === 0)
   const policyGatedRuleIds = rules
     .filter((rule) => rule.policyCount > 0)
-    .map((rule) => rule.id);
+    .map((rule) => rule.id)
 
   if (unanimousRules.length === 0) {
-    return { weakestUnanimousRule: null, policyGatedRuleIds };
+    return { weakestUnanimousRule: null, policyGatedRuleIds }
   }
 
   const weakest = unanimousRules.reduce((min, rule) =>
-    rule.signerCount < min.signerCount ? rule : min,
-  );
+    rule.signerCount < min.signerCount ? rule : min
+  )
 
   return {
     weakestUnanimousRule: {
@@ -59,7 +63,7 @@ export function computeWeakestRule(rules: ContextRule[]): WeakestRuleSummary {
       requiredSigners: weakest.signerCount,
     },
     policyGatedRuleIds,
-  };
+  }
 }
 
 /**
@@ -94,7 +98,7 @@ export function computeWeakestRule(rules: ContextRule[]): WeakestRuleSummary {
  */
 export function findAuthorizingPath(
   rules: ContextRule[],
-  connectedAddress: string | null,
+  connectedAddress: string | null
 ): AuthorizingPath {
   if (!connectedAddress) {
     return {
@@ -103,16 +107,20 @@ export function findAuthorizingPath(
       policyGatedRules: [],
       unanimousMultiSignerRules: [],
       blocked: false,
-    };
+    }
   }
 
-  const walletRules = rules.filter((rule) => rule.signerAddresses.includes(connectedAddress));
+  const walletRules = rules.filter((rule) =>
+    rule.signerAddresses.includes(connectedAddress)
+  )
   const soleSignerRule =
-    walletRules.find((rule) => rule.policyCount === 0 && rule.signerCount === 1) ?? null;
-  const policyGatedRules = walletRules.filter((rule) => rule.policyCount > 0);
+    walletRules.find(
+      (rule) => rule.policyCount === 0 && rule.signerCount === 1
+    ) ?? null
+  const policyGatedRules = walletRules.filter((rule) => rule.policyCount > 0)
   const unanimousMultiSignerRules = walletRules.filter(
-    (rule) => rule.policyCount === 0 && rule.signerCount > 1,
-  );
+    (rule) => rule.policyCount === 0 && rule.signerCount > 1
+  )
 
   return {
     rules: walletRules,
@@ -120,6 +128,8 @@ export function findAuthorizingPath(
     policyGatedRules,
     unanimousMultiSignerRules,
     blocked:
-      walletRules.length > 0 && soleSignerRule === null && policyGatedRules.length === 0,
-  };
+      walletRules.length > 0 &&
+      soleSignerRule === null &&
+      policyGatedRules.length === 0,
+  }
 }

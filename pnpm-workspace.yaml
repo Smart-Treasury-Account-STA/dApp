@@ -5,6 +5,7 @@ allowBuilds:
   protobufjs: true
   secp256k1: true
   sharp: true
+  simple-git-hooks: false
   tiny-secp256k1: true
   unrs-resolver: true
   usb: true

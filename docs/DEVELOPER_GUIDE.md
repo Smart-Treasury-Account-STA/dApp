@@ -57,7 +57,7 @@ expected, not a bug.
 The call deploys and wires, atomically:
 
 1. `policy_engine`, `recovery_manager`, `transfer_adapter`, `split_adapter`, `intent_registry` (left uninitialized), and `smart_account` — six fresh contract instances, deterministically addressed from `sha256(caller || salt || per-contract tag)`.
-2. `smart_account.initialize(...)`, which — via Soroban's invoker-contract shortcut — also initializes `intent_registry` with itself as admin, with **no separate authorization step**, and binds `transfer_adapter`/`split_adapter` immediately (no timelock; timelocks only apply to *changing* an adapter on an already-operating treasury).
+2. `smart_account.initialize(...)`, which — via Soroban's invoker-contract shortcut — also initializes `intent_registry` with itself as admin, with **no separate authorization step**, and binds `transfer_adapter`/`split_adapter` immediately (no timelock; timelocks only apply to _changing_ an adapter on an already-operating treasury).
 3. The connected wallet is registered as the sole `Signer::Delegated` under context rule `0`.
 4. `guardian_threshold` is set to `1` — but **zero guardians are registered yet** (see §2.4).
 5. `executor` is set to this dApp's shared relayer address (`NEXT_PUBLIC_RELAYER_EXECUTOR_ADDRESS`) so the relayer can service this treasury's scheduled payments immediately, with no separate setup step.
@@ -79,7 +79,7 @@ This route has **no admin-token gate** — instead, `verifyTreasuryOwnership`
 `smart_account.get_owner()` at the claimed address and confirms it
 matches the claimed owner before persisting anything. A claim for a
 treasury whose real on-chain owner doesn't match is rejected outright.
-A second, *disagreeing* registration claim for an already-registered
+A second, _disagreeing_ registration claim for an already-registered
 `smartAccountId` is rejected with a `TreasuryConflictError` (HTTP 409)
 rather than silently accepted — since ownership alone can't prove the
 claimed sub-contract addresses are the real ones, this stops a race where
@@ -88,7 +88,7 @@ a fabricated claim could otherwise squat a real treasury's registry entry.
 ### 2.4 Post-deploy setup
 
 A freshly deployed treasury cannot pay anyone and has no recovery path
-until this runs. None of it is required before the treasury can *receive*
+until this runs. None of it is required before the treasury can _receive_
 funds.
 
 - **Policy rules** (Policy section) — `policy_engine` starts with **zero**
@@ -138,7 +138,7 @@ summary (`TransferPaid`/`SplitPaid`) in the resulting toast, via
 
 ### 2.7 Relayer execution
 
-The Relayer section lists jobs for the *active* treasury only (scoped by
+The Relayer section lists jobs for the _active_ treasury only (scoped by
 `smartAccountId`) and lets an unlocked operator session either execute one
 job on demand or trigger a scan of every due job across **every**
 registered treasury (`runDueRelayerJobs`, §5). `scripts/run-relayer.mjs`
@@ -162,11 +162,11 @@ see the smart-contracts repo's `docs/DAPP_INTEGRATION_SPEC.md` §9 for why.
 
 ### 3.1 `account_factory`
 
-| Function | Signature | Auth | Called from |
-|---|---|---|---|
-| `deploy_account` | `(caller: Address, salt: BytesN<32>, initial_signers: Vec<Signer>, initial_policies: Map<Address, Val>, guardian_threshold: u32, executor: Address) -> DeployedAccount` | `caller` — plain `Address::require_auth()`, but at **six** separate call-tree nodes (§2.2) | `src/lib/deployAccount.ts` |
-| `get_wasm_hashes` | `() -> WasmHashes` | none (read) | not called by this dApp |
-| `initialize` / `set_wasm_hashes` | admin setup | admin (plain) | ops-only, not exposed in this dApp |
+| Function                         | Signature                                                                                                                                                               | Auth                                                                                       | Called from                        |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------- |
+| `deploy_account`                 | `(caller: Address, salt: BytesN<32>, initial_signers: Vec<Signer>, initial_policies: Map<Address, Val>, guardian_threshold: u32, executor: Address) -> DeployedAccount` | `caller` — plain `Address::require_auth()`, but at **six** separate call-tree nodes (§2.2) | `src/lib/deployAccount.ts`         |
+| `get_wasm_hashes`                | `() -> WasmHashes`                                                                                                                                                      | none (read)                                                                                | not called by this dApp            |
+| `initialize` / `set_wasm_hashes` | admin setup                                                                                                                                                             | admin (plain)                                                                              | ops-only, not exposed in this dApp |
 
 `DeployedAccount = {smart_account, policy_engine, intent_registry, recovery_manager, transfer_adapter, split_adapter}` (all `Address`).
 
@@ -174,24 +174,24 @@ see the smart-contracts repo's `docs/DAPP_INTEGRATION_SPEC.md` §9 for why.
 
 Every fund-moving or schedule-authoring entrypoint below is a **custom
 account** call — `env.current_contract_address().require_auth()` — which
-means the standard envelope signature does *not* satisfy it; it requires
+means the standard envelope signature does _not_ satisfy it; it requires
 the Entry A/Entry B `AuthPayload` construction described in §3.4.
 
-| Function | Signature | Auth | Called from |
-|---|---|---|---|
-| `execute_transfer_payment` | `(asset: Address, destination: Address, amount: i128, nonce: u64, expected_policy_version: u32)` | custom-account | `approveAndSubmitTransfer` (`stellarClient.ts`) |
-| `execute_split_payment` | `(asset: Address, recipients: Vec<Address>, amounts: Vec<i128>, nonce: u64, expected_policy_version: u32)` | custom-account | `approveAndSubmitSplit` |
-| `create_scheduled_payment` | `(intent: ScheduledIntentArgs)` | custom-account | `approveAndSubmitSchedule` |
-| `cancel_scheduled_payment` | `(intent_id: BytesN<32>)` | custom-account | `approveAndSubmitCancelSchedule` |
-| `execute_scheduled_payment` | `(intent_id: BytesN<32>, child_sequence: u32)` | **none of its own** — deliberately permissionless; the only real check is `intent_registry.mark_child_executed`'s executor requirement, two levels deep (§3.4, §5) | `src/lib/relayer/executor.ts` |
-| `add_signer` | `(context_rule_id: u32, signer: Signer)` | custom-account | `addSignerOperation` → `signers-section.tsx` |
-| `remove_signer` | `(context_rule_id: u32, signer_id: u32)` | custom-account | `removeSignerOperation` |
-| `status` | `() -> AccountStatus {initialized, paused, frozen, policy_version_hint}` | none (read) | `loadTreasurySnapshot` |
-| `get_owner` | `() -> Address` | none (read) | `loadOwner` |
-| `get_context_rules_count` | `() -> u32` | none (read) | `loadContextRules` |
-| `get_context_rule` | `(context_rule_id: u32) -> ContextRule` | none (read) | `loadContextRules` |
-| `get_signer_id` | `(signer: Signer) -> u32` | none (read) | `loadSignerId` |
-| `is_nonce_used` | `(nonce: u64) -> bool` | none (read) | `checkNonce` |
+| Function                    | Signature                                                                                                  | Auth                                                                                                                                                               | Called from                                     |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
+| `execute_transfer_payment`  | `(asset: Address, destination: Address, amount: i128, nonce: u64, expected_policy_version: u32)`           | custom-account                                                                                                                                                     | `approveAndSubmitTransfer` (`stellarClient.ts`) |
+| `execute_split_payment`     | `(asset: Address, recipients: Vec<Address>, amounts: Vec<i128>, nonce: u64, expected_policy_version: u32)` | custom-account                                                                                                                                                     | `approveAndSubmitSplit`                         |
+| `create_scheduled_payment`  | `(intent: ScheduledIntentArgs)`                                                                            | custom-account                                                                                                                                                     | `approveAndSubmitSchedule`                      |
+| `cancel_scheduled_payment`  | `(intent_id: BytesN<32>)`                                                                                  | custom-account                                                                                                                                                     | `approveAndSubmitCancelSchedule`                |
+| `execute_scheduled_payment` | `(intent_id: BytesN<32>, child_sequence: u32)`                                                             | **none of its own** — deliberately permissionless; the only real check is `intent_registry.mark_child_executed`'s executor requirement, two levels deep (§3.4, §5) | `src/lib/relayer/executor.ts`                   |
+| `add_signer`                | `(context_rule_id: u32, signer: Signer)`                                                                   | custom-account                                                                                                                                                     | `addSignerOperation` → `signers-section.tsx`    |
+| `remove_signer`             | `(context_rule_id: u32, signer_id: u32)`                                                                   | custom-account                                                                                                                                                     | `removeSignerOperation`                         |
+| `status`                    | `() -> AccountStatus {initialized, paused, frozen, policy_version_hint}`                                   | none (read)                                                                                                                                                        | `loadTreasurySnapshot`                          |
+| `get_owner`                 | `() -> Address`                                                                                            | none (read)                                                                                                                                                        | `loadOwner`                                     |
+| `get_context_rules_count`   | `() -> u32`                                                                                                | none (read)                                                                                                                                                        | `loadContextRules`                              |
+| `get_context_rule`          | `(context_rule_id: u32) -> ContextRule`                                                                    | none (read)                                                                                                                                                        | `loadContextRules`                              |
+| `get_signer_id`             | `(signer: Signer) -> u32`                                                                                  | none (read)                                                                                                                                                        | `loadSignerId`                                  |
+| `is_nonce_used`             | `(nonce: u64) -> bool`                                                                                     | none (read)                                                                                                                                                        | `checkNonce`                                    |
 
 `ScheduledIntentArgs` fields set by the caller: `intent_id`, `asset`,
 `destination`, `amount`, `start_ledger`, `end_ledger`, `interval_ledgers`,
@@ -210,14 +210,14 @@ used — `Signer::External`/passkeys are out of scope).
 A freshly deployed treasury's `policy_engine` has **zero rules** — every
 payment fails closed until these are configured.
 
-| Function | Signature | Auth | Called from |
-|---|---|---|---|
-| `validate_policy` | `(check: PolicyCheck {operation: Symbol, asset: Address, destination: Address, amount: i128, expected_version: u32}) -> Result<(), PolicyEngineError>` | none — permissionless by design, any caller may pre-check a hypothetical payment | `simulatePolicy`, `simulateSplitPolicy`, `simulatePolicyProbe` |
-| `version` | `() -> u32` | none (read) | `loadTreasurySnapshot` |
-| `set_asset_rule` | `(asset: Address, rule: AssetRule {enabled: bool, max_single_transfer: i128})` | admin — **plain** `Address::require_auth()` (source-account, not custom-account) | `setAssetRuleOperation` → `policy-section.tsx` |
-| `set_recipient_allowed` | `(recipient: Address, allowed: bool)` | admin (plain) | `setRecipientAllowedOperation` |
-| `set_operation_allowed` | `(operation: Symbol, allowed: bool)` | admin (plain) | `setOperationAllowedOperation` |
-| `bump_version` | `(next_version: u32)` | admin (plain) | `bumpVersionOperation` |
+| Function                | Signature                                                                                                                                              | Auth                                                                             | Called from                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `validate_policy`       | `(check: PolicyCheck {operation: Symbol, asset: Address, destination: Address, amount: i128, expected_version: u32}) -> Result<(), PolicyEngineError>` | none — permissionless by design, any caller may pre-check a hypothetical payment | `simulatePolicy`, `simulateSplitPolicy`, `simulatePolicyProbe` |
+| `version`               | `() -> u32`                                                                                                                                            | none (read)                                                                      | `loadTreasurySnapshot`                                         |
+| `set_asset_rule`        | `(asset: Address, rule: AssetRule {enabled: bool, max_single_transfer: i128})`                                                                         | admin — **plain** `Address::require_auth()` (source-account, not custom-account) | `setAssetRuleOperation` → `policy-section.tsx`                 |
+| `set_recipient_allowed` | `(recipient: Address, allowed: bool)`                                                                                                                  | admin (plain)                                                                    | `setRecipientAllowedOperation`                                 |
+| `set_operation_allowed` | `(operation: Symbol, allowed: bool)`                                                                                                                   | admin (plain)                                                                    | `setOperationAllowedOperation`                                 |
+| `bump_version`          | `(next_version: u32)`                                                                                                                                  | admin (plain)                                                                    | `bumpVersionOperation`                                         |
 
 `policy_engine.admin` is set once at `initialize` (by the factory, to the
 deploying caller) and **cannot be changed afterward** — no
@@ -233,13 +233,13 @@ Never called directly by the dApp's UI code except for reads — writes
 happen only as internal sub-calls from `smart_account` (via the invoker
 shortcut) or from the relayer's own explicit call.
 
-| Function | Signature | Auth | Called from |
-|---|---|---|---|
-| `get_intent` | `(intent_id: BytesN<32>) -> ScheduledIntent` | none (read) | `checkScheduledIntentExists`, `loadIntentPolicyVersion`, `executor.ts` |
-| `is_child_executed` | `(intent_id: BytesN<32>, child_sequence: u32) -> bool` | none (read) | `executor.ts` |
-| `mark_child_executed` | `(intent_id: BytesN<32>, child_sequence: u32)` | `Executor` (a plain account, set at deploy time) — `executor.require_auth()`, **two levels deep** in `execute_scheduled_payment`'s call graph, so a bare envelope signature does *not* satisfy it | internal, reached via `smart_account.execute_scheduled_payment`; explicitly authorized in `executor.ts` (§5) |
-| `cancel_intent` | `(intent_id: BytesN<32>)` | admin (`smart_account`, via invoker shortcut — no separate authorization needed) | internal, via `smart_account.cancel_scheduled_payment` |
-| `initialize` / `set_executor` | admin setup | admin (`smart_account`, via invoker shortcut at deploy time only) | internal, via `account_factory.deploy_account` → `smart_account.initialize` |
+| Function                      | Signature                                              | Auth                                                                                                                                                                                              | Called from                                                                                                  |
+| ----------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `get_intent`                  | `(intent_id: BytesN<32>) -> ScheduledIntent`           | none (read)                                                                                                                                                                                       | `checkScheduledIntentExists`, `loadIntentPolicyVersion`, `executor.ts`                                       |
+| `is_child_executed`           | `(intent_id: BytesN<32>, child_sequence: u32) -> bool` | none (read)                                                                                                                                                                                       | `executor.ts`                                                                                                |
+| `mark_child_executed`         | `(intent_id: BytesN<32>, child_sequence: u32)`         | `Executor` (a plain account, set at deploy time) — `executor.require_auth()`, **two levels deep** in `execute_scheduled_payment`'s call graph, so a bare envelope signature does _not_ satisfy it | internal, reached via `smart_account.execute_scheduled_payment`; explicitly authorized in `executor.ts` (§5) |
+| `cancel_intent`               | `(intent_id: BytesN<32>)`                              | admin (`smart_account`, via invoker shortcut — no separate authorization needed)                                                                                                                  | internal, via `smart_account.cancel_scheduled_payment`                                                       |
+| `initialize` / `set_executor` | admin setup                                            | admin (`smart_account`, via invoker shortcut at deploy time only)                                                                                                                                 | internal, via `account_factory.deploy_account` → `smart_account.initialize`                                  |
 
 Relevant error codes (`IntentRegistryError`, 3000–3013):
 `IntentAlreadyExists` `#3002`, `ExecutionTooEarly` `#3007`,
@@ -249,15 +249,15 @@ sequences are 1-based; `0` is always rejected).
 
 ### 3.5 `recovery_manager`
 
-Only guardian *registration* is exposed in this dApp — the active
+Only guardian _registration_ is exposed in this dApp — the active
 recovery flow (opening/approving/finalizing a recovery, guardian-triggered
 freeze, threshold changes) is out of scope, matching
 `docs/DAPP_INTEGRATION_SPEC.md` §9.
 
-| Function | Signature | Auth | Called from |
-|---|---|---|---|
-| `add_guardian` | `(guardian: Address)` | admin — plain `Address::require_auth()` (same key as policy admin/owner under Tier 1 deploy) | `addGuardianOperation` → `guardians-section.tsx` |
-| `is_guardian` | `(guardian: Address) -> bool` | none (read) | `checkIsGuardian` |
+| Function       | Signature                     | Auth                                                                                         | Called from                                      |
+| -------------- | ----------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `add_guardian` | `(guardian: Address)`         | admin — plain `Address::require_auth()` (same key as policy admin/owner under Tier 1 deploy) | `addGuardianOperation` → `guardians-section.tsx` |
+| `is_guardian`  | `(guardian: Address) -> bool` | none (read)                                                                                  | `checkIsGuardian`                                |
 
 Like `policy_engine`, `recovery_manager.admin` is permanent from
 `initialize` — no entrypoint ever changes it.
@@ -282,7 +282,7 @@ Any call that does `env.current_contract_address().require_auth()` needs
   No wallet interaction; assembled directly from the matched context
   rule's id.
 - **Entry B** — a standard classic-account credential for the actual
-  `Signer::Delegated` wallet, authorizing the *nested*
+  `Signer::Delegated` wallet, authorizing the _nested_
   `signer.require_auth_for_args((auth_digest,))` call that
   `smart_account`'s own `authenticate()` makes internally. This is the one
   the wallet actually signs (`signAuthEntry`), where
@@ -316,7 +316,7 @@ plain account, **not** `smart_account` — but it sits two levels deep in
 `execute_scheduled_payment`'s call graph
 (`execute_scheduled_payment -> intent_registry.mark_child_executed ->
 ensure_executor`), and a bare source-account envelope signature only
-covers a `require_auth()` at the *root* of the invocation tree. This
+covers a `require_auth()` at the _root_ of the invocation tree. This
 needs its own explicit, signed classic-account entry, rooted directly at
 `mark_child_executed` — confirmed against live testnet failures when
 this was missing; see `src/lib/relayer/executor.ts`'s own comment on the
@@ -344,14 +344,14 @@ two different treasuries can otherwise pick colliding random intent ids.
 
 ## 6. Codebase map
 
-| Concern | Files |
-|---|---|
-| Wallet connection | `src/lib/wallet.ts`, `src/providers/wallet-provider.tsx` |
-| Low-level chain calls (the code actually used) | `src/lib/stellarClient.ts`, `src/lib/treasuryWrites.ts`, `src/lib/writeAuth.ts` |
-| SDK (npm dependency, not vendored) | `sta-sdk` — see its own README |
-| Treasury deploy | `src/lib/deployAccount.ts`, `src/app/treasuries/page.tsx` |
-| Treasury registry | `src/lib/treasuryRegistry/`, `src/app/api/treasuries/` |
-| Per-treasury console | `src/features/treasury/treasury-console.tsx` and `src/features/treasury/components/*` |
-| Relayer | `src/lib/relayer/`, `src/app/api/relayer/*`, `scripts/run-relayer.mjs` |
-| Event decoding | `sta-sdk`'s `events` module, `src/lib/receipt.ts` |
-| Config | `src/config.ts`, `src/lib/env.ts` (env-var-driven, what the app actually runs on) |
+| Concern                                        | Files                                                                                 |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Wallet connection                              | `src/lib/wallet.ts`, `src/providers/wallet-provider.tsx`                              |
+| Low-level chain calls (the code actually used) | `src/lib/stellarClient.ts`, `src/lib/treasuryWrites.ts`, `src/lib/writeAuth.ts`       |
+| SDK (npm dependency, not vendored)             | `sta-sdk` — see its own README                                                        |
+| Treasury deploy                                | `src/lib/deployAccount.ts`, `src/app/treasuries/page.tsx`                             |
+| Treasury registry                              | `src/lib/treasuryRegistry/`, `src/app/api/treasuries/`                                |
+| Per-treasury console                           | `src/features/treasury/treasury-console.tsx` and `src/features/treasury/components/*` |
+| Relayer                                        | `src/lib/relayer/`, `src/app/api/relayer/*`, `scripts/run-relayer.mjs`                |
+| Event decoding                                 | `sta-sdk`'s `events` module, `src/lib/receipt.ts`                                     |
+| Config                                         | `src/config.ts`, `src/lib/env.ts` (env-var-driven, what the app actually runs on)     |

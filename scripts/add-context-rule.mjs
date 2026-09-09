@@ -24,57 +24,62 @@
  */
 import {
   Address,
+  BASE_FEE,
   Keypair,
   Operation,
   TransactionBuilder,
-  BASE_FEE,
   rpc,
   scValToNative,
   xdr,
-} from "@stellar/stellar-sdk";
-import { TESTNET, buildInvocation, buildSmartAccountAuthEntries, signAndSubmit } from "sta-sdk";
+} from '@stellar/stellar-sdk'
+import {
+  TESTNET,
+  buildInvocation,
+  buildSmartAccountAuthEntries,
+  signAndSubmit,
+} from 'sta-sdk'
 
-const ownerSecret = requireEnv("OWNER_SECRET");
-const smartAccountId = requireEnv("SMART_ACCOUNT_ID");
-const newSignerAddress = requireEnv("NEW_SIGNER_ADDRESS");
-const ruleName = process.env.RULE_NAME ?? "rule1";
+const ownerSecret = requireEnv('OWNER_SECRET')
+const smartAccountId = requireEnv('SMART_ACCOUNT_ID')
+const newSignerAddress = requireEnv('NEW_SIGNER_ADDRESS')
+const ruleName = process.env.RULE_NAME ?? 'rule1'
 
 function requireEnv(name) {
-  const value = process.env[name];
-  if (!value) throw new Error(`Set ${name} before running this script.`);
-  return value;
+  const value = process.env[name]
+  if (!value) throw new Error(`Set ${name} before running this script.`)
+  return value
 }
 
 function addressScVal(id) {
-  return new Address(id).toScVal();
+  return new Address(id).toScVal()
 }
 
 /** Soroban SDK's standard #[contracttype] enum encoding: a vector of the
  * variant's symbol followed by its payload (empty for a unit variant). */
 function enumScVal(variant, ...payload) {
-  return xdr.ScVal.scvVec([xdr.ScVal.scvSymbol(variant), ...payload]);
+  return xdr.ScVal.scvVec([xdr.ScVal.scvSymbol(variant), ...payload])
 }
 
 async function main() {
-  const owner = Keypair.fromSecret(ownerSecret);
-  const server = new rpc.Server(TESTNET.rpcUrl);
+  const owner = Keypair.fromSecret(ownerSecret)
+  const server = new rpc.Server(TESTNET.rpcUrl)
 
   const args = [
-    enumScVal("Default"), // context_type: ContextRuleType
+    enumScVal('Default'), // context_type: ContextRuleType
     xdr.ScVal.scvString(ruleName), // name: String
     xdr.ScVal.scvVoid(), // valid_until: Option<u32> = None
-    xdr.ScVal.scvVec([enumScVal("Delegated", addressScVal(newSignerAddress))]), // signers: Vec<Signer>
+    xdr.ScVal.scvVec([enumScVal('Delegated', addressScVal(newSignerAddress))]), // signers: Vec<Signer>
     xdr.ScVal.scvMap([]), // policies: Map<Address, Val>
-  ];
+  ]
 
   const rootInvocation = buildInvocation({
     contractId: smartAccountId,
-    functionName: "add_context_rule",
+    functionName: 'add_context_rule',
     args,
-  });
+  })
 
-  const latestLedger = await server.getLatestLedger();
-  const signatureExpirationLedger = latestLedger.sequence + 100;
+  const latestLedger = await server.getLatestLedger()
+  const signatureExpirationLedger = latestLedger.sequence + 100
 
   const [[entryA, entryB], sourceAccount] = await Promise.all([
     buildSmartAccountAuthEntries({
@@ -87,7 +92,7 @@ async function main() {
       signatureExpirationLedger,
     }),
     server.getAccount(owner.publicKey()),
-  ]);
+  ])
 
   const builder = new TransactionBuilder(sourceAccount, {
     fee: BASE_FEE,
@@ -96,21 +101,24 @@ async function main() {
     .addOperation(
       Operation.invokeContractFunction({
         contract: smartAccountId,
-        function: "add_context_rule",
+        function: 'add_context_rule',
         args,
         auth: [entryA, entryB],
-      }),
+      })
     )
     .setTimeout(120)
-    .build();
+    .build()
 
-  const prepared = await server.prepareTransaction(builder);
-  const result = await signAndSubmit(TESTNET, prepared, owner);
-  console.log("add_context_rule succeeded, ledger:", result.ledger);
-  console.log("New ContextRule:", result.returnValue ? scValToNative(result.returnValue) : "(no return value)");
+  const prepared = await server.prepareTransaction(builder)
+  const result = await signAndSubmit(TESTNET, prepared, owner)
+  console.log('add_context_rule succeeded, ledger:', result.ledger)
+  console.log(
+    'New ContextRule:',
+    result.returnValue ? scValToNative(result.returnValue) : '(no return value)'
+  )
 }
 
 main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+  console.error(err)
+  process.exit(1)
+})

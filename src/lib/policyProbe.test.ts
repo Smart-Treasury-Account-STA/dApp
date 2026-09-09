@@ -1,12 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from 'vitest'
+
+import type { ProbeInput } from '@/types'
 
 import {
   classifyProbeFailure,
   findAmountCap,
   isWholePaymentReason,
   probePolicy,
-} from "./policyProbe";
-import type { ProbeInput } from "@/types";
+} from './policyProbe'
 
 /**
  * Stands in for the deployed policy engine. Mirrors validate_policy's real
@@ -16,130 +17,134 @@ import type { ProbeInput } from "@/types";
 function fakeEngine({
   cap = 10_000_000n,
   version = 1,
-  allowedOperation = "transfer",
-  allowedAsset = "ASSET_OK",
-  allowedDestination = "DEST_OK",
+  allowedOperation = 'transfer',
+  allowedAsset = 'ASSET_OK',
+  allowedDestination = 'DEST_OK',
 }: {
-  cap?: bigint;
-  version?: number;
-  allowedOperation?: string;
-  allowedAsset?: string;
-  allowedDestination?: string;
+  cap?: bigint
+  version?: number
+  allowedOperation?: string
+  allowedAsset?: string
+  allowedDestination?: string
 } = {}) {
   return async (input: ProbeInput) => {
     const fail = (code: number) => {
-      throw new Error(`HostError: Error(Contract, #${code})`);
-    };
-    if (input.expectedVersion !== version) fail(2006);
-    if (BigInt(input.amount) <= 0n) fail(2002);
-    if (input.operation !== allowedOperation) fail(2008);
-    if (input.asset !== allowedAsset) fail(2003);
-    if (BigInt(input.amount) > cap) fail(2005);
-    if (input.destination !== allowedDestination) fail(2004);
-  };
+      throw new Error(`HostError: Error(Contract, #${code})`)
+    }
+    if (input.expectedVersion !== version) fail(2006)
+    if (BigInt(input.amount) <= 0n) fail(2002)
+    if (input.operation !== allowedOperation) fail(2008)
+    if (input.asset !== allowedAsset) fail(2003)
+    if (BigInt(input.amount) > cap) fail(2005)
+    if (input.destination !== allowedDestination) fail(2004)
+  }
 }
 
-const base: Omit<ProbeInput, "amount"> = {
-  asset: "ASSET_OK",
-  destination: "DEST_OK",
-  operation: "transfer",
+const base: Omit<ProbeInput, 'amount'> = {
+  asset: 'ASSET_OK',
+  destination: 'DEST_OK',
+  operation: 'transfer',
   expectedVersion: 1,
-};
+}
 
-describe("classifyProbeFailure", () => {
-  it("maps each contract code to the dimension it rejected", () => {
-    expect(classifyProbeFailure("Error(Contract, #2008)")).toEqual({
+describe('classifyProbeFailure', () => {
+  it('maps each contract code to the dimension it rejected', () => {
+    expect(classifyProbeFailure('Error(Contract, #2008)')).toEqual({
       allowed: false,
-      reason: "operation",
+      reason: 'operation',
       code: 2008,
-    });
-    expect(classifyProbeFailure("Error(Contract, #2003)")).toEqual({
+    })
+    expect(classifyProbeFailure('Error(Contract, #2003)')).toEqual({
       allowed: false,
-      reason: "asset",
+      reason: 'asset',
       code: 2003,
-    });
-    expect(classifyProbeFailure("Error(Contract, #2005)")).toEqual({
+    })
+    expect(classifyProbeFailure('Error(Contract, #2005)')).toEqual({
       allowed: false,
-      reason: "amount",
+      reason: 'amount',
       code: 2005,
-    });
-    expect(classifyProbeFailure("Error(Contract, #2004)")).toEqual({
+    })
+    expect(classifyProbeFailure('Error(Contract, #2004)')).toEqual({
       allowed: false,
-      reason: "destination",
+      reason: 'destination',
       code: 2004,
-    });
-    expect(classifyProbeFailure("Error(Contract, #2006)")).toEqual({
+    })
+    expect(classifyProbeFailure('Error(Contract, #2006)')).toEqual({
       allowed: false,
-      reason: "version",
+      reason: 'version',
       code: 2006,
-    });
-  });
+    })
+  })
 
-  it("reports an unrecognised failure as unknown rather than guessing", () => {
-    expect(classifyProbeFailure("Bad union switch: 1")).toEqual({
+  it('reports an unrecognised failure as unknown rather than guessing', () => {
+    expect(classifyProbeFailure('Bad union switch: 1')).toEqual({
       allowed: false,
-      reason: "unknown",
-    });
-  });
-});
+      reason: 'unknown',
+    })
+  })
+})
 
-describe("isWholePaymentReason", () => {
-  it("treats the per-destination dimensions as belonging to that destination", () => {
-    expect(isWholePaymentReason("destination")).toBe(false);
-    expect(isWholePaymentReason("amount")).toBe(false);
-  });
+describe('isWholePaymentReason', () => {
+  it('treats the per-destination dimensions as belonging to that destination', () => {
+    expect(isWholePaymentReason('destination')).toBe(false)
+    expect(isWholePaymentReason('amount')).toBe(false)
+  })
 
-  it("treats asset, operation and version as belonging to the whole payment", () => {
+  it('treats asset, operation and version as belonging to the whole payment', () => {
     // A split checks policy once per destination, so these surface on whichever
     // destination happens to be first -- blaming that entry sends the operator
     // to edit an address that was never the problem.
-    expect(isWholePaymentReason("asset")).toBe(true);
-    expect(isWholePaymentReason("operation")).toBe(true);
-    expect(isWholePaymentReason("version")).toBe(true);
-  });
+    expect(isWholePaymentReason('asset')).toBe(true)
+    expect(isWholePaymentReason('operation')).toBe(true)
+    expect(isWholePaymentReason('version')).toBe(true)
+  })
 
-  it("does not blame a destination for a code it could not classify", () => {
-    expect(isWholePaymentReason("unknown")).toBe(true);
-  });
-});
+  it('does not blame a destination for a code it could not classify', () => {
+    expect(isWholePaymentReason('unknown')).toBe(true)
+  })
+})
 
-describe("probePolicy", () => {
-  it("reports allowed when the engine accepts", async () => {
-    const verdict = await probePolicy(fakeEngine(), { ...base, amount: "1" });
-    expect(verdict).toEqual({ allowed: true });
-  });
+describe('probePolicy', () => {
+  it('reports allowed when the engine accepts', async () => {
+    const verdict = await probePolicy(fakeEngine(), { ...base, amount: '1' })
+    expect(verdict).toEqual({ allowed: true })
+  })
 
-  it("reports the rejected dimension", async () => {
+  it('reports the rejected dimension', async () => {
     const verdict = await probePolicy(fakeEngine(), {
       ...base,
-      destination: "DEST_BAD",
-      amount: "1",
-    });
-    expect(verdict).toEqual({ allowed: false, reason: "destination", code: 2004 });
-  });
-});
+      destination: 'DEST_BAD',
+      amount: '1',
+    })
+    expect(verdict).toEqual({
+      allowed: false,
+      reason: 'destination',
+      code: 2004,
+    })
+  })
+})
 
-describe("findAmountCap", () => {
-  it("finds the exact cap", async () => {
-    const cap = await findAmountCap(fakeEngine({ cap: 10_000_000n }), base);
-    expect(cap).toBe(10_000_000n);
-  });
+describe('findAmountCap', () => {
+  it('finds the exact cap', async () => {
+    const cap = await findAmountCap(fakeEngine({ cap: 10_000_000n }), base)
+    expect(cap).toBe(10_000_000n)
+  })
 
-  it("finds a cap that is not a round number", async () => {
-    const cap = await findAmountCap(fakeEngine({ cap: 7_654_321n }), base);
-    expect(cap).toBe(7_654_321n);
-  });
+  it('finds a cap that is not a round number', async () => {
+    const cap = await findAmountCap(fakeEngine({ cap: 7_654_321n }), base)
+    expect(cap).toBe(7_654_321n)
+  })
 
-  it("returns null when the asset is rejected for a reason other than the cap", async () => {
-    const cap = await findAmountCap(fakeEngine({ allowedAsset: "OTHER" }), base);
-    expect(cap).toBeNull();
-  });
+  it('returns null when the asset is rejected for a reason other than the cap', async () => {
+    const cap = await findAmountCap(fakeEngine({ allowedAsset: 'OTHER' }), base)
+    expect(cap).toBeNull()
+  })
 
-  it("ignores the destination, which validate_policy checks after the cap", async () => {
+  it('ignores the destination, which validate_policy checks after the cap', async () => {
     const cap = await findAmountCap(fakeEngine({ cap: 500n }), {
       ...base,
-      destination: "DEST_BAD",
-    });
-    expect(cap).toBe(500n);
-  });
-});
+      destination: 'DEST_BAD',
+    })
+    expect(cap).toBe(500n)
+  })
+})

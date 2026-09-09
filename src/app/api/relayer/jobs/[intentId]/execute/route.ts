@@ -1,39 +1,38 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from 'next/server'
 
-import { requireRelayerAdmin } from "@/lib/relayer/auth";
-import { executeRelayerJobById } from "@/lib/relayer/executor";
+import { requireRelayerAdmin } from '@/lib/relayer/auth'
+import { executeRelayerJobById } from '@/lib/relayer/executor'
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ intentId: string }> },
+  { params }: { params: Promise<{ intentId: string }> }
 ) {
   try {
-    requireRelayerAdmin(request);
-    const { intentId } = await params;
-    const smartAccountId = new URL(request.url).searchParams.get("smartAccountId");
+    requireRelayerAdmin(request)
+    const { intentId } = await params
+    const smartAccountId = new URL(request.url).searchParams.get(
+      'smartAccountId'
+    )
     if (!smartAccountId) {
       return NextResponse.json(
-        { error: "A smartAccountId query parameter is required." },
-        { status: 400 },
-      );
+        { error: 'A smartAccountId query parameter is required.' },
+        { status: 400 }
+      )
     }
-    const updated = await executeRelayerJobById(smartAccountId, intentId);
-    return NextResponse.json({ job: updated });
+    const updated = await executeRelayerJobById(smartAccountId, intentId)
+    return NextResponse.json({ job: updated })
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const status = message.includes("Unauthorized")
+    const message = error instanceof Error ? error.message : String(error)
+    const status = message.includes('Unauthorized')
       ? 401
-      : message.includes("RELAYER_ADMIN_TOKEN")
+      : message.includes('RELAYER_ADMIN_TOKEN')
         ? 503
-        : message.includes("not found")
+        : message.includes('not found')
           ? 404
-          : 500;
-    return NextResponse.json(
-      { error: message },
-      { status },
-    );
+          : 500
+    return NextResponse.json({ error: message }, { status })
   }
 }

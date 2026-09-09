@@ -1,35 +1,38 @@
-import { timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from 'node:crypto'
 
-import { RELAYER_SESSION_COOKIE, verifySessionValue } from "@/lib/relayer/session";
+import {
+  RELAYER_SESSION_COOKIE,
+  verifySessionValue,
+} from '@/lib/relayer/session'
 
 function tokensMatch(a: string, b: string) {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
-  return left.length === right.length && timingSafeEqual(left, right);
+  const left = Buffer.from(a)
+  const right = Buffer.from(b)
+  return left.length === right.length && timingSafeEqual(left, right)
 }
 
 function readCookie(request: Request, name: string): string | undefined {
-  const header = request.headers.get("cookie");
+  const header = request.headers.get('cookie')
   if (!header) {
-    return undefined;
+    return undefined
   }
 
-  for (const part of header.split(";")) {
-    const separatorIndex = part.indexOf("=");
+  for (const part of header.split(';')) {
+    const separatorIndex = part.indexOf('=')
     if (separatorIndex === -1) {
-      continue;
+      continue
     }
-    const key = part.slice(0, separatorIndex).trim();
+    const key = part.slice(0, separatorIndex).trim()
     if (key === name) {
       // The session cookie value is always `<digits>.<hex>` (see
       // createSessionValue), which never contains percent-encoded bytes, so
       // no decodeURIComponent is needed here (and it could otherwise throw
       // on a malformed cookie, turning a clean 401 into a 500).
-      return part.slice(separatorIndex + 1).trim();
+      return part.slice(separatorIndex + 1).trim()
     }
   }
 
-  return undefined;
+  return undefined
 }
 
 /**
@@ -44,10 +47,13 @@ function readCookie(request: Request, name: string): string | undefined {
  * session while the server would still accept the call.
  */
 export function hasValidRelayerSession(request: Request): boolean {
-  const adminToken = process.env.RELAYER_ADMIN_TOKEN;
-  if (!adminToken) return false;
+  const adminToken = process.env.RELAYER_ADMIN_TOKEN
+  if (!adminToken) return false
 
-  return verifySessionValue(adminToken, readCookie(request, RELAYER_SESSION_COOKIE));
+  return verifySessionValue(
+    adminToken,
+    readCookie(request, RELAYER_SESSION_COOKIE)
+  )
 }
 
 /**
@@ -60,20 +66,22 @@ export function hasValidRelayerSession(request: Request): boolean {
  * Throws when neither credential authenticates.
  */
 export function requireRelayerAdmin(request: Request) {
-  const adminToken = process.env.RELAYER_ADMIN_TOKEN;
+  const adminToken = process.env.RELAYER_ADMIN_TOKEN
   if (!adminToken) {
-    throw new Error("RELAYER_ADMIN_TOKEN must be configured before mutating relayer jobs.");
+    throw new Error(
+      'RELAYER_ADMIN_TOKEN must be configured before mutating relayer jobs.'
+    )
   }
 
-  const headerToken = request.headers.get("x-relayer-token");
+  const headerToken = request.headers.get('x-relayer-token')
   if (headerToken && tokensMatch(headerToken, adminToken)) {
-    return;
+    return
   }
 
-  const sessionCookie = readCookie(request, RELAYER_SESSION_COOKIE);
+  const sessionCookie = readCookie(request, RELAYER_SESSION_COOKIE)
   if (verifySessionValue(adminToken, sessionCookie)) {
-    return;
+    return
   }
 
-  throw new Error("Unauthorized relayer request.");
+  throw new Error('Unauthorized relayer request.')
 }

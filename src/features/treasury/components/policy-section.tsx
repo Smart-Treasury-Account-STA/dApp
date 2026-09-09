@@ -1,42 +1,49 @@
-"use client";
+'use client'
 
-import { ClipboardCheck, ScrollText } from "lucide-react";
-import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from 'react'
 
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
-import { STELLAR_CONFIG } from "@/config";
-import type { ContractSet } from "@/lib/env";
-import { findAmountCap, probePolicy } from "@/lib/policyProbe";
-import { describeReceipt } from "@/lib/receipt";
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { ClipboardCheck, ScrollText } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Select } from '@/components/ui/select'
+import { STELLAR_CONFIG } from '@/config'
+import {
+  FormField,
+  SectionHeader,
+} from '@/features/treasury/components/primitives'
+import { WriteConfirmDialog } from '@/features/treasury/components/write-confirm-dialog'
+import type { StagedWrite } from '@/features/treasury/components/write-confirm-dialog'
+import {
+  useTreasuryAuthority,
+  useTreasurySnapshot,
+} from '@/features/treasury/queries'
+import { fetchRelayerJobs } from '@/features/treasury/relayer-client'
+import {
+  validateAssetRuleDraft,
+  validateDestinationDraft,
+  validateOperationDraft,
+  validateVersionBump,
+} from '@/features/treasury/writeDrafts'
+import type { ContractSet } from '@/lib/env'
+import { findAmountCap, probePolicy } from '@/lib/policyProbe'
+import { describeReceipt } from '@/lib/receipt'
 import {
   loadIntentPolicyVersion,
   simulatePolicyProbe,
   simulateWriteOperation,
-} from "@/lib/stellarClient";
+} from '@/lib/stellarClient'
 import {
   bumpVersionOperation,
   setAssetRuleOperation,
   setOperationAllowedOperation,
   setRecipientAllowedOperation,
-} from "@/lib/treasuryWrites";
-import type { WriteOperation } from "@/lib/treasuryWrites";
-import { collectWriteWarnings } from "@/lib/writeWarnings";
-import { executeWriteOperation, walletSigner } from "@/lib/writeAuth";
-import { fetchRelayerJobs } from "@/features/treasury/relayer-client";
-import {
-  validateAssetRuleDraft,
-  validateOperationDraft,
-  validateDestinationDraft,
-  validateVersionBump,
-} from "@/features/treasury/writeDrafts";
-import { FormField, SectionHeader } from "@/features/treasury/components/primitives";
-import { WriteConfirmDialog } from "@/features/treasury/components/write-confirm-dialog";
-import type { StagedWrite } from "@/features/treasury/components/write-confirm-dialog";
-import { useTreasuryAuthority, useTreasurySnapshot } from "@/features/treasury/queries";
-import type { SimulationResult, WalletState } from "@/types";
+} from '@/lib/treasuryWrites'
+import type { WriteOperation } from '@/lib/treasuryWrites'
+import { executeWriteOperation, walletSigner } from '@/lib/writeAuth'
+import { collectWriteWarnings } from '@/lib/writeWarnings'
+import type { SimulationResult, WalletState } from '@/types'
 
 /**
  * The only two operation symbols this dApp's write paths actually check
@@ -47,38 +54,42 @@ import type { SimulationResult, WalletState } from "@/types";
  * open text field for a two-value set this dApp actually uses is exactly
  * the kind of ambiguity ("verbes autorisés pas clair") this Select removes.
  */
-const KNOWN_OPERATIONS = ["transfer", "split"] as const;
+const KNOWN_OPERATIONS = ['transfer', 'split'] as const
 
 const REASON_LABEL: Record<string, string> = {
-  operation: "operation not allowed",
-  asset: "asset not allowed",
-  destination: "destination not allowed",
-  amount: "amount above cap",
-  version: "policy version mismatch",
-  unknown: "not readable",
-};
+  operation: 'operation not allowed',
+  asset: 'asset not allowed',
+  destination: 'destination not allowed',
+  amount: 'amount above cap',
+  version: 'policy version mismatch',
+  unknown: 'not readable',
+}
 
 export function PolicySection({
   contracts = STELLAR_CONFIG.contracts,
   onNotice,
   wallet,
 }: {
-  contracts?: ContractSet;
-  onNotice: (notice: SimulationResult | null) => void;
-  wallet: WalletState;
+  contracts?: ContractSet
+  onNotice: (notice: SimulationResult | null) => void
+  wallet: WalletState
 }) {
-  const queryClient = useQueryClient();
-  const snapshotQuery = useTreasurySnapshot(wallet.address, contracts);
-  const authorityQuery = useTreasuryAuthority(wallet.address, contracts);
-  const currentVersion = snapshotQuery.data?.policyVersion ?? 1;
+  const queryClient = useQueryClient()
+  const snapshotQuery = useTreasurySnapshot(wallet.address, contracts)
+  const authorityQuery = useTreasuryAuthority(wallet.address, contracts)
+  const currentVersion = snapshotQuery.data?.policyVersion ?? 1
 
   const [assetDraft, setAssetDraft] = useState({
     asset: contracts.staAsset,
-    maxSingleTransfer: "10000000",
-  });
-  const [destinationDraft, setDestinationDraft] = useState(STELLAR_CONFIG.testDestination);
-  const [operationDraft, setOperationDraft] = useState<string>(KNOWN_OPERATIONS[0]);
-  const [nextVersion, setNextVersion] = useState(String(currentVersion + 1));
+    maxSingleTransfer: '10000000',
+  })
+  const [destinationDraft, setDestinationDraft] = useState(
+    STELLAR_CONFIG.testDestination
+  )
+  const [operationDraft, setOperationDraft] = useState<string>(
+    KNOWN_OPERATIONS[0]
+  )
+  const [nextVersion, setNextVersion] = useState(String(currentVersion + 1))
 
   // Checks exactly the asset/destination/operation combination currently
   // typed into the three fields below -- not a separate list to manage.
@@ -87,47 +98,53 @@ export function PolicySection({
   // nothing here to lose on a refresh because there is nothing stored.
   const checkMutation = useMutation({
     mutationFn: async () => {
-      if (!wallet.address) throw new Error("Connect a wallet first.");
-      const simulate = simulatePolicyProbe(wallet.address, contracts);
+      if (!wallet.address) throw new Error('Connect a wallet first.')
+      const simulate = simulatePolicyProbe(wallet.address, contracts)
       const input = {
         asset: assetDraft.asset,
         destination: destinationDraft,
         operation: operationDraft,
         expectedVersion: currentVersion,
-      };
-      const verdict = await probePolicy(simulate, { ...input, amount: "1" });
+      }
+      const verdict = await probePolicy(simulate, { ...input, amount: '1' })
       const cap =
-        verdict.allowed || verdict.reason === "destination"
+        verdict.allowed || verdict.reason === 'destination'
           ? await findAmountCap(simulate, input)
-          : null;
-      return { verdict, cap: cap === null ? null : cap.toString() };
+          : null
+      return { verdict, cap: cap === null ? null : cap.toString() }
     },
     onError: (error) =>
       onNotice({
         ok: false,
-        title: "Check failed",
+        title: 'Check failed',
         detail: error instanceof Error ? error.message : String(error),
       }),
-  });
+  })
 
   // Staged operation awaiting confirmation. The spec's pipeline is
   // validate -> guard -> simulate -> confirm -> sign -> submit; nothing reaches
   // the wallet until the operator has seen the summary and its consequences.
-  const [pending, setPending] = useState<StagedWrite | null>(null);
+  const [pending, setPending] = useState<StagedWrite | null>(null)
 
   const stageMutation = useMutation({
     mutationFn: async (operation: WriteOperation) => {
-      if (!wallet.address) throw new Error("Connect a wallet first.");
-      await simulateWriteOperation(operation, wallet.address);
+      if (!wallet.address) throw new Error('Connect a wallet first.')
+      await simulateWriteOperation(operation, wallet.address)
 
-      const jobs = await fetchRelayerJobs(contracts.smartAccount).catch(() => []);
+      const jobs = await fetchRelayerJobs(contracts.smartAccount).catch(
+        () => []
+      )
       const pinnedVersions = (
         await Promise.all(
           jobs.map((job) =>
-            loadIntentPolicyVersion(wallet.address as string, job.intentId, contracts),
-          ),
+            loadIntentPolicyVersion(
+              wallet.address as string,
+              job.intentId,
+              contracts
+            )
+          )
         )
-      ).filter((version): version is number => version !== null);
+      ).filter((version): version is number => version !== null)
 
       return {
         operation,
@@ -137,100 +154,113 @@ export function PolicySection({
           connectedAddress: wallet.address,
           ownerAddress: authorityQuery.data?.owner ?? null,
         }),
-      };
+      }
     },
     onSuccess: (staged) => setPending(staged),
     onError: (error) =>
       onNotice({
         ok: false,
-        title: "Policy write rejected before signing",
+        title: 'Policy write rejected before signing',
         detail: error instanceof Error ? error.message : String(error),
       }),
-  });
+  })
 
   const writeMutation = useMutation({
     mutationFn: async (operation: WriteOperation) => {
-      if (!wallet.address) throw new Error("Connect a wallet first.");
-      return executeWriteOperation(operation, walletSigner(wallet.address), contracts);
+      if (!wallet.address) throw new Error('Connect a wallet first.')
+      return executeWriteOperation(
+        operation,
+        walletSigner(wallet.address),
+        contracts
+      )
     },
     onSuccess: (receipt) => {
       onNotice(
         describeReceipt(receipt, {
-          confirmedTitle: "Policy updated",
-          submittedTitle: "Policy update submitted",
-        }),
-      );
-      setPending(null);
-      void queryClient.invalidateQueries({ queryKey: ["treasury"] });
+          confirmedTitle: 'Policy updated',
+          submittedTitle: 'Policy update submitted',
+        })
+      )
+      setPending(null)
+      void queryClient.invalidateQueries({ queryKey: ['treasury'] })
     },
     onError: (error) => {
       onNotice({
         ok: false,
-        title: "Policy write failed",
+        title: 'Policy write failed',
         detail: error instanceof Error ? error.message : String(error),
-      });
-      setPending(null);
+      })
+      setPending(null)
     },
-  });
+  })
 
   function submit(build: () => WriteOperation) {
     try {
-      stageMutation.mutate(build());
+      stageMutation.mutate(build())
     } catch (error) {
       onNotice({
         ok: false,
-        title: "Invalid input",
+        title: 'Invalid input',
         detail: error instanceof Error ? error.message : String(error),
-      });
+      })
     }
   }
 
   return (
-    <section id="policy" className="rounded-xl border border-border bg-card p-6">
+    <section
+      id="policy"
+      className="border-border bg-card rounded-xl border p-6"
+    >
       <SectionHeader
         eyebrow="PolicyEngine"
         icon={<ScrollText className="text-primary" size={22} />}
         title="Policy rules"
       />
 
-      <p className="mb-2 text-xs text-muted-foreground">
-        This contract exposes no read entrypoints, so its state is discovered by probing
-        <code className="mx-1">validate_policy</code>. The policy admin is not readable
-        on-chain: a write signed by a non-admin key fails at submission, not at simulation.
+      <p className="text-muted-foreground mb-2 text-xs">
+        This contract exposes no read entrypoints, so its state is discovered by
+        probing
+        <code className="mx-1">validate_policy</code>. The policy admin is not
+        readable on-chain: a write signed by a non-admin key fails at
+        submission, not at simulation.
       </p>
-      <p className="mb-4 text-xs text-muted-foreground">
-        <strong className="text-foreground">A payment needs all three gates open at once</strong> —
-        its asset, its destination, and its operation are each checked against a separate
-        allowlist further down (three independent writes, not one combined
-        &ldquo;rule&rdquo;). The check below always tests whatever is currently typed into
-        the <strong className="text-foreground">Asset contract</strong>,{" "}
-        <strong className="text-foreground">Destination</strong>, and{" "}
-        <strong className="text-foreground">Operation</strong> fields below it — edit any of
-        the three and check again to see how that combination is treated right now.
+      <p className="text-muted-foreground mb-4 text-xs">
+        <strong className="text-foreground">
+          A payment needs all three gates open at once
+        </strong>{' '}
+        — its asset, its destination, and its operation are each checked against
+        a separate allowlist further down (three independent writes, not one
+        combined &ldquo;rule&rdquo;). The check below always tests whatever is
+        currently typed into the{' '}
+        <strong className="text-foreground">Asset contract</strong>,{' '}
+        <strong className="text-foreground">Destination</strong>, and{' '}
+        <strong className="text-foreground">Operation</strong> fields below it —
+        edit any of the three and check again to see how that combination is
+        treated right now.
       </p>
 
-      <div className="mb-6 rounded-lg border border-border bg-secondary p-4">
+      <div className="border-border bg-secondary mb-6 rounded-lg border p-4">
         <Button
           onClick={() => checkMutation.mutate()}
           disabled={checkMutation.isPending}
         >
           <ClipboardCheck className="size-4" />
-          {checkMutation.isPending ? "Checking…" : "Check this combination"}
+          {checkMutation.isPending ? 'Checking…' : 'Check this combination'}
         </Button>
 
         {checkMutation.data ? (
           <p className="mt-3 text-sm">
-            <code className="text-xs">{assetDraft.asset.slice(0, 9)}…</code> →{" "}
-            <code className="text-xs">{destinationDraft.slice(0, 9)}…</code> ·{" "}
-            {operationDraft}:{" "}
+            <code className="text-xs">{assetDraft.asset.slice(0, 9)}…</code> →{' '}
+            <code className="text-xs">{destinationDraft.slice(0, 9)}…</code> ·{' '}
+            {operationDraft}:{' '}
             <strong>
               {checkMutation.data.verdict.allowed
-                ? "allowed"
+                ? 'allowed'
                 : REASON_LABEL[checkMutation.data.verdict.reason]}
             </strong>
             {checkMutation.data.cap !== null
               ? ` (cap: ${checkMutation.data.cap})`
-              : ""}
+              : ''}
           </p>
         ) : null}
       </div>
@@ -251,15 +281,21 @@ export function PolicySection({
         />
         <FormField
           label="Single-transfer cap"
-          onChange={(maxSingleTransfer) => setAssetDraft((d) => ({ ...d, maxSingleTransfer }))}
+          onChange={(maxSingleTransfer) =>
+            setAssetDraft((d) => ({ ...d, maxSingleTransfer }))
+          }
           value={assetDraft.maxSingleTransfer}
         />
         <div className="flex gap-2">
           <Button
             onClick={() =>
               submit(() => {
-                validateAssetRuleDraft({ ...assetDraft, enabled: true });
-                return setAssetRuleOperation({ ...assetDraft, enabled: true, contracts });
+                validateAssetRuleDraft({ ...assetDraft, enabled: true })
+                return setAssetRuleOperation({
+                  ...assetDraft,
+                  enabled: true,
+                  contracts,
+                })
               })
             }
           >
@@ -268,8 +304,12 @@ export function PolicySection({
           <Button
             onClick={() =>
               submit(() => {
-                validateAssetRuleDraft({ ...assetDraft, enabled: false });
-                return setAssetRuleOperation({ ...assetDraft, enabled: false, contracts });
+                validateAssetRuleDraft({ ...assetDraft, enabled: false })
+                return setAssetRuleOperation({
+                  ...assetDraft,
+                  enabled: false,
+                  contracts,
+                })
               })
             }
           >
@@ -286,12 +326,15 @@ export function PolicySection({
           <Button
             onClick={() =>
               submit(() => {
-                validateDestinationDraft({ destination: destinationDraft, allowed: true });
+                validateDestinationDraft({
+                  destination: destinationDraft,
+                  allowed: true,
+                })
                 return setRecipientAllowedOperation({
                   recipient: destinationDraft,
                   allowed: true,
                   contracts,
-                });
+                })
               })
             }
           >
@@ -300,12 +343,15 @@ export function PolicySection({
           <Button
             onClick={() =>
               submit(() => {
-                validateDestinationDraft({ destination: destinationDraft, allowed: false });
+                validateDestinationDraft({
+                  destination: destinationDraft,
+                  allowed: false,
+                })
                 return setRecipientAllowedOperation({
                   recipient: destinationDraft,
                   allowed: false,
                   contracts,
-                });
+                })
               })
             }
           >
@@ -330,12 +376,15 @@ export function PolicySection({
           <Button
             onClick={() =>
               submit(() => {
-                validateOperationDraft({ operation: operationDraft, allowed: true });
+                validateOperationDraft({
+                  operation: operationDraft,
+                  allowed: true,
+                })
                 return setOperationAllowedOperation({
                   operation: operationDraft,
                   allowed: true,
                   contracts,
-                });
+                })
               })
             }
           >
@@ -344,12 +393,15 @@ export function PolicySection({
           <Button
             onClick={() =>
               submit(() => {
-                validateOperationDraft({ operation: operationDraft, allowed: false });
+                validateOperationDraft({
+                  operation: operationDraft,
+                  allowed: false,
+                })
                 return setOperationAllowedOperation({
                   operation: operationDraft,
                   allowed: false,
                   contracts,
-                });
+                })
               })
             }
           >
@@ -357,23 +409,28 @@ export function PolicySection({
           </Button>
         </div>
 
-        <FormField label="Next policy version" onChange={setNextVersion} value={nextVersion} />
+        <FormField
+          label="Next policy version"
+          onChange={setNextVersion}
+          value={nextVersion}
+        />
         <Button
           onClick={() =>
             submit(() => {
-              const parsed = Number(nextVersion);
-              validateVersionBump({ currentVersion, nextVersion: parsed });
-              return bumpVersionOperation({ nextVersion: parsed, contracts });
+              const parsed = Number(nextVersion)
+              validateVersionBump({ currentVersion, nextVersion: parsed })
+              return bumpVersionOperation({ nextVersion: parsed, contracts })
             })
           }
         >
           Bump policy version
         </Button>
-        <p className="text-xs text-muted-foreground">
-          Bumping the version rejects every payment and scheduled intent still pinned to
-          version {currentVersion} with #2006. Check the relayer queue first.
+        <p className="text-muted-foreground text-xs">
+          Bumping the version rejects every payment and scheduled intent still
+          pinned to version {currentVersion} with #2006. Check the relayer queue
+          first.
         </p>
       </div>
     </section>
-  );
+  )
 }

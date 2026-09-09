@@ -1,5 +1,9 @@
-"use client";
+'use client'
 
+import type { ComponentProps, Dispatch, SetStateAction } from 'react'
+import { useState } from 'react'
+
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   CalendarClock,
@@ -11,32 +15,23 @@ import {
   Wallet,
   Workflow,
   XCircle,
-} from "lucide-react";
-import type { ComponentProps, Dispatch, SetStateAction } from "react";
-import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+} from 'lucide-react'
 
-import { Button } from "@/components/ui/button";
-import { STELLAR_CONFIG } from "@/config";
-import { LEDGER_CLOSE_SECONDS } from "@/lib/constants";
-import type { ContractSet } from "@/lib/env";
-import { makeIntentId, truncateAddress } from "@/lib/format";
-import { describeReceipt } from "@/lib/receipt";
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { STELLAR_CONFIG } from '@/config'
 import {
-  approveAndSubmitCancelSchedule,
-  approveAndSubmitSchedule,
-  getLatestLedger,
-  ScheduledIntentExistsError,
-  simulateSchedule,
-} from "@/lib/stellarClient";
-import { signAuthEntry, signTransaction } from "@/lib/wallet";
-import type { ScheduleDraft, SimulationResult, WalletState } from "@/types";
-import type { CreateRelayerJobInput } from "@/lib/relayer/types";
-import { computeLedgerWindow } from "@/features/treasury/drafts";
-import { queueRelayerJob } from "@/features/treasury/relayer-client";
-import { treasuryKeys, useScheduledIntents } from "@/features/treasury/queries";
-import { describeIntentStatus } from "@/lib/scheduledIntents";
-import type { IntentStatus, ScheduledIntentRecord } from "@/lib/scheduledIntents";
+  FormField,
+  SectionHeader,
+} from '@/features/treasury/components/primitives'
+import { computeLedgerWindow } from '@/features/treasury/drafts'
+import { treasuryKeys, useScheduledIntents } from '@/features/treasury/queries'
+import { queueRelayerJob } from '@/features/treasury/relayer-client'
+import { LEDGER_CLOSE_SECONDS } from '@/lib/constants'
+import type { ContractSet } from '@/lib/env'
+import { makeIntentId, truncateAddress } from '@/lib/format'
 import {
   describeLedgerOffset,
   estimateLedgerTime,
@@ -44,22 +39,34 @@ import {
   ledgerForTime,
   retentionDays,
   toDatetimeLocalValue,
-} from "@/lib/ledgerClock";
-import type { LedgerClock } from "@/lib/ledgerClock";
-import { inspectScheduleWindow } from "@/lib/scheduleWindow";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { FormField, SectionHeader } from "@/features/treasury/components/primitives";
+} from '@/lib/ledgerClock'
+import type { LedgerClock } from '@/lib/ledgerClock'
+import { describeReceipt } from '@/lib/receipt'
+import type { CreateRelayerJobInput } from '@/lib/relayer/types'
+import { inspectScheduleWindow } from '@/lib/scheduleWindow'
+import { describeIntentStatus } from '@/lib/scheduledIntents'
+import type {
+  IntentStatus,
+  ScheduledIntentRecord,
+} from '@/lib/scheduledIntents'
+import {
+  ScheduledIntentExistsError,
+  approveAndSubmitCancelSchedule,
+  approveAndSubmitSchedule,
+  getLatestLedger,
+  simulateSchedule,
+} from '@/lib/stellarClient'
+import { signAuthEntry, signTransaction } from '@/lib/wallet'
+import type { ScheduleDraft, SimulationResult, WalletState } from '@/types'
 
 const INTENT_STATUS_VARIANTS = {
-  active: "success",
-  pending: "info",
-  expired: "warning",
-  exhausted: "default",
-  cancelled: "destructive",
-  unknown: "warning",
-} satisfies Record<IntentStatus, ComponentProps<typeof Badge>["variant"]>;
+  active: 'success',
+  pending: 'info',
+  expired: 'warning',
+  exhausted: 'default',
+  cancelled: 'destructive',
+  unknown: 'warning',
+} satisfies Record<IntentStatus, ComponentProps<typeof Badge>['variant']>
 
 /**
  * A ledger as a local date plus how far off it is, or a plain "unknown" when
@@ -70,9 +77,9 @@ const INTENT_STATUS_VARIANTS = {
  * number. Every value is an estimate — see `@/lib/ledgerClock`.
  */
 function formatLedgerMoment(ledger: number | null, clock: LedgerClock): string {
-  const at = estimateLedgerTime(ledger, clock);
-  if (!at) return "unknown";
-  return `~${at.toLocaleString()} (${describeLedgerOffset(ledger, clock)})`;
+  const at = estimateLedgerTime(ledger, clock)
+  if (!at) return 'unknown'
+  return `~${at.toLocaleString()} (${describeLedgerOffset(ledger, clock)})`
 }
 
 export function ScheduleSection({
@@ -83,37 +90,37 @@ export function ScheduleSection({
   relayerSessionActive,
   wallet,
 }: {
-  contracts?: ContractSet;
-  draft: ScheduleDraft;
-  onDraftChange: Dispatch<SetStateAction<ScheduleDraft>>;
-  onNotice: (notice: SimulationResult | null) => void;
-  relayerSessionActive: boolean;
-  wallet: WalletState;
+  contracts?: ContractSet
+  draft: ScheduleDraft
+  onDraftChange: Dispatch<SetStateAction<ScheduleDraft>>
+  onNotice: (notice: SimulationResult | null) => void
+  relayerSessionActive: boolean
+  wallet: WalletState
 }) {
-  const queryClient = useQueryClient();
+  const queryClient = useQueryClient()
   const [createdScheduleJob, setCreatedScheduleJob] =
-    useState<CreateRelayerJobInput | null>(null);
-  const [cancelIntentId, setCancelIntentId] = useState("");
+    useState<CreateRelayerJobInput | null>(null)
+  const [cancelIntentId, setCancelIntentId] = useState('')
 
-  const intentsQuery = useScheduledIntents(wallet.address, contracts);
+  const intentsQuery = useScheduledIntents(wallet.address, contracts)
   const intentsQueryKey = treasuryKeys.scheduledIntents(
-    wallet.address ?? "disconnected",
-    contracts.intentRegistry,
-  );
-  const intents = intentsQuery.data?.intents ?? [];
+    wallet.address ?? 'disconnected',
+    contracts.intentRegistry
+  )
+  const intents = intentsQuery.data?.intents ?? []
   // The ledger the listing was read at, not a fresher one: every status below
   // is a comparison against the window the same response reported.
-  const latestIntentLedger = intentsQuery.data?.latestLedger ?? 0;
+  const latestIntentLedger = intentsQuery.data?.latestLedger ?? 0
   const intentClock = intentsQuery.data?.clock ?? {
     referenceLedger: 0,
     referenceCloseTime: 0,
-  };
-  const eventRetentionDays = retentionDays(intentsQuery.data?.retentionLedgers);
+  }
+  const eventRetentionDays = retentionDays(intentsQuery.data?.retentionLedgers)
 
   // Pinned at each fresh ledger read, never recomputed from `Date.now()` on
   // render: a clock whose close time advanced while its ledger stayed put
   // would make every displayed time creep forward on its own.
-  const [windowClock, setWindowClock] = useState<LedgerClock | null>(null);
+  const [windowClock, setWindowClock] = useState<LedgerClock | null>(null)
 
   // Ledgers only ever increase, so the more recent of the two reads is the
   // honest reference. The listing's is 15s stale at worst; the form's is
@@ -121,27 +128,36 @@ export function ScheduleSection({
   const formClock =
     windowClock && windowClock.referenceLedger >= intentClock.referenceLedger
       ? windowClock
-      : intentClock;
+      : intentClock
 
   // Only once both fields hold a real ledger: a half-typed window would render
   // a date that moves under the operator on every keystroke.
   const draftWindow =
     Number(draft.startLedger) > 0 && Number(draft.endLedger) > 0
-      ? { startLedger: Number(draft.startLedger), endLedger: Number(draft.endLedger) }
-      : null;
+      ? {
+          startLedger: Number(draft.startLedger),
+          endLedger: Number(draft.endLedger),
+        }
+      : null
   const windowNotices = draftWindow
-    ? inspectScheduleWindow({ ...draftWindow, latestLedger: formClock.referenceLedger })
-    : [];
+    ? inspectScheduleWindow({
+        ...draftWindow,
+        latestLedger: formClock.referenceLedger,
+      })
+    : []
   // A draft starts with no window at all. That is not an error to shout
   // about, but it is still nothing to sign, so it blocks the button without
   // colouring the panel red.
   const windowBlocked =
-    draftWindow === null || windowNotices.some((notice) => notice.level === "error");
+    draftWindow === null ||
+    windowNotices.some((notice) => notice.level === 'error')
 
   const submitScheduleMutation = useMutation({
     mutationFn: async () => {
       if (!wallet.address) {
-        throw new Error("Connect an authorized Stellar wallet before submission.");
+        throw new Error(
+          'Connect an authorized Stellar wallet before submission.'
+        )
       }
       return approveAndSubmitSchedule(
         {
@@ -150,16 +166,16 @@ export function ScheduleSection({
           signTransaction,
         },
         draft,
-        contracts,
-      );
+        contracts
+      )
     },
     onMutate: () => {
       onNotice({
         ok: true,
-        title: "Schedule approval requested",
+        title: 'Schedule approval requested',
         detail:
-          "Approve the SmartAccount authorization entry and the prepared schedule transaction.",
-      });
+          'Approve the SmartAccount authorization entry and the prepared schedule transaction.',
+      })
     },
     onSuccess: (receipt) => {
       const relayerJob: CreateRelayerJobInput = {
@@ -168,20 +184,20 @@ export function ScheduleSection({
         startLedger: Number(draft.startLedger),
         endLedger: Number(draft.endLedger),
         maxExecutions: Number(draft.maxExecutions),
-      };
+      }
       onNotice(
         describeReceipt(receipt, {
-          confirmedTitle: "Scheduled payment created",
-          submittedTitle: "Schedule submitted",
-        }),
-      );
-      if (receipt.status === "SUCCESS") {
-        setCreatedScheduleJob(relayerJob);
-        queryClient.invalidateQueries({ queryKey: intentsQueryKey });
+          confirmedTitle: 'Scheduled payment created',
+          submittedTitle: 'Schedule submitted',
+        })
+      )
+      if (receipt.status === 'SUCCESS') {
+        setCreatedScheduleJob(relayerJob)
+        queryClient.invalidateQueries({ queryKey: intentsQueryKey })
         onDraftChange((current) => ({
           ...current,
           intentId: makeIntentId(),
-        }));
+        }))
       }
     },
     onError: (error) => {
@@ -189,39 +205,41 @@ export function ScheduleSection({
       // and the only one where leaving the draft untouched guarantees the
       // same failure on the next click.
       if (error instanceof ScheduledIntentExistsError) {
-        onDraftChange((current) => ({ ...current, intentId: makeIntentId() }));
+        onDraftChange((current) => ({ ...current, intentId: makeIntentId() }))
       }
       onNotice({
         ok: false,
-        title: "Schedule submission failed",
+        title: 'Schedule submission failed',
         detail: error instanceof Error ? error.message : String(error),
-      });
+      })
     },
-  });
+  })
 
   const queueRelayerJobMutation = useMutation({
     mutationFn: () => {
       if (!createdScheduleJob) {
-        throw new Error("Create the scheduled payment on-chain before queueing it.");
+        throw new Error(
+          'Create the scheduled payment on-chain before queueing it.'
+        )
       }
-      return queueRelayerJob(createdScheduleJob);
+      return queueRelayerJob(createdScheduleJob)
     },
     onSuccess: (job) => {
-      queryClient.invalidateQueries({ queryKey: ["relayer-jobs"] });
+      queryClient.invalidateQueries({ queryKey: ['relayer-jobs'] })
       onNotice({
         ok: true,
-        title: "Relayer job queued",
+        title: 'Relayer job queued',
         detail: `Intent ${job.intentId.slice(0, 8)} is queued with child_sequence ${job.childSequence}.`,
-      });
+      })
     },
     onError: (error) => {
       onNotice({
         ok: false,
-        title: "Could not queue relayer job",
+        title: 'Could not queue relayer job',
         detail: error instanceof Error ? error.message : String(error),
-      });
+      })
     },
-  });
+  })
 
   /**
    * Queues any listed intent, not only the one created in this page's life.
@@ -242,69 +260,72 @@ export function ScheduleSection({
         maxExecutions: intent.maxExecutions ?? 1,
       }),
     onSuccess: (job) => {
-      queryClient.invalidateQueries({ queryKey: ["relayer-jobs"] });
+      queryClient.invalidateQueries({ queryKey: ['relayer-jobs'] })
       onNotice({
         ok: true,
-        title: "Relayer job queued",
+        title: 'Relayer job queued',
         detail: `Intent ${job.intentId.slice(0, 8)} is queued with child_sequence ${job.childSequence}. Execute it from the Relayer panel.`,
-      });
+      })
     },
     onError: (error) => {
       onNotice({
         ok: false,
-        title: "Could not queue relayer job",
+        title: 'Could not queue relayer job',
         detail: error instanceof Error ? error.message : String(error),
-      });
+      })
     },
-  });
+  })
 
   const cancelScheduleMutation = useMutation({
     mutationFn: async () => {
       if (!wallet.address) {
-        throw new Error("Connect an authorized Stellar wallet before submission.");
+        throw new Error(
+          'Connect an authorized Stellar wallet before submission.'
+        )
       }
       return approveAndSubmitCancelSchedule(
         { address: wallet.address, signAuthEntry, signTransaction },
         cancelIntentId,
-        contracts,
-      );
+        contracts
+      )
     },
     onMutate: () => {
       onNotice({
         ok: true,
-        title: "Cancellation approval requested",
-        detail: "Approve the SmartAccount authorization entry to cancel this scheduled payment.",
-      });
+        title: 'Cancellation approval requested',
+        detail:
+          'Approve the SmartAccount authorization entry to cancel this scheduled payment.',
+      })
     },
     onSuccess: (receipt) => {
       onNotice(
         describeReceipt(receipt, {
-          confirmedTitle: "Scheduled payment cancelled",
-          submittedTitle: "Cancellation submitted",
-        }),
-      );
-      if (receipt.status === "SUCCESS") {
-        setCancelIntentId("");
-        queryClient.invalidateQueries({ queryKey: intentsQueryKey });
+          confirmedTitle: 'Scheduled payment cancelled',
+          submittedTitle: 'Cancellation submitted',
+        })
+      )
+      if (receipt.status === 'SUCCESS') {
+        setCancelIntentId('')
+        queryClient.invalidateQueries({ queryKey: intentsQueryKey })
       }
     },
     onError: (error) => {
       onNotice({
         ok: false,
-        title: "Cancellation failed",
+        title: 'Cancellation failed',
         detail: error instanceof Error ? error.message : String(error),
-      });
+      })
     },
-  });
+  })
 
   async function onScheduleSimulation() {
-    const source = wallet.address ?? STELLAR_CONFIG.testDestination;
-    onNotice(await simulateSchedule(source, draft, contracts));
+    const source = wallet.address ?? STELLAR_CONFIG.testDestination
+    onNotice(await simulateSchedule(source, draft, contracts))
   }
 
   function onScheduleSubmit() {
-    setCreatedScheduleJob(null);
-    submitScheduleMutation.mutate();
+    setCreatedScheduleJob(null)
+    submitScheduleMutation.mutate()
   }
 
   /**
@@ -320,15 +341,15 @@ export function ScheduleSection({
       const clock: LedgerClock = {
         referenceLedger: await getLatestLedger(),
         referenceCloseTime: Math.floor(Date.now() / 1000),
-      };
-      setWindowClock(clock);
-      apply(clock);
+      }
+      setWindowClock(clock)
+      apply(clock)
     } catch (error) {
       onNotice({
         ok: false,
-        title: "Ledger lookup failed",
+        title: 'Ledger lookup failed',
         detail: error instanceof Error ? error.message : String(error),
-      });
+      })
     }
   }
 
@@ -337,32 +358,42 @@ export function ScheduleSection({
       // `computeLedgerWindow`'s own defaults: +2 minutes, one hour long. The
       // two datetime fields are what a window other than that is set with —
       // presets here would only restrict what they already express freely.
-      const { startLedger, endLedger } = computeLedgerWindow(clock.referenceLedger);
+      const { startLedger, endLedger } = computeLedgerWindow(
+        clock.referenceLedger
+      )
       onDraftChange((current) => ({
         ...current,
         startLedger: String(startLedger),
         endLedger: String(endLedger),
-      }));
-    });
+      }))
+    })
   }
 
-  function onPickWindowMoment(field: "startLedger" | "endLedger", value: string) {
-    const at = fromDatetimeLocalValue(value);
-    if (!at) return;
+  function onPickWindowMoment(
+    field: 'startLedger' | 'endLedger',
+    value: string
+  ) {
+    const at = fromDatetimeLocalValue(value)
+    if (!at) return
     return withFreshClock((clock) => {
-      const ledger = ledgerForTime(at, clock);
-      if (ledger === null) return;
-      onDraftChange((current) => ({ ...current, [field]: String(ledger) }));
-    });
+      const ledger = ledgerForTime(at, clock)
+      if (ledger === null) return
+      onDraftChange((current) => ({ ...current, [field]: String(ledger) }))
+    })
   }
 
   function windowMomentValue(ledger: string) {
-    const at = /^\d+$/.test(ledger) ? estimateLedgerTime(Number(ledger), formClock) : null;
-    return at ? toDatetimeLocalValue(at) : "";
+    const at = /^\d+$/.test(ledger)
+      ? estimateLedgerTime(Number(ledger), formClock)
+      : null
+    return at ? toDatetimeLocalValue(at) : ''
   }
 
   return (
-    <section id="schedule" className="grid gap-4 rounded-lg border bg-card p-5 shadow-sm">
+    <section
+      id="schedule"
+      className="bg-card grid gap-4 rounded-lg border p-5 shadow-sm"
+    >
       <SectionHeader
         eyebrow="Ledger-bounded automation"
         icon={<CalendarClock className="text-primary" size={22} />}
@@ -371,12 +402,16 @@ export function ScheduleSection({
 
       <FormField
         label="Asset contract"
-        onChange={(asset) => onDraftChange((current) => ({ ...current, asset }))}
+        onChange={(asset) =>
+          onDraftChange((current) => ({ ...current, asset }))
+        }
         value={draft.asset}
       />
       <FormField
         label="Destination"
-        onChange={(destination) => onDraftChange((current) => ({ ...current, destination }))}
+        onChange={(destination) =>
+          onDraftChange((current) => ({ ...current, destination }))
+        }
         value={draft.destination}
       />
 
@@ -385,7 +420,10 @@ export function ScheduleSection({
           action={
             <Button
               onClick={() =>
-                onDraftChange((current) => ({ ...current, intentId: makeIntentId() }))
+                onDraftChange((current) => ({
+                  ...current,
+                  intentId: makeIntentId(),
+                }))
               }
               size="icon"
               title="Generate intent ID"
@@ -396,12 +434,16 @@ export function ScheduleSection({
             </Button>
           }
           label="Intent ID"
-          onChange={(intentId) => onDraftChange((current) => ({ ...current, intentId }))}
+          onChange={(intentId) =>
+            onDraftChange((current) => ({ ...current, intentId }))
+          }
           value={draft.intentId}
         />
         <FormField
           label="Amount"
-          onChange={(amount) => onDraftChange((current) => ({ ...current, amount }))}
+          onChange={(amount) =>
+            onDraftChange((current) => ({ ...current, amount }))
+          }
           value={draft.amount}
         />
         <FormField
@@ -416,12 +458,12 @@ export function ScheduleSection({
           onChange={(intervalLedgers) =>
             onDraftChange((current) => ({ ...current, intervalLedgers }))
           }
-          value={draft.intervalLedgers ?? "0"}
+          value={draft.intervalLedgers ?? '0'}
         />
       </div>
 
-      <div className="grid gap-3 rounded-md border bg-background p-3">
-        <span className="text-xs font-semibold uppercase text-muted-foreground">
+      <div className="bg-background grid gap-3 rounded-md border p-3">
+        <span className="text-muted-foreground text-xs font-semibold uppercase">
           Execution window
         </span>
 
@@ -429,7 +471,9 @@ export function ScheduleSection({
           <div className="grid gap-2">
             <Label>Opens at</Label>
             <Input
-              onChange={(event) => onPickWindowMoment("startLedger", event.target.value)}
+              onChange={(event) =>
+                onPickWindowMoment('startLedger', event.target.value)
+              }
               type="datetime-local"
               value={windowMomentValue(draft.startLedger)}
             />
@@ -437,7 +481,9 @@ export function ScheduleSection({
           <div className="grid gap-2">
             <Label>Closes at</Label>
             <Input
-              onChange={(event) => onPickWindowMoment("endLedger", event.target.value)}
+              onChange={(event) =>
+                onPickWindowMoment('endLedger', event.target.value)
+              }
               type="datetime-local"
               value={windowMomentValue(draft.endLedger)}
             />
@@ -445,38 +491,39 @@ export function ScheduleSection({
         </div>
 
         <small className="text-muted-foreground">
-          Each pick reads the current ledger first and converts against it, so a form left open
-          does not drift. The resolution is one ledger, about {LEDGER_CLOSE_SECONDS}s — finer
-          than that is not expressible on-chain.
+          Each pick reads the current ledger first and converts against it, so a
+          form left open does not drift. The resolution is one ledger, about{' '}
+          {LEDGER_CLOSE_SECONDS}s — finer than that is not expressible on-chain.
         </small>
 
         {draftWindow ? (
-          <small className="grid gap-0.5 text-muted-foreground">
+          <small className="text-muted-foreground grid gap-0.5">
             <span>
-              Opens {formatLedgerMoment(draftWindow.startLedger, formClock)}, closes{" "}
-              {formatLedgerMoment(draftWindow.endLedger, formClock)}.
+              Opens {formatLedgerMoment(draftWindow.startLedger, formClock)},
+              closes {formatLedgerMoment(draftWindow.endLedger, formClock)}.
             </span>
             <span>
-              Signed as ledgers{" "}
+              Signed as ledgers{' '}
               <code className="text-xs">
                 {draftWindow.startLedger} - {draftWindow.endLedger}
               </code>
-              . These are the `u32` values the intent stores; the dates above are a reading of
-              them.
+              . These are the `u32` values the intent stores; the dates above
+              are a reading of them.
             </span>
           </small>
         ) : (
           <small className="text-muted-foreground">
-            No window set yet. Pick both moments, or take the default with the button below.
+            No window set yet. Pick both moments, or take the default with the
+            button below.
           </small>
         )}
 
         {windowNotices.map((notice) => (
           <div
             className={
-              notice.level === "error"
-                ? "flex items-start gap-2 rounded-md bg-red-100 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200"
-                : "flex items-start gap-2 rounded-md bg-amber-100 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+              notice.level === 'error'
+                ? 'flex items-start gap-2 rounded-md bg-red-100 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200'
+                : 'flex items-start gap-2 rounded-md bg-amber-100 p-3 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200'
             }
             key={notice.message}
           >
@@ -496,9 +543,13 @@ export function ScheduleSection({
           Simulate schedule
         </Button>
         <Button
-          disabled={!wallet.connected || windowBlocked || submitScheduleMutation.isPending}
+          disabled={
+            !wallet.connected ||
+            windowBlocked ||
+            submitScheduleMutation.isPending
+          }
           onClick={onScheduleSubmit}
-          title={windowBlocked ? "This window has already closed." : undefined}
+          title={windowBlocked ? 'This window has already closed.' : undefined}
         >
           {submitScheduleMutation.isPending ? (
             <Loader2 className="animate-spin" size={18} />
@@ -509,7 +560,9 @@ export function ScheduleSection({
         </Button>
         <Button
           disabled={
-            !createdScheduleJob || !relayerSessionActive || queueRelayerJobMutation.isPending
+            !createdScheduleJob ||
+            !relayerSessionActive ||
+            queueRelayerJobMutation.isPending
           }
           onClick={() => queueRelayerJobMutation.mutate()}
           variant="secondary"
@@ -520,28 +573,28 @@ export function ScheduleSection({
       </div>
 
       {createdScheduleJob ? (
-        <div className="flex items-start gap-2 rounded-md bg-secondary p-3 text-sm text-muted-foreground">
-          <CheckCircle2 className="mt-0.5 shrink-0 text-primary" size={18} />
+        <div className="bg-secondary text-muted-foreground flex items-start gap-2 rounded-md p-3 text-sm">
+          <CheckCircle2 className="text-primary mt-0.5 shrink-0" size={18} />
           <span>
-            Intent {truncateAddress(createdScheduleJob.intentId, 8, 8)} is confirmed and ready
-            to queue for ledgers {createdScheduleJob.startLedger} -{" "}
-            {createdScheduleJob.endLedger}.
+            Intent {truncateAddress(createdScheduleJob.intentId, 8, 8)} is
+            confirmed and ready to queue for ledgers{' '}
+            {createdScheduleJob.startLedger} - {createdScheduleJob.endLedger}.
           </span>
         </div>
       ) : null}
 
-      <div className="flex items-start gap-2 rounded-md bg-secondary p-3 text-sm text-muted-foreground">
-        <CircleDashed className="mt-0.5 shrink-0 text-primary" size={18} />
+      <div className="bg-secondary text-muted-foreground flex items-start gap-2 rounded-md p-3 text-sm">
+        <CircleDashed className="text-primary mt-0.5 shrink-0" size={18} />
         <span>
-          Ledger windows are approximate in wall-clock terms. At about{" "}
-          {LEDGER_CLOSE_SECONDS}s per ledger, the default window starts near two minutes from
-          now and lasts one hour.
+          Ledger windows are approximate in wall-clock terms. At about{' '}
+          {LEDGER_CLOSE_SECONDS}s per ledger, the default window starts near two
+          minutes from now and lasts one hour.
         </span>
       </div>
 
       <div className="grid gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-xs font-semibold uppercase text-muted-foreground">
+          <span className="text-muted-foreground text-xs font-semibold uppercase">
             Scheduled payments on this treasury
           </span>
           <Button
@@ -562,35 +615,46 @@ export function ScheduleSection({
         {intents.length ? (
           <div className="grid grid-cols-2 gap-3 max-xl:grid-cols-1">
             {intents.map((intent) => {
-              const status = describeIntentStatus(intent, latestIntentLedger);
+              const status = describeIntentStatus(intent, latestIntentLedger)
               return (
                 <div
-                  className="grid content-start gap-2 rounded-lg border bg-background p-4"
+                  className="bg-background grid content-start gap-2 rounded-lg border p-4"
                   key={intent.intentId}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <strong className="font-mono text-sm" title={intent.intentId}>
+                    <strong
+                      className="font-mono text-sm"
+                      title={intent.intentId}
+                    >
                       {truncateAddress(intent.intentId, 8, 8)}
                     </strong>
-                    <Badge className="w-fit" variant={INTENT_STATUS_VARIANTS[status]}>
+                    <Badge
+                      className="w-fit"
+                      variant={INTENT_STATUS_VARIANTS[status]}
+                    >
                       {status}
                     </Badge>
                   </div>
-                  <span className="text-sm text-muted-foreground">
-                    {intent.amount === null ? "amount unreadable" : String(intent.amount)} to{" "}
+                  <span className="text-muted-foreground text-sm">
+                    {intent.amount === null
+                      ? 'amount unreadable'
+                      : String(intent.amount)}{' '}
+                    to{' '}
                     <span title={intent.destination ?? undefined}>
                       {truncateAddress(intent.destination, 7, 6)}
                     </span>
                   </span>
-                  <small className="grid gap-0.5 text-muted-foreground">
+                  <small className="text-muted-foreground grid gap-0.5">
                     <span>
-                      opens {formatLedgerMoment(intent.startLedger, intentClock)} · closes{" "}
-                      {formatLedgerMoment(intent.endLedger, intentClock)}
+                      opens{' '}
+                      {formatLedgerMoment(intent.startLedger, intentClock)} ·
+                      closes {formatLedgerMoment(intent.endLedger, intentClock)}
                     </span>
                     <span>
-                      ledgers {intent.startLedger ?? "?"} - {intent.endLedger ?? "?"} ·{" "}
-                      {intent.executionCount ?? "?"}/{intent.maxExecutions ?? "?"} executions ·
-                      policy v{intent.policyVersion ?? "?"}
+                      ledgers {intent.startLedger ?? '?'} -{' '}
+                      {intent.endLedger ?? '?'} · {intent.executionCount ?? '?'}
+                      /{intent.maxExecutions ?? '?'} executions · policy v
+                      {intent.policyVersion ?? '?'}
                     </span>
                   </small>
                   <div className="flex flex-wrap gap-2">
@@ -600,9 +664,9 @@ export function ScheduleSection({
                         intent.unreadable ||
                         intent.startLedger === null ||
                         intent.endLedger === null ||
-                        status === "cancelled" ||
-                        status === "expired" ||
-                        status === "exhausted" ||
+                        status === 'cancelled' ||
+                        status === 'expired' ||
+                        status === 'exhausted' ||
                         queueIntentMutation.isPending
                       }
                       onClick={() => queueIntentMutation.mutate(intent)}
@@ -610,7 +674,7 @@ export function ScheduleSection({
                       title={
                         relayerSessionActive
                           ? undefined
-                          : "Unlock the relayer session first, in the Relayer panel."
+                          : 'Unlock the relayer session first, in the Relayer panel.'
                       }
                       variant="secondary"
                     >
@@ -618,7 +682,7 @@ export function ScheduleSection({
                       Queue relayer
                     </Button>
                     <Button
-                      disabled={status === "cancelled" || intent.unreadable}
+                      disabled={status === 'cancelled' || intent.unreadable}
                       onClick={() => setCancelIntentId(intent.intentId)}
                       size="sm"
                       variant="secondary"
@@ -628,36 +692,40 @@ export function ScheduleSection({
                     </Button>
                   </div>
                 </div>
-              );
+              )
             })}
           </div>
         ) : (
-          <div className="grid min-h-32 place-items-center rounded-lg border border-dashed bg-background p-6 text-center text-sm text-muted-foreground">
+          <div className="bg-background text-muted-foreground grid min-h-32 place-items-center rounded-lg border border-dashed p-6 text-center text-sm">
             {wallet.connected
-              ? "No scheduled payment was created on this treasury within the RPC event window."
+              ? 'No scheduled payment was created on this treasury within the RPC event window.'
               : "Connect a wallet to list this treasury's scheduled payments."}
           </div>
         )}
 
-        <div className="flex items-start gap-2 rounded-md bg-secondary p-3 text-sm text-muted-foreground">
-          <CircleDashed className="mt-0.5 shrink-0 text-primary" size={18} />
+        <div className="bg-secondary text-muted-foreground flex items-start gap-2 rounded-md p-3 text-sm">
+          <CircleDashed className="text-primary mt-0.5 shrink-0" size={18} />
           <span>
-            <code>intent_registry</code> has no listing entrypoint, so this reads the ids from
-            its <code>IntentCreated</code> events and the state from <code>get_intent</code>.
-            RPC keeps events for a rolling window
-            {eventRetentionDays === null ? "" : ` of about ${eventRetentionDays} days`}: an older
-            intent disappears from this list while staying valid on-chain and executable by the
-            relayer. Times are estimated at {LEDGER_CLOSE_SECONDS}s per ledger, so they drift the
-            further ahead they reach.
+            <code>intent_registry</code> has no listing entrypoint, so this
+            reads the ids from its <code>IntentCreated</code> events and the
+            state from <code>get_intent</code>. RPC keeps events for a rolling
+            window
+            {eventRetentionDays === null
+              ? ''
+              : ` of about ${eventRetentionDays} days`}
+            : an older intent disappears from this list while staying valid
+            on-chain and executable by the relayer. Times are estimated at{' '}
+            {LEDGER_CLOSE_SECONDS}s per ledger, so they drift the further ahead
+            they reach.
             {intentsQuery.data?.truncated
-              ? " This scan hit its page limit, so the list may be incomplete."
-              : ""}
+              ? ' This scan hit its page limit, so the list may be incomplete.'
+              : ''}
           </span>
         </div>
       </div>
 
-      <div className="grid gap-3 rounded-md border bg-background p-3">
-        <span className="text-xs font-semibold uppercase text-muted-foreground">
+      <div className="bg-background grid gap-3 rounded-md border p-3">
+        <span className="text-muted-foreground text-xs font-semibold uppercase">
           Cancel an existing scheduled payment
         </span>
         <FormField
@@ -667,7 +735,9 @@ export function ScheduleSection({
         />
         <Button
           disabled={
-            !wallet.connected || cancelIntentId.length === 0 || cancelScheduleMutation.isPending
+            !wallet.connected ||
+            cancelIntentId.length === 0 ||
+            cancelScheduleMutation.isPending
           }
           onClick={() => cancelScheduleMutation.mutate()}
           variant="secondary"
@@ -681,5 +751,5 @@ export function ScheduleSection({
         </Button>
       </div>
     </section>
-  );
+  )
 }

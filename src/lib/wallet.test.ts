@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from 'vitest'
 
 import {
   disconnectWallet,
@@ -6,64 +6,68 @@ import {
   selectWalletThroughModal,
   signAuthEntry,
   signTransaction,
-} from "./wallet";
+} from './wallet'
 
 /**
  * Stands in for `StellarWalletsKit`. Its `openModal` reads `this`, exactly as
  * the real kit does when it reaches for `this.modalElement` — so calling it
  * detached from the instance throws the same TypeError seen in production.
  */
-function fakeKit(walletId = "freighter") {
+function fakeKit(walletId = 'freighter') {
   return {
-    modalElement: { id: "stellar-wallets-modal" },
+    modalElement: { id: 'stellar-wallets-modal' },
     setWalletCalls: [] as string[],
     openModal(input: { onWalletSelected: (option: { id: string }) => void }) {
       // Touching `this` is the whole point: an unbound call makes it undefined.
-      void this.modalElement.id;
-      input.onWalletSelected({ id: walletId });
+      void this.modalElement.id
+      input.onWalletSelected({ id: walletId })
     },
     setWallet(id: string) {
-      this.setWalletCalls.push(id);
+      this.setWalletCalls.push(id)
     },
-  };
+  }
 }
 
-describe("selectWalletThroughModal", () => {
-  it("calls openModal bound to the kit, so the kit can reach its own modal element", async () => {
-    const kit = fakeKit();
+describe('selectWalletThroughModal', () => {
+  it('calls openModal bound to the kit, so the kit can reach its own modal element', async () => {
+    const kit = fakeKit()
 
-    await expect(selectWalletThroughModal(kit)).resolves.toBe("freighter");
-  });
+    await expect(selectWalletThroughModal(kit)).resolves.toBe('freighter')
+  })
 
-  it("tells the kit which wallet the user picked", async () => {
-    const kit = fakeKit("xbull");
+  it('tells the kit which wallet the user picked', async () => {
+    const kit = fakeKit('xbull')
 
-    await selectWalletThroughModal(kit);
+    await selectWalletThroughModal(kit)
 
-    expect(kit.setWalletCalls).toEqual(["xbull"]);
-  });
+    expect(kit.setWalletCalls).toEqual(['xbull'])
+  })
 
-  it("resolves with no selection when the kit exposes no modal", async () => {
-    await expect(selectWalletThroughModal({})).resolves.toBeUndefined();
-  });
-});
+  it('resolves with no selection when the kit exposes no modal', async () => {
+    await expect(selectWalletThroughModal({})).resolves.toBeUndefined()
+  })
+})
 
-describe("disconnectWallet", () => {
-  it("leaves signing unavailable, and says so without blaming the wallet", async () => {
-    disconnectWallet();
+describe('disconnectWallet', () => {
+  it('leaves signing unavailable, and says so without blaming the wallet', async () => {
+    disconnectWallet()
 
     // The old copy read "Connected wallet does not expose signAuthEntry",
     // which describes a wallet limitation. With nothing connected at all,
     // that sends the operator looking for the wrong problem.
-    await expect(signAuthEntry("preimage", "GABC")).rejects.toThrow(/No wallet is connected/i);
-    await expect(signTransaction("envelope", "GABC")).rejects.toThrow(/No wallet is connected/i);
-  });
-});
+    await expect(signAuthEntry('preimage', 'GABC')).rejects.toThrow(
+      /No wallet is connected/i
+    )
+    await expect(signTransaction('envelope', 'GABC')).rejects.toThrow(
+      /No wallet is connected/i
+    )
+  })
+})
 
-describe("getConnectedAddress", () => {
-  it("returns null rather than throwing when nothing is connected", async () => {
-    disconnectWallet();
+describe('getConnectedAddress', () => {
+  it('returns null rather than throwing when nothing is connected', async () => {
+    disconnectWallet()
 
-    await expect(getConnectedAddress()).resolves.toBeNull();
-  });
-});
+    await expect(getConnectedAddress()).resolves.toBeNull()
+  })
+})

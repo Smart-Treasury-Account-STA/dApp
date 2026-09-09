@@ -12,16 +12,20 @@
 
 export type AssetHolding = {
   /** Balance in stroops, or null when the holder has no balance entry at all. */
-  balance: bigint | null;
+  balance: bigint | null
   /** The token's authorization flag, or null when there is no balance entry. */
-  authorized: boolean | null;
+  authorized: boolean | null
   /** True when the token reported no trustline / balance entry (#13). */
-  missing: boolean;
-};
+  missing: boolean
+}
 
 export type AssetReadiness =
   | { ready: true }
-  | { ready: false; reason: "missing" | "deauthorized" | "empty" | "insufficient"; message: string };
+  | {
+      ready: false
+      reason: 'missing' | 'deauthorized' | 'empty' | 'insufficient'
+      message: string
+    }
 
 /**
  * Reports the first reason this holder cannot send `amount` of the asset.
@@ -38,56 +42,57 @@ export type AssetReadiness =
  */
 export function describeAssetReadiness(
   holding: AssetHolding,
-  amount?: bigint,
+  amount?: bigint
 ): AssetReadiness {
   if (holding.missing) {
     return {
       ready: false,
-      reason: "missing",
+      reason: 'missing',
       message:
-        "No trustline for this asset. A classic account has to create it from its own wallet — the issuer cannot create one on its behalf.",
-    };
+        'No trustline for this asset. A classic account has to create it from its own wallet — the issuer cannot create one on its behalf.',
+    }
   }
 
   if (holding.authorized === false) {
     return {
       ready: false,
-      reason: "deauthorized",
+      reason: 'deauthorized',
       message:
         "This asset's issuer requires authorization and has not granted it here yet. No payment of this asset can succeed until the issuer authorizes this address.",
-    };
+    }
   }
 
-  const balance = holding.balance ?? 0n;
+  const balance = holding.balance ?? 0n
 
   if (balance <= 0n) {
     return {
       ready: false,
-      reason: "empty",
-      message: "The balance of this asset is zero, so there is nothing to send.",
-    };
+      reason: 'empty',
+      message:
+        'The balance of this asset is zero, so there is nothing to send.',
+    }
   }
 
   if (amount !== undefined && amount > balance) {
     return {
       ready: false,
-      reason: "insufficient",
+      reason: 'insufficient',
       message: `This payment needs ${amount} but the balance is ${balance}.`,
-    };
+    }
   }
 
-  return { ready: true };
+  return { ready: true }
 }
 
 /** Sums a split's per-destination amounts, ignoring entries that are not yet a
  * valid number -- a half-typed form must not read as a huge total and block
  * the button for the wrong reason. */
 export function totalRequested(amounts: string[]): bigint {
-  let total = 0n;
+  let total = 0n
   for (const raw of amounts) {
-    const trimmed = raw.trim();
-    if (!/^\d+$/.test(trimmed)) continue;
-    total += BigInt(trimmed);
+    const trimmed = raw.trim()
+    if (!/^\d+$/.test(trimmed)) continue
+    total += BigInt(trimmed)
   }
-  return total;
+  return total
 }

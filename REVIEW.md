@@ -5,11 +5,11 @@ This document is for Stellar Community Fund reviewers validating **Tranche 2 —
 
 Two repositories make up Tranche 2:
 
-| Deliverable | Repository |
-|---|---|
-| 1. Testnet Smart Contracts Deployment | `smart-contracts` |
-| 2. Testnet dApp and Wallet Flow | `dApp` (this repo) |
-| 3. Testnet Scheduled Payment Relayer | `dApp` (this repo) |
+| Deliverable                           | Repository         |
+| ------------------------------------- | ------------------ |
+| 1. Testnet Smart Contracts Deployment | `smart-contracts`  |
+| 2. Testnet dApp and Wallet Flow       | `dApp` (this repo) |
+| 3. Testnet Scheduled Payment Relayer  | `dApp` (this repo) |
 
 Contract source lives entirely in `smart-contracts`; the operator-facing app and the relayer service both live in this repo. This file is identical in both repos so reviewers land on it regardless of which one they open first.
 
@@ -20,9 +20,10 @@ Contract source lives entirely in `smart-contracts`; the operator-facing app and
 ## Deliverable 1 — Testnet Smart Contracts Deployment
 
 **What "done" means (verbatim from the SCF milestone):**
+
 > Deploy the smart contracts to Stellar testnet and validate treasury setup, signer management, policy configuration, transaction simulation, and SAC-based payment execution.
 >
-> Completion measure: *"Testnet contract addresses are available. A developer can configure or inspect a testnet treasury account, execute an approved payment, and confirm that invalid actions are rejected."*
+> Completion measure: _"Testnet contract addresses are available. A developer can configure or inspect a testnet treasury account, execute an approved payment, and confirm that invalid actions are rejected."_
 
 ### What was built
 
@@ -32,26 +33,26 @@ Full deployment record, including every WASM hash and every upload/create/initia
 
 ### Contract addresses (Stellar Testnet)
 
-| Contract | Contract ID | Explorer |
-|---|---|---|
-| `smart_account` | `CB4KZJ3I4XANE6GWPAMXCNXQ34PTQWPXVKFBBMLNKV25GAOXQC7RQUMS` | [stellar.expert](https://stellar.expert/explorer/testnet/contract/CB4KZJ3I4XANE6GWPAMXCNXQ34PTQWPXVKFBBMLNKV25GAOXQC7RQUMS) |
-| `policy_engine` | `CC5FSUNWBNH3EIEELHO3A4ZPJZRAZCVMFNP3PVXO2YBWDNNLTFLWBVHC` | [stellar.expert](https://stellar.expert/explorer/testnet/contract/CC5FSUNWBNH3EIEELHO3A4ZPJZRAZCVMFNP3PVXO2YBWDNNLTFLWBVHC) |
-| `intent_registry` | `CDHTNPBXUMPCKUJ76HQ767MDRD4IVRRH4H5DOF4JUOO36QKSV4GXFRMR` | [stellar.expert](https://stellar.expert/explorer/testnet/contract/CDHTNPBXUMPCKUJ76HQ767MDRD4IVRRH4H5DOF4JUOO36QKSV4GXFRMR) |
-| `recovery_manager` | `CALI5XJASA66LKZPF3ZF7HOLGOFUWZYIHB6SENXCZ5Y7QVT7UQKKR6UM` | [stellar.expert](https://stellar.expert/explorer/testnet/contract/CALI5XJASA66LKZPF3ZF7HOLGOFUWZYIHB6SENXCZ5Y7QVT7UQKKR6UM) |
-| `transfer_adapter` | `CAX766XYR56WO7Y4HFOHYQUO5AIN5QLHAHKJ3DINXM2WUQY5UE7KGE26` | [stellar.expert](https://stellar.expert/explorer/testnet/contract/CAX766XYR56WO7Y4HFOHYQUO5AIN5QLHAHKJ3DINXM2WUQY5UE7KGE26) |
-| `split_adapter` | `CAFTFU2E4MGZT6BLCVN2FAQB6GIBJRR5ICI7C7LZEMACBDUUTQKVHHV3` | [stellar.expert](https://stellar.expert/explorer/testnet/contract/CAFTFU2E4MGZT6BLCVN2FAQB6GIBJRR5ICI7C7LZEMACBDUUTQKVHHV3) |
-| `webauthn_verifier` | `CD72MKTDNI3HLMNPA4YUOZGLT2NUWLVHTW3A7NQOXGLG7OKIKETSMXXR` | [stellar.expert](https://stellar.expert/explorer/testnet/contract/CD72MKTDNI3HLMNPA4YUOZGLT2NUWLVHTW3A7NQOXGLG7OKIKETSMXXR) |
+| Contract               | Contract ID                                                | Explorer                                                                                                                    |
+| ---------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `smart_account`        | `CB4KZJ3I4XANE6GWPAMXCNXQ34PTQWPXVKFBBMLNKV25GAOXQC7RQUMS` | [stellar.expert](https://stellar.expert/explorer/testnet/contract/CB4KZJ3I4XANE6GWPAMXCNXQ34PTQWPXVKFBBMLNKV25GAOXQC7RQUMS) |
+| `policy_engine`        | `CC5FSUNWBNH3EIEELHO3A4ZPJZRAZCVMFNP3PVXO2YBWDNNLTFLWBVHC` | [stellar.expert](https://stellar.expert/explorer/testnet/contract/CC5FSUNWBNH3EIEELHO3A4ZPJZRAZCVMFNP3PVXO2YBWDNNLTFLWBVHC) |
+| `intent_registry`      | `CDHTNPBXUMPCKUJ76HQ767MDRD4IVRRH4H5DOF4JUOO36QKSV4GXFRMR` | [stellar.expert](https://stellar.expert/explorer/testnet/contract/CDHTNPBXUMPCKUJ76HQ767MDRD4IVRRH4H5DOF4JUOO36QKSV4GXFRMR) |
+| `recovery_manager`     | `CALI5XJASA66LKZPF3ZF7HOLGOFUWZYIHB6SENXCZ5Y7QVT7UQKKR6UM` | [stellar.expert](https://stellar.expert/explorer/testnet/contract/CALI5XJASA66LKZPF3ZF7HOLGOFUWZYIHB6SENXCZ5Y7QVT7UQKKR6UM) |
+| `transfer_adapter`     | `CAX766XYR56WO7Y4HFOHYQUO5AIN5QLHAHKJ3DINXM2WUQY5UE7KGE26` | [stellar.expert](https://stellar.expert/explorer/testnet/contract/CAX766XYR56WO7Y4HFOHYQUO5AIN5QLHAHKJ3DINXM2WUQY5UE7KGE26) |
+| `split_adapter`        | `CAFTFU2E4MGZT6BLCVN2FAQB6GIBJRR5ICI7C7LZEMACBDUUTQKVHHV3` | [stellar.expert](https://stellar.expert/explorer/testnet/contract/CAFTFU2E4MGZT6BLCVN2FAQB6GIBJRR5ICI7C7LZEMACBDUUTQKVHHV3) |
+| `webauthn_verifier`    | `CD72MKTDNI3HLMNPA4YUOZGLT2NUWLVHTW3A7NQOXGLG7OKIKETSMXXR` | [stellar.expert](https://stellar.expert/explorer/testnet/contract/CD72MKTDNI3HLMNPA4YUOZGLT2NUWLVHTW3A7NQOXGLG7OKIKETSMXXR) |
 | `STA` test asset (SAC) | `CCOUVA654JH2V6B7LNTKHJP5DF3QA553RS2IIWXSGPDFH2N3QILIVU5L` | [stellar.expert](https://stellar.expert/explorer/testnet/contract/CCOUVA654JH2V6B7LNTKHJP5DF3QA553RS2IIWXSGPDFH2N3QILIVU5L) |
 
 Network passphrase: `Test SDF Network ; September 2015`. Deployer: `GCWFJKLE45TMVZS42TMIYKAORKGBWE74753YPOSCC5ESJR2G2UMBXBDB`.
 
 ### Key on-chain transactions
 
-| What | Tx hash | Explorer |
-|---|---|---|
-| `smart_account.initialize` | `1f4fbd12802b0af5e54cff741ad22bb6877fd398a064dbf482fcf3ab7128c01c` | [link](https://stellar.expert/explorer/testnet/tx/1f4fbd12802b0af5e54cff741ad22bb6877fd398a064dbf482fcf3ab7128c01c) |
-| `intent_registry.initialize` (admin = `smart_account`, hand-built custom-account auth) | `2d63d6d16d4f9bf9ba34f3301b72cbff1e4ff44273a49f1bf899051063e683b2` | [link](https://stellar.expert/explorer/testnet/tx/2d63d6d16d4f9bf9ba34f3301b72cbff1e4ff44273a49f1bf899051063e683b2) |
-| `apply_adapter_change(transfer)` — real adapter wired in | `6257c3a52127c70747603d32efe5ba71dbf54b5f341627982327b5a488151333` | [link](https://stellar.expert/explorer/testnet/tx/6257c3a52127c70747603d32efe5ba71dbf54b5f341627982327b5a488151333) |
+| What                                                                                                                                                          | Tx hash                                                            | Explorer                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `smart_account.initialize`                                                                                                                                    | `1f4fbd12802b0af5e54cff741ad22bb6877fd398a064dbf482fcf3ab7128c01c` | [link](https://stellar.expert/explorer/testnet/tx/1f4fbd12802b0af5e54cff741ad22bb6877fd398a064dbf482fcf3ab7128c01c) |
+| `intent_registry.initialize` (admin = `smart_account`, hand-built custom-account auth)                                                                        | `2d63d6d16d4f9bf9ba34f3301b72cbff1e4ff44273a49f1bf899051063e683b2` | [link](https://stellar.expert/explorer/testnet/tx/2d63d6d16d4f9bf9ba34f3301b72cbff1e4ff44273a49f1bf899051063e683b2) |
+| `apply_adapter_change(transfer)` — real adapter wired in                                                                                                      | `6257c3a52127c70747603d32efe5ba71dbf54b5f341627982327b5a488151333` | [link](https://stellar.expert/explorer/testnet/tx/6257c3a52127c70747603d32efe5ba71dbf54b5f341627982327b5a488151333) |
 | **Real signer-authorized `execute_transfer_payment`** — treasury `STA` balance moved `1,000,000,000 → 995,000,000`, `is_nonce_used(1)` flipped `false → true` | `f712d5609ca52226746ad9b6776240b763d597246808df1c2a844bf1905d8131` | [link](https://stellar.expert/explorer/testnet/tx/f712d5609ca52226746ad9b6776240b763d597246808df1c2a844bf1905d8131) |
 
 Full transaction list (all WASM uploads, contract creates, policy/signer wiring): see §4–§5 of [`docs/TESTNET_DEPLOYMENT.md`](https://github.com/Smart-Treasury-Account-STA/smart-contracts/blob/v1-full-implementation/docs/TESTNET_DEPLOYMENT.md) in the `smart-contracts` repo.
@@ -126,16 +127,17 @@ The two live rejections shown on the public ledger above (§3, step 3) are read-
 
 Both runs prove the rejection logic is correct on live testnet, with a second signer under a second context rule as independent confirmation — they just can't produce a tx hash, because Soroban itself won't hand back a submittable envelope for a call it can already tell will fail.
 
-**What would be needed for a hash anyway:** bypass simulation-based preparation entirely — harvest a resource footprint from a throwaway *valid* simulate (never sent), manually attach it to the failing call, and submit directly without going through `prepareTransaction`. That's additional one-off tooling, not something any Soroban client does by default, and the milestone's completion measure only requires confirming "that invalid actions are rejected" — which is met by the local test suite plus the live, reproducible commands in step 3 above.
+**What would be needed for a hash anyway:** bypass simulation-based preparation entirely — harvest a resource footprint from a throwaway _valid_ simulate (never sent), manually attach it to the failing call, and submit directly without going through `prepareTransaction`. That's additional one-off tooling, not something any Soroban client does by default, and the milestone's completion measure only requires confirming "that invalid actions are rejected" — which is met by the local test suite plus the live, reproducible commands in step 3 above.
 
 ---
 
 ## Deliverable 2 — Testnet dApp and Wallet Flow
 
 **What "done" means (verbatim from the SCF milestone):**
+
 > Build the testnet dApp for treasury operators. This includes wallet connection, treasury dashboard, signer and policy screens, payment preparation, transaction simulation, wallet approval, transaction submission, status tracking.
 >
-> Completion measure: *"A user can open the testnet dApp, connect Freighter, configure or inspect a treasury account, prepare a payment, simulate it, approve it, submit it, and view the result."*
+> Completion measure: _"A user can open the testnet dApp, connect Freighter, configure or inspect a treasury account, prepare a payment, simulate it, approve it, submit it, and view the result."_
 
 Repository: `dApp` (branch `testnet`).
 
@@ -143,7 +145,7 @@ Repository: `dApp` (branch `testnet`).
 
 - **Wallet connection**: Stellar Wallets Kit, Freighter + xBull selectable, no bespoke wallet protocol. Explicit error surfaced if the connected wallet lacks `signAuthEntry`.
 - **Treasury dashboard**: SmartAccount status (initialized/paused/frozen), live policy version, contract addresses with explorer links, context rules, signer records with roles/weights/thresholds — all backed by live RPC reads/simulations, no seeded demo data.
-- **Signer and policy screens**: read *and write* (add/revoke/re-weight signers, update asset rules, recipient allowlist, amount caps), all routed through the same SmartAccount custom-authorization model as payments.
+- **Signer and policy screens**: read _and write_ (add/revoke/re-weight signers, update asset rules, recipient allowlist, amount caps), all routed through the same SmartAccount custom-authorization model as payments.
 - **Payment pipeline**: address/amount validation → live `policy_engine.version()` read → `validate_policy` simulation → `is_nonce_used` check → build `execute_transfer_payment` root invocation → assemble the SmartAccount `AuthPayload` + delegated-signer auth entries → prepare via Soroban RPC → wallet signature → submit → poll to terminal status (`ERROR`/`TRY_AGAIN_LATER`/`DUPLICATE` handled explicitly) → visible step timeline with the resulting tx hash and explorer link.
 - **Scheduled payment creation**: 32-byte intent ID / ledger-window / amount validation, existing-intent check, simulation before submit, queued for the relayer only after terminal success.
 
@@ -161,15 +163,15 @@ pnpm dev
 
 Open `http://localhost:3000`. Install [Freighter](https://www.freighter.app/) or xBull, switch it to **Testnet**, and fund a fresh keypair via [Friendbot](https://friendbot.stellar.org).
 
-> **Note — signer allowlisting.** Connecting a wallet and reading treasury state (dashboard, signer/policy screens, `Policy check` / `Nonce check` / `Simulate` buttons — steps 1–5 below) works with **any** testnet wallet address; nothing is gated. But the **`Approve & submit` button on a write** (a payment, a scheduled payment, a signer/policy change — step 6–7 below) will fail with *"Connected wallet is not a delegated signer on any SmartAccount context rule"* unless the connected address is one of the treasury's registered signers (`src/lib/stellarClient.ts` checks `matchedRule.signerAddresses.includes(wallet.address)` before ever asking the wallet to sign). Today that's only the deployer key (context rule 0) and one internal test signer (context rule 1). **If you want to test a write end-to-end with your own wallet, send us your testnet public key first so we can register it as a delegated signer** — either directly, or we can add it live from an already-registered wallet through the dApp's own signer-add screen.
+> **Note — signer allowlisting.** Connecting a wallet and reading treasury state (dashboard, signer/policy screens, `Policy check` / `Nonce check` / `Simulate` buttons — steps 1–5 below) works with **any** testnet wallet address; nothing is gated. But the **`Approve & submit` button on a write** (a payment, a scheduled payment, a signer/policy change — step 6–7 below) will fail with _"Connected wallet is not a delegated signer on any SmartAccount context rule"_ unless the connected address is one of the treasury's registered signers (`src/lib/stellarClient.ts` checks `matchedRule.signerAddresses.includes(wallet.address)` before ever asking the wallet to sign). Today that's only the deployer key (context rule 0) and one internal test signer (context rule 1). **If you want to test a write end-to-end with your own wallet, send us your testnet public key first so we can register it as a delegated signer** — either directly, or we can add it live from an already-registered wallet through the dApp's own signer-add screen.
 
 **2. Manual flow to exercise** (matches the milestone's completion measure exactly):
 
 1. Connect Freighter — wallet modal, public key shown.
-2. Open the treasury dashboard — confirm it shows the *live* state from step "Inspect the treasury" above (not placeholder data).
+2. Open the treasury dashboard — confirm it shows the _live_ state from step "Inspect the treasury" above (not placeholder data).
 3. Open the signer/policy screens — confirm the registered signer and the `STA` asset rule/allowlist/cap match what's on-chain.
 4. Prepare a payment (amount ≤ the cap, destination = the allowlisted recipient `GAK3XILRBYBMBOCZMSLL2CLR6WPQLEIOC6ZCYYPTE4OIAX3PCFFO2YMU`) — watch the simulate step run `validate_policy` before any wallet prompt.
-5. Try an amount above the cap or an unlisted destination — confirm the dApp surfaces the rejection (`AmountAboveLimit` / `RecipientNotAllowed`) *before* asking for a signature.
+5. Try an amount above the cap or an unlisted destination — confirm the dApp surfaces the rejection (`AmountAboveLimit` / `RecipientNotAllowed`) _before_ asking for a signature.
 6. Approve and submit a valid payment (**requires an allowlisted signer, see note above**) — confirm the step timeline shows simulate → sign → submit → confirmed, with a tx hash linking to `stellar.expert`.
 7. Create a scheduled payment (**requires an allowlisted signer**) — confirm it validates the ledger window and gets queued for the relayer (see Deliverable 3).
 
@@ -188,16 +190,17 @@ CI runs the same four checks on every push (`.github/workflows/ci.yml`).
 
 - No network switch — testnet only in this build, by design for Tranche 2.
 - No cancel-intent / recovery / audit-history UI — out of Tranche 2 scope, listed under Tranche 3.
-- The dApp configures an *existing* treasury; it does not bootstrap a brand-new `smart_account` (that's CLI/ops tooling, per `docs/DAPP_INTEGRATION_SPEC.md` §9 in the `smart-contracts` repo — the milestone text only requires "configure or inspect **a** treasury account").
+- The dApp configures an _existing_ treasury; it does not bootstrap a brand-new `smart_account` (that's CLI/ops tooling, per `docs/DAPP_INTEGRATION_SPEC.md` §9 in the `smart-contracts` repo — the milestone text only requires "configure or inspect **a** treasury account").
 
 ---
 
 ## Deliverable 3 — Testnet Scheduled Payment Relayer
 
 **What "done" means (verbatim from the SCF milestone):**
+
 > Build a relayer service for one scheduled treasury payment flow. The relayer submits valid transactions, tracks execution status, logs failures, and cannot custody assets or bypass SmartAccount policy checks.
 >
-> Completion measure: *"A user can configure a scheduled payment on testnet and verify that the relayer executes it only when SmartAccount policy allows execution."*
+> Completion measure: _"A user can configure a scheduled payment on testnet and verify that the relayer executes it only when SmartAccount policy allows execution."_
 
 Lives in this repository (`src/lib/relayer/`, `src/app/api/relayer/*`).
 

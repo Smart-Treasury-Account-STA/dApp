@@ -1,27 +1,30 @@
-import { StrKey } from "@stellar/stellar-sdk";
+import { StrKey } from '@stellar/stellar-sdk'
 
-import { query, toIsoString } from "@/lib/db";
-import type { CreateTreasuryInput, TreasuryRecord } from "@/lib/treasuryRegistry/types";
+import { query, toIsoString } from '@/lib/db'
+import type {
+  CreateTreasuryInput,
+  TreasuryRecord,
+} from '@/lib/treasuryRegistry/types'
 
-export { toContractSet } from "@/lib/treasuryRegistry/types";
+export { toContractSet } from '@/lib/treasuryRegistry/types'
 
-const TX_HASH_PATTERN = /^[0-9a-fA-F]{64}$/;
+const TX_HASH_PATTERN = /^[0-9a-fA-F]{64}$/
 
 const COLUMNS = `smart_account_id, policy_engine_id, intent_registry_id, recovery_manager_id,
-    transfer_adapter_id, split_adapter_id, owner_address, executor_address, deploy_tx_hash, created_at`;
+    transfer_adapter_id, split_adapter_id, owner_address, executor_address, deploy_tx_hash, created_at`
 
 type TreasuryRow = {
-  smart_account_id: string;
-  policy_engine_id: string;
-  intent_registry_id: string;
-  recovery_manager_id: string;
-  transfer_adapter_id: string;
-  split_adapter_id: string;
-  owner_address: string;
-  executor_address: string;
-  deploy_tx_hash: string;
-  created_at: unknown;
-};
+  smart_account_id: string
+  policy_engine_id: string
+  intent_registry_id: string
+  recovery_manager_id: string
+  transfer_adapter_id: string
+  split_adapter_id: string
+  owner_address: string
+  executor_address: string
+  deploy_tx_hash: string
+  created_at: unknown
+}
 
 function toRecord(row: TreasuryRow): TreasuryRecord {
   return {
@@ -35,60 +38,60 @@ function toRecord(row: TreasuryRow): TreasuryRecord {
     executorAddress: row.executor_address,
     deployTxHash: row.deploy_tx_hash,
     createdAt: toIsoString(row.created_at),
-  };
+  }
 }
 
 export function validateCreateTreasuryInput(input: CreateTreasuryInput) {
   const contractFields: Array<[string, string]> = [
-    ["smartAccountId", input.smartAccountId],
-    ["policyEngineId", input.policyEngineId],
-    ["intentRegistryId", input.intentRegistryId],
-    ["recoveryManagerId", input.recoveryManagerId],
-    ["transferAdapterId", input.transferAdapterId],
-    ["splitAdapterId", input.splitAdapterId],
-  ];
+    ['smartAccountId', input.smartAccountId],
+    ['policyEngineId', input.policyEngineId],
+    ['intentRegistryId', input.intentRegistryId],
+    ['recoveryManagerId', input.recoveryManagerId],
+    ['transferAdapterId', input.transferAdapterId],
+    ['splitAdapterId', input.splitAdapterId],
+  ]
   for (const [label, value] of contractFields) {
     if (!StrKey.isValidContract(value)) {
-      throw new Error(`${label} must be a Stellar contract id starting with C.`);
+      throw new Error(`${label} must be a Stellar contract id starting with C.`)
     }
   }
 
   const addressFields: Array<[string, string]> = [
-    ["ownerAddress", input.ownerAddress],
-    ["executorAddress", input.executorAddress],
-  ];
+    ['ownerAddress', input.ownerAddress],
+    ['executorAddress', input.executorAddress],
+  ]
   for (const [label, value] of addressFields) {
     if (!StrKey.isValidEd25519PublicKey(value)) {
-      throw new Error(`${label} must be a Stellar account id starting with G.`);
+      throw new Error(`${label} must be a Stellar account id starting with G.`)
     }
   }
 
   if (!TX_HASH_PATTERN.test(input.deployTxHash)) {
-    throw new Error("deployTxHash must be a 64-character hex transaction hash.");
+    throw new Error('deployTxHash must be a 64-character hex transaction hash.')
   }
 }
 
 export async function listTreasuries() {
   const rows = await query<TreasuryRow>(
-    `SELECT ${COLUMNS} FROM treasuries ORDER BY created_at DESC`,
-  );
-  return rows.map(toRecord);
+    `SELECT ${COLUMNS} FROM treasuries ORDER BY created_at DESC`
+  )
+  return rows.map(toRecord)
 }
 
 export async function listTreasuriesByOwner(ownerAddress: string) {
   const rows = await query<TreasuryRow>(
     `SELECT ${COLUMNS} FROM treasuries WHERE owner_address = $1 ORDER BY created_at DESC`,
-    [ownerAddress],
-  );
-  return rows.map(toRecord);
+    [ownerAddress]
+  )
+  return rows.map(toRecord)
 }
 
 export async function getTreasury(smartAccountId: string) {
   const rows = await query<TreasuryRow>(
     `SELECT ${COLUMNS} FROM treasuries WHERE smart_account_id = $1`,
-    [smartAccountId],
-  );
-  return rows.length > 0 ? toRecord(rows[0]) : null;
+    [smartAccountId]
+  )
+  return rows.length > 0 ? toRecord(rows[0]) : null
 }
 
 /**
@@ -113,9 +116,9 @@ export async function getTreasury(smartAccountId: string) {
 export class TreasuryConflictError extends Error {
   constructor(smartAccountId: string) {
     super(
-      `A treasury is already registered for ${smartAccountId} with different contract addresses than this request claims.`,
-    );
-    this.name = "TreasuryConflictError";
+      `A treasury is already registered for ${smartAccountId} with different contract addresses than this request claims.`
+    )
+    this.name = 'TreasuryConflictError'
   }
 }
 
@@ -135,11 +138,11 @@ function recordsMatch(a: TreasuryRecord, b: CreateTreasuryInput): boolean {
     // deployTxHash every time, so a mismatch here is as much a signal of a
     // fabricated claim as the fields above.
     a.deployTxHash === b.deployTxHash
-  );
+  )
 }
 
 export async function createTreasury(input: CreateTreasuryInput) {
-  validateCreateTreasuryInput(input);
+  validateCreateTreasuryInput(input)
 
   // `ON CONFLICT DO NOTHING` is what closes the registration race the class
   // doc above describes: the primary key decides a single winner inside one
@@ -162,23 +165,23 @@ export async function createTreasury(input: CreateTreasuryInput) {
       input.ownerAddress,
       input.executorAddress,
       input.deployTxHash,
-    ],
-  );
+    ]
+  )
 
   if (inserted.length > 0) {
-    return toRecord(inserted[0]);
+    return toRecord(inserted[0])
   }
 
-  const existing = await getTreasury(input.smartAccountId);
+  const existing = await getTreasury(input.smartAccountId)
   if (!existing) {
     // The row existed for the INSERT and is gone for this SELECT: only a
     // concurrent delete does that, and nothing in this app deletes treasuries.
     throw new Error(
-      `Treasury ${input.smartAccountId} could not be registered or read back.`,
-    );
+      `Treasury ${input.smartAccountId} could not be registered or read back.`
+    )
   }
   if (!recordsMatch(existing, input)) {
-    throw new TreasuryConflictError(input.smartAccountId);
+    throw new TreasuryConflictError(input.smartAccountId)
   }
-  return existing;
+  return existing
 }

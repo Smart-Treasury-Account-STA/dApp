@@ -1,23 +1,24 @@
-"use client";
+'use client'
 
-import { LogOut, Plus, ShieldCheck, Wallet as WalletIcon } from "lucide-react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
-import { Button } from "@/components/ui/button";
-import { STELLAR_CONFIG } from "@/config";
-import { deployAccount } from "@/lib/deployAccount";
-import { truncateAddress } from "@/lib/format";
-import { walletSigner } from "@/lib/writeAuth";
-import { useMyTreasuries } from "@/features/treasury/queries";
-import { registerTreasury } from "@/features/treasury/treasuryRegistryClient";
-import type { CreateTreasuryInput } from "@/lib/treasuryRegistry/types";
-import { useWallet } from "@/providers/wallet-provider";
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { LogOut, Plus, ShieldCheck, Wallet as WalletIcon } from 'lucide-react'
+import { toast } from 'sonner'
+
+import { Button } from '@/components/ui/button'
+import { STELLAR_CONFIG } from '@/config'
+import { useMyTreasuries } from '@/features/treasury/queries'
+import { registerTreasury } from '@/features/treasury/treasuryRegistryClient'
+import { deployAccount } from '@/lib/deployAccount'
+import { truncateAddress } from '@/lib/format'
+import type { CreateTreasuryInput } from '@/lib/treasuryRegistry/types'
+import { walletSigner } from '@/lib/writeAuth'
+import { useWallet } from '@/providers/wallet-provider'
 
 const DEPLOY_NOT_CONFIGURED =
-  !STELLAR_CONFIG.accountFactoryId || !STELLAR_CONFIG.relayerExecutorAddress;
+  !STELLAR_CONFIG.accountFactoryId || !STELLAR_CONFIG.relayerExecutorAddress
 
 /**
  * Registration is a second, separate step after a real on-chain deploy --
@@ -31,86 +32,92 @@ const DEPLOY_NOT_CONFIGURED =
 class RegistrationFailedAfterDeployError extends Error {
   constructor(
     public readonly input: CreateTreasuryInput,
-    cause: unknown,
+    cause: unknown
   ) {
-    super(cause instanceof Error ? cause.message : String(cause));
+    super(cause instanceof Error ? cause.message : String(cause))
   }
 }
 
 export default function TreasuriesPage() {
-  const router = useRouter();
-  const queryClient = useQueryClient();
-  const { wallet, connect, disconnect } = useWallet();
-  const treasuriesQuery = useMyTreasuries(wallet.address);
+  const router = useRouter()
+  const queryClient = useQueryClient()
+  const { wallet, connect, disconnect } = useWallet()
+  const treasuriesQuery = useMyTreasuries(wallet.address)
 
   const registerMutation = useMutation({
     mutationFn: (input: CreateTreasuryInput) => registerTreasury(input),
     onSuccess: (treasury) => {
-      toast.success("Treasury registered", {
+      toast.success('Treasury registered', {
         description: `${truncateAddress(treasury.smartAccountId)} is ready to configure.`,
-      });
+      })
       // Without this, "My Treasuries" keeps showing its 30s-stale list
       // (useMyTreasuries' staleTime) until a hard refresh, even though the
       // new treasury already exists in the registry.
-      queryClient.invalidateQueries({ queryKey: ["treasuries", "mine", wallet.address] });
-      router.push(`/treasuries/${treasury.smartAccountId}`);
+      queryClient.invalidateQueries({
+        queryKey: ['treasuries', 'mine', wallet.address],
+      })
+      router.push(`/treasuries/${treasury.smartAccountId}`)
     },
     onError: (error, input) => {
-      toast.error("Registration failed", {
+      toast.error('Registration failed', {
         description: error instanceof Error ? error.message : String(error),
         action: {
-          label: "Retry",
+          label: 'Retry',
           onClick: () => registerMutation.mutate(input),
         },
-      });
+      })
     },
-  });
+  })
 
   const deployMutation = useMutation({
     mutationFn: async () => {
-      if (!wallet.address) throw new Error("Connect a wallet first.");
-      const { receipt, deployed } = await deployAccount(walletSigner(wallet.address));
+      if (!wallet.address) throw new Error('Connect a wallet first.')
+      const { receipt, deployed } = await deployAccount(
+        walletSigner(wallet.address)
+      )
       const input: CreateTreasuryInput = {
         ...deployed,
         ownerAddress: wallet.address,
         executorAddress: STELLAR_CONFIG.relayerExecutorAddress as string,
         deployTxHash: receipt.hash,
-      };
+      }
       try {
-        return await registerTreasury(input);
+        return await registerTreasury(input)
       } catch (error) {
-        throw new RegistrationFailedAfterDeployError(input, error);
+        throw new RegistrationFailedAfterDeployError(input, error)
       }
     },
     onMutate: () => {
-      toast.info("Deploying treasury", {
+      toast.info('Deploying treasury', {
         description:
-          "Approve six authorization prompts in your wallet — one per contract this deploys and wires together.",
-      });
+          'Approve six authorization prompts in your wallet — one per contract this deploys and wires together.',
+      })
     },
     onSuccess: (treasury) => {
-      toast.success("Treasury deployed", {
+      toast.success('Treasury deployed', {
         description: `${truncateAddress(treasury.smartAccountId)} is ready to configure.`,
-      });
-      queryClient.invalidateQueries({ queryKey: ["treasuries", "mine", wallet.address] });
-      router.push(`/treasuries/${treasury.smartAccountId}`);
+      })
+      queryClient.invalidateQueries({
+        queryKey: ['treasuries', 'mine', wallet.address],
+      })
+      router.push(`/treasuries/${treasury.smartAccountId}`)
     },
     onError: (error) => {
       if (error instanceof RegistrationFailedAfterDeployError) {
-        toast.error("Deployed, but registration failed", {
+        toast.error('Deployed, but registration failed', {
           description: `${truncateAddress(error.input.smartAccountId)} exists on-chain — retry registering it rather than deploying again.`,
           action: {
-            label: "Retry registration",
+            label: 'Retry registration',
             onClick: () => registerMutation.mutate(error.input),
           },
-        });
-        return;
+        })
+        return
       }
-      toast.error("Deployment failed", {
+      toast.error('Deployment failed', {
         description: error instanceof Error ? error.message : String(error),
-      });
+      })
     },
-  });
+  })
 
   return (
     <main className="mx-auto grid min-h-screen max-w-4xl content-start gap-6 p-8 max-sm:p-4">
@@ -118,7 +125,7 @@ export default function TreasuriesPage() {
         <div className="flex items-center gap-3">
           <ShieldCheck className="text-primary" size={26} />
           <div>
-            <span className="block text-xs font-bold uppercase text-muted-foreground">
+            <span className="text-muted-foreground block text-xs font-bold uppercase">
               Smart Treasury Account
             </span>
             <h1 className="text-2xl font-semibold">My Treasuries</h1>
@@ -126,7 +133,7 @@ export default function TreasuriesPage() {
         </div>
         {wallet.connected ? (
           <div className="flex items-center gap-2">
-            <code className="text-xs text-muted-foreground">
+            <code className="text-muted-foreground text-xs">
               {truncateAddress(wallet.address)}
             </code>
             <Button onClick={disconnect} variant="secondary">
@@ -135,9 +142,16 @@ export default function TreasuriesPage() {
             </Button>
           </div>
         ) : (
-          <Button onClick={() => connect().catch((error) => toast.error("Connection failed", {
-            description: error instanceof Error ? error.message : String(error),
-          }))}>
+          <Button
+            onClick={() =>
+              connect().catch((error) =>
+                toast.error('Connection failed', {
+                  description:
+                    error instanceof Error ? error.message : String(error),
+                })
+              )
+            }
+          >
             <WalletIcon size={16} />
             Connect wallet
           </Button>
@@ -145,7 +159,7 @@ export default function TreasuriesPage() {
       </header>
 
       {!wallet.connected ? (
-        <div className="grid min-h-40 place-items-center rounded-lg border border-dashed bg-card p-6 text-center text-sm text-muted-foreground">
+        <div className="bg-card text-muted-foreground grid min-h-40 place-items-center rounded-lg border border-dashed p-6 text-center text-sm">
           Connect a wallet to see the treasuries it owns, or deploy a new one.
         </div>
       ) : (
@@ -157,49 +171,52 @@ export default function TreasuriesPage() {
               onClick={() => deployMutation.mutate()}
             >
               <Plus size={16} />
-              {deployMutation.isPending ? "Deploying…" : "Deploy new treasury"}
+              {deployMutation.isPending ? 'Deploying…' : 'Deploy new treasury'}
             </Button>
           </div>
 
           {DEPLOY_NOT_CONFIGURED ? (
-            <p className="text-xs text-muted-foreground">
-              Deployment is not configured on this environment (NEXT_PUBLIC_ACCOUNT_FACTORY_ID /
+            <p className="text-muted-foreground text-xs">
+              Deployment is not configured on this environment
+              (NEXT_PUBLIC_ACCOUNT_FACTORY_ID /
               NEXT_PUBLIC_RELAYER_EXECUTOR_ADDRESS are unset).
             </p>
           ) : null}
 
           {treasuriesQuery.isPending ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
+            <p className="text-muted-foreground text-sm">Loading…</p>
           ) : treasuriesQuery.data?.length ? (
             <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
               {treasuriesQuery.data.map((treasury) => (
                 <Link
-                  className="grid gap-2 rounded-lg border bg-card p-4 transition-colors hover:bg-secondary"
+                  className="bg-card hover:bg-secondary grid gap-2 rounded-lg border p-4 transition-colors"
                   href={`/treasuries/${treasury.smartAccountId}`}
                   key={treasury.smartAccountId}
                 >
-                  <strong className="text-sm">{truncateAddress(treasury.smartAccountId, 9, 7)}</strong>
-                  <span className="text-xs text-muted-foreground">
+                  <strong className="text-sm">
+                    {truncateAddress(treasury.smartAccountId, 9, 7)}
+                  </strong>
+                  <span className="text-muted-foreground text-xs">
                     Deployed {new Date(treasury.createdAt).toLocaleDateString()}
                   </span>
                 </Link>
               ))}
             </div>
           ) : (
-            <div className="grid min-h-32 place-items-center rounded-lg border border-dashed bg-card p-6 text-center text-sm text-muted-foreground">
+            <div className="bg-card text-muted-foreground grid min-h-32 place-items-center rounded-lg border border-dashed p-6 text-center text-sm">
               No treasuries deployed with this wallet yet.
             </div>
           )}
 
-          <p className="text-xs text-muted-foreground">
-            Or use the{" "}
+          <p className="text-muted-foreground text-xs">
+            Or use the{' '}
             <Link className="underline" href="/">
               default treasury
-            </Link>{" "}
+            </Link>{' '}
             without deploying your own.
           </p>
         </>
       )}
     </main>
-  );
+  )
 }

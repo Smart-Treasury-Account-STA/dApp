@@ -1,7 +1,13 @@
-import { BASE_FEE, Transaction, TransactionBuilder, scValToNative, xdr } from "@stellar/stellar-sdk";
+import {
+  BASE_FEE,
+  Transaction,
+  TransactionBuilder,
+  scValToNative,
+  xdr,
+} from '@stellar/stellar-sdk'
 
-import { STELLAR_CONFIG } from "@/config";
-import { selectAllInvocationsForAddress } from "@/lib/authTree";
+import { STELLAR_CONFIG } from '@/config'
+import { selectAllInvocationsForAddress } from '@/lib/authTree'
 import {
   addressCredentialsEntry,
   addressScVal,
@@ -14,27 +20,29 @@ import {
   signerDelegatedScVal,
   submitSignedTransaction,
   u32ScVal,
-} from "@/lib/stellarClient";
-import type { TransactionReceipt, WalletSigning } from "@/types";
+} from '@/lib/stellarClient'
+import type { TransactionReceipt, WalletSigning } from '@/types'
 
 export type DeployedAccountResult = {
-  smartAccountId: string;
-  policyEngineId: string;
-  intentRegistryId: string;
-  recoveryManagerId: string;
-  transferAdapterId: string;
-  splitAdapterId: string;
-};
+  smartAccountId: string
+  policyEngineId: string
+  intentRegistryId: string
+  recoveryManagerId: string
+  transferAdapterId: string
+  splitAdapterId: string
+}
 
 export type DeployAccountResult = {
-  receipt: TransactionReceipt;
-  deployed: DeployedAccountResult;
-};
+  receipt: TransactionReceipt
+  deployed: DeployedAccountResult
+}
 
 function randomSaltHex(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const bytes = new Uint8Array(32)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(
+    ''
+  )
 }
 
 /**
@@ -48,40 +56,40 @@ function randomSaltHex(): string {
  * use the feature rather than to every page load.
  */
 function requireFactoryConfig() {
-  const { accountFactoryId, relayerExecutorAddress } = STELLAR_CONFIG;
+  const { accountFactoryId, relayerExecutorAddress } = STELLAR_CONFIG
   if (!accountFactoryId) {
     throw new Error(
-      "Treasury deployment is not configured: NEXT_PUBLIC_ACCOUNT_FACTORY_ID is not set.",
-    );
+      'Treasury deployment is not configured: NEXT_PUBLIC_ACCOUNT_FACTORY_ID is not set.'
+    )
   }
   if (!relayerExecutorAddress) {
     throw new Error(
-      "Treasury deployment is not configured: NEXT_PUBLIC_RELAYER_EXECUTOR_ADDRESS is not set.",
-    );
+      'Treasury deployment is not configured: NEXT_PUBLIC_RELAYER_EXECUTOR_ADDRESS is not set.'
+    )
   }
-  return { accountFactoryId, relayerExecutorAddress };
+  return { accountFactoryId, relayerExecutorAddress }
 }
 
 function decodeDeployedAccount(value: unknown): DeployedAccountResult {
-  const record = (value ?? {}) as Record<string, unknown>;
-  const smartAccountId = record.smart_account;
-  const policyEngineId = record.policy_engine;
-  const intentRegistryId = record.intent_registry;
-  const recoveryManagerId = record.recovery_manager;
-  const transferAdapterId = record.transfer_adapter;
-  const splitAdapterId = record.split_adapter;
+  const record = (value ?? {}) as Record<string, unknown>
+  const smartAccountId = record.smart_account
+  const policyEngineId = record.policy_engine
+  const intentRegistryId = record.intent_registry
+  const recoveryManagerId = record.recovery_manager
+  const transferAdapterId = record.transfer_adapter
+  const splitAdapterId = record.split_adapter
 
   if (
-    typeof smartAccountId !== "string" ||
-    typeof policyEngineId !== "string" ||
-    typeof intentRegistryId !== "string" ||
-    typeof recoveryManagerId !== "string" ||
-    typeof transferAdapterId !== "string" ||
-    typeof splitAdapterId !== "string"
+    typeof smartAccountId !== 'string' ||
+    typeof policyEngineId !== 'string' ||
+    typeof intentRegistryId !== 'string' ||
+    typeof recoveryManagerId !== 'string' ||
+    typeof transferAdapterId !== 'string' ||
+    typeof splitAdapterId !== 'string'
   ) {
     throw new Error(
-      "account_factory.deploy_account did not return a complete DeployedAccount — the transaction succeeded but its return value could not be decoded.",
-    );
+      'account_factory.deploy_account did not return a complete DeployedAccount — the transaction succeeded but its return value could not be decoded.'
+    )
   }
 
   return {
@@ -91,7 +99,7 @@ function decodeDeployedAccount(value: unknown): DeployedAccountResult {
     recoveryManagerId,
     transferAdapterId,
     splitAdapterId,
-  };
+  }
 }
 
 /**
@@ -117,11 +125,13 @@ function decodeDeployedAccount(value: unknown): DeployedAccountResult {
  * doesn't exist yet at deploy time, and `caller` here is an ordinary
  * wallet key the whole way through.
  */
-export async function deployAccount(wallet: WalletSigning): Promise<DeployAccountResult> {
-  const { accountFactoryId, relayerExecutorAddress } = requireFactoryConfig();
-  const server = getServer();
-  const latestLedger = await server.getLatestLedger();
-  const signatureExpirationLedger = latestLedger.sequence + 100;
+export async function deployAccount(
+  wallet: WalletSigning
+): Promise<DeployAccountResult> {
+  const { accountFactoryId, relayerExecutorAddress } = requireFactoryConfig()
+  const server = getServer()
+  const latestLedger = await server.getLatestLedger()
+  const signatureExpirationLedger = latestLedger.sequence + 100
 
   const args = [
     addressScVal(wallet.address),
@@ -130,7 +140,7 @@ export async function deployAccount(wallet: WalletSigning): Promise<DeployAccoun
     xdr.ScVal.scvMap([]),
     u32ScVal(1),
     addressScVal(relayerExecutorAddress),
-  ];
+  ]
 
   // A fresh, throwaway Account fetch for the discovery simulation --
   // TransactionBuilder.build() mutates whatever Account object it's given
@@ -141,26 +151,28 @@ export async function deployAccount(wallet: WalletSigning): Promise<DeployAccoun
   // (this discovery tx is only ever simulated, never submitted), failing
   // every submission with tx_bad_seq -- matching how discoverTreasuryInvocation
   // in stellarClient.ts already avoids this, with its own separate fetch.
-  const discoverySource = await server.getAccount(wallet.address);
+  const discoverySource = await server.getAccount(wallet.address)
   const discoveryTx = new TransactionBuilder(discoverySource, {
     fee: BASE_FEE,
     networkPassphrase: STELLAR_CONFIG.networkPassphrase,
   })
-    .addOperation(invokeContractOperation(accountFactoryId, "deploy_account", args, []))
+    .addOperation(
+      invokeContractOperation(accountFactoryId, 'deploy_account', args, [])
+    )
     .setTimeout(60)
-    .build();
+    .build()
 
-  const simulation = await server.simulateTransaction(discoveryTx);
-  if ("error" in simulation) {
-    throw new Error(simulation.error);
+  const simulation = await server.simulateTransaction(discoveryTx)
+  if ('error' in simulation) {
+    throw new Error(simulation.error)
   }
 
-  const rawAuth = simulation.result?.auth ?? [];
-  const invocations = selectAllInvocationsForAddress(rawAuth, wallet.address);
+  const rawAuth = simulation.result?.auth ?? []
+  const invocations = selectAllInvocationsForAddress(rawAuth, wallet.address)
   if (invocations.length === 0 && rawAuth.length === 0) {
     throw new Error(
-      "Simulation recorded no authorization requirement for the connected wallet — account_factory.deploy_account's authorization shape may have changed.",
-    );
+      "Simulation recorded no authorization requirement for the connected wallet — account_factory.deploy_account's authorization shape may have changed."
+    )
   }
 
   // When the connected wallet is both the transaction's source account and
@@ -173,7 +185,7 @@ export async function deployAccount(wallet: WalletSigning): Promise<DeployAccoun
   // it. Verified directly against a live testnet simulation of this exact
   // call (2026-09-07) -- the recorded auth entry's credentials discriminant
   // is SOROBAN_CREDENTIALS_SOURCE_ACCOUNT (0), not _ADDRESS (1).
-  const signedEntries: xdr.SorobanAuthorizationEntry[] = [];
+  const signedEntries: xdr.SorobanAuthorizationEntry[] = []
   for (const invocation of invocations) {
     const unsigned = addressCredentialsEntry({
       address: wallet.address,
@@ -181,49 +193,54 @@ export async function deployAccount(wallet: WalletSigning): Promise<DeployAccoun
       nonce: randomAuthNonce(),
       signature: xdr.ScVal.scvVoid(),
       signatureExpirationLedger,
-    });
+    })
     signedEntries.push(
-      await signDelegatedAuthEntry(unsigned, wallet, signatureExpirationLedger),
-    );
+      await signDelegatedAuthEntry(unsigned, wallet, signatureExpirationLedger)
+    )
   }
 
   // Fetched fresh (not reused from discoverySource above, for the mutation
   // reason noted there) -- also naturally reflects the account's current
   // sequence number after however long the signing round trip above took.
-  const source = await server.getAccount(wallet.address);
+  const source = await server.getAccount(wallet.address)
   const tx = new TransactionBuilder(source, {
     fee: BASE_FEE,
     networkPassphrase: STELLAR_CONFIG.networkPassphrase,
   })
     .addOperation(
-      invokeContractOperation(accountFactoryId, "deploy_account", args, signedEntries),
+      invokeContractOperation(
+        accountFactoryId,
+        'deploy_account',
+        args,
+        signedEntries
+      )
     )
     .setTimeout(120)
-    .build();
+    .build()
 
-  const prepared = await server.prepareTransaction(tx);
-  const signedTxXdr = await signEnvelope(wallet, prepared.toXDR());
+  const prepared = await server.prepareTransaction(tx)
+  const signedTxXdr = await signEnvelope(wallet, prepared.toXDR())
 
   const receipt = await submitSignedTransaction(
-    new Transaction(signedTxXdr, STELLAR_CONFIG.networkPassphrase),
-  );
+    new Transaction(signedTxXdr, STELLAR_CONFIG.networkPassphrase)
+  )
 
-  if (receipt.status !== "SUCCESS") {
+  if (receipt.status !== 'SUCCESS') {
     throw new Error(
-      `account_factory.deploy_account did not succeed (status: ${receipt.status}). No treasury was deployed.`,
-    );
+      `account_factory.deploy_account did not succeed (status: ${receipt.status}). No treasury was deployed.`
+    )
   }
 
   // submitSignedTransaction already polled to a terminal status but only
   // returns {hash, status, latestLedger} -- fetch once more to read back
   // the DeployedAccount struct the call actually returned.
-  const txResult = await server.getTransaction(receipt.hash);
-  if (!("returnValue" in txResult) || !txResult.returnValue) {
+  const txResult = await server.getTransaction(receipt.hash)
+  if (!('returnValue' in txResult) || !txResult.returnValue) {
     throw new Error(
-      "deploy_account succeeded but its return value could not be read back — cannot recover the deployed contract addresses.",
-    );
+      'deploy_account succeeded but its return value could not be read back — cannot recover the deployed contract addresses.'
+    )
   }
 
-  const deployed = decodeDeployedAccount(scValToNative(txResult.returnValue));
-  return { receipt, deployed };
+  const deployed = decodeDeployedAccount(scValToNative(txResult.returnValue))
+  return { receipt, deployed }
 }

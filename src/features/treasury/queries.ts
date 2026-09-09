@@ -1,18 +1,21 @@
-"use client";
+'use client'
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery } from '@tanstack/react-query'
 
-import { STELLAR_CONFIG } from "@/config";
-import { fetchMyTreasuries, fetchTreasury } from "@/features/treasury/treasuryRegistryClient";
-import type { ContractSet } from "@/lib/env";
+import { STELLAR_CONFIG } from '@/config'
+import {
+  fetchMyTreasuries,
+  fetchTreasury,
+} from '@/features/treasury/treasuryRegistryClient'
+import type { ContractSet } from '@/lib/env'
 import {
   loadAssetHolding,
   loadContextRules,
   loadOwner,
   loadScheduledIntents,
   loadTreasurySnapshot,
-} from "@/lib/stellarClient";
-import type { TreasuryAuthority } from "@/types";
+} from '@/lib/stellarClient'
+import type { TreasuryAuthority } from '@/types'
 
 // Keyed by both the connected wallet address AND the treasury's own
 // smart_account id -- `address` alone identifies which key is reading, not
@@ -20,28 +23,31 @@ import type { TreasuryAuthority } from "@/types";
 // one treasury would otherwise collide on the same cache entry.
 export const treasuryKeys = {
   snapshot: (address: string, smartAccountId: string) =>
-    ["treasury", "snapshot", address, smartAccountId] as const,
+    ['treasury', 'snapshot', address, smartAccountId] as const,
   rules: (address: string, smartAccountId: string) =>
-    ["treasury", "rules", address, smartAccountId] as const,
+    ['treasury', 'rules', address, smartAccountId] as const,
   authority: (address: string, smartAccountId: string) =>
-    ["treasury", "authority", address, smartAccountId] as const,
+    ['treasury', 'authority', address, smartAccountId] as const,
   assetHolding: (address: string, holder: string, assetContractId: string) =>
-    ["treasury", "assetHolding", address, holder, assetContractId] as const,
+    ['treasury', 'assetHolding', address, holder, assetContractId] as const,
   scheduledIntents: (address: string, intentRegistryId: string) =>
-    ["treasury", "scheduledIntents", address, intentRegistryId] as const,
-};
+    ['treasury', 'scheduledIntents', address, intentRegistryId] as const,
+}
 
 export function useTreasurySnapshot(
   address: string | null,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ) {
   return useQuery({
-    queryKey: treasuryKeys.snapshot(address ?? "disconnected", contracts.smartAccount),
+    queryKey: treasuryKeys.snapshot(
+      address ?? 'disconnected',
+      contracts.smartAccount
+    ),
     queryFn: () => loadTreasurySnapshot(address as string, contracts),
     enabled: address !== null,
     staleTime: 10_000,
     refetchInterval: 30_000,
-  });
+  })
 }
 
 /**
@@ -55,15 +61,20 @@ export function useTreasurySnapshot(
 export function useAssetHolding(
   address: string | null,
   contracts: ContractSet = STELLAR_CONFIG.contracts,
-  holder?: string,
+  holder?: string
 ) {
-  const target = holder ?? contracts.smartAccount;
+  const target = holder ?? contracts.smartAccount
   return useQuery({
-    queryKey: treasuryKeys.assetHolding(address ?? "disconnected", target, contracts.staAsset),
-    queryFn: () => loadAssetHolding(address as string, target, contracts.staAsset),
+    queryKey: treasuryKeys.assetHolding(
+      address ?? 'disconnected',
+      target,
+      contracts.staAsset
+    ),
+    queryFn: () =>
+      loadAssetHolding(address as string, target, contracts.staAsset),
     enabled: address !== null,
     staleTime: 15_000,
-  });
+  })
 }
 
 /**
@@ -76,58 +87,67 @@ export function useAssetHolding(
  */
 export function useScheduledIntents(
   address: string | null,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ) {
   return useQuery({
-    queryKey: treasuryKeys.scheduledIntents(address ?? "disconnected", contracts.intentRegistry),
+    queryKey: treasuryKeys.scheduledIntents(
+      address ?? 'disconnected',
+      contracts.intentRegistry
+    ),
     queryFn: () => loadScheduledIntents(address as string, contracts),
     enabled: address !== null,
     staleTime: 15_000,
-  });
+  })
 }
 
 export function useContextRules(
   address: string | null,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ) {
   return useQuery({
-    queryKey: treasuryKeys.rules(address ?? "disconnected", contracts.smartAccount),
+    queryKey: treasuryKeys.rules(
+      address ?? 'disconnected',
+      contracts.smartAccount
+    ),
     queryFn: () => loadContextRules(address as string, contracts),
     enabled: address !== null,
     staleTime: 30_000,
-  });
+  })
 }
 
 export function useTreasury(smartAccountId: string | null) {
   return useQuery({
-    queryKey: ["treasuries", "one", smartAccountId ?? "none"],
+    queryKey: ['treasuries', 'one', smartAccountId ?? 'none'],
     queryFn: () => fetchTreasury(smartAccountId as string),
     enabled: smartAccountId !== null,
     staleTime: Infinity, // A deployed treasury's contract set never changes.
     retry: false,
-  });
+  })
 }
 
 export function useMyTreasuries(ownerAddress: string | null) {
   return useQuery({
-    queryKey: ["treasuries", "mine", ownerAddress ?? "disconnected"],
+    queryKey: ['treasuries', 'mine', ownerAddress ?? 'disconnected'],
     queryFn: () => fetchMyTreasuries(ownerAddress as string),
     enabled: ownerAddress !== null,
     staleTime: 30_000,
-  });
+  })
 }
 
 export function useTreasuryAuthority(
   address: string | null,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ) {
   return useQuery<TreasuryAuthority>({
-    queryKey: treasuryKeys.authority(address ?? "disconnected", contracts.smartAccount),
+    queryKey: treasuryKeys.authority(
+      address ?? 'disconnected',
+      contracts.smartAccount
+    ),
     queryFn: async () => ({
       owner: await loadOwner(address as string, contracts),
       policyAdminHint: STELLAR_CONFIG.policyAdminHint ?? null,
     }),
     enabled: address !== null,
     staleTime: 30_000,
-  });
+  })
 }

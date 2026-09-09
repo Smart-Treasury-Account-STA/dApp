@@ -1,69 +1,76 @@
-import { STELLAR_CONFIG } from "@/config";
-import type { WalletState } from "@/types";
+import { STELLAR_CONFIG } from '@/config'
+import type { WalletState } from '@/types'
 
 type WalletOption = {
-  id: string;
-  name?: string;
-};
+  id: string
+  name?: string
+}
 
 type WalletAddressResult =
   | string
   | {
-      address?: string;
-      publicKey?: string;
-    };
+      address?: string
+      publicKey?: string
+    }
 
 type WalletKit = {
   openModal?: (input: {
-    onWalletSelected: (option: WalletOption) => Promise<void> | void;
-  }) => void;
-  setWallet?: (walletId: string) => void;
+    onWalletSelected: (option: WalletOption) => Promise<void> | void
+  }) => void
+  setWallet?: (walletId: string) => void
   /** `skipRequestAccess` suppresses the kit's `requestAccess()` call, and with
    * it Freighter's approval popup -- required for any read that is not a
    * deliberate user action (see getConnectedAddress). */
-  getAddress: (params?: { skipRequestAccess?: boolean }) => Promise<WalletAddressResult>;
+  getAddress: (params?: {
+    skipRequestAccess?: boolean
+  }) => Promise<WalletAddressResult>
   signAuthEntry?: (
     preimageXdr: string,
-    options: { address: string; networkPassphrase: string },
-  ) => Promise<string | { signedAuthEntry?: string; signerAddress?: string }>;
+    options: { address: string; networkPassphrase: string }
+  ) => Promise<string | { signedAuthEntry?: string; signerAddress?: string }>
   signTransaction?: (
     transactionXdr: string,
-    options: { address: string; networkPassphrase: string },
+    options: { address: string; networkPassphrase: string }
   ) => Promise<
-    string | { signedTxXdr?: string; signedTransaction?: string; signerAddress?: string }
-  >;
-};
+    | string
+    | {
+        signedTxXdr?: string
+        signedTransaction?: string
+        signerAddress?: string
+      }
+  >
+}
 
 type WalletKitModule = {
   StellarWalletsKit: new (input: {
-    network: string;
-    selectedWalletId: string;
-    modules: unknown[];
-  }) => WalletKit;
-  FREIGHTER_ID?: string;
-  WalletType?: { freighter?: string };
-  allowAllModules?: () => unknown[];
-};
+    network: string
+    selectedWalletId: string
+    modules: unknown[]
+  }) => WalletKit
+  FREIGHTER_ID?: string
+  WalletType?: { freighter?: string }
+  allowAllModules?: () => unknown[]
+}
 
 type WalletKitHandle = {
-  kit: WalletKit;
-  selectedWalletId?: string;
-};
+  kit: WalletKit
+  selectedWalletId?: string
+}
 
-let kitHandle: WalletKitHandle | null = null;
+let kitHandle: WalletKitHandle | null = null
 
-type ModalCapableKit = Pick<WalletKit, "openModal" | "setWallet">;
+type ModalCapableKit = Pick<WalletKit, 'openModal' | 'setWallet'>
 
 /**
  * Opens the Wallets Kit selection modal and resolves with the wallet the user
  * picked, or `undefined` when the kit exposes no modal.
  */
 export async function selectWalletThroughModal(
-  kit: ModalCapableKit,
+  kit: ModalCapableKit
 ): Promise<string | undefined> {
-  const { openModal } = kit;
-  if (typeof openModal !== "function") {
-    return undefined;
+  const { openModal } = kit
+  if (typeof openModal !== 'function') {
+    return undefined
   }
 
   return new Promise<string>((resolve) => {
@@ -73,59 +80,59 @@ export async function selectWalletThroughModal(
     // modal ever renders.
     openModal.call(kit, {
       onWalletSelected: async (option: { id: string; name?: string }) => {
-        if (typeof kit.setWallet === "function") {
-          kit.setWallet(option.id);
+        if (typeof kit.setWallet === 'function') {
+          kit.setWallet(option.id)
         }
-        resolve(option.id);
+        resolve(option.id)
       },
-    });
-  });
+    })
+  })
 }
 
 /**
  * Opens the wallet selection modal and returns the connected wallet.
  *
- * `networkPassphrase` is the network the wallet will be asked to sign for.
- * The kit's own `WalletNetwork` enum values are the passphrases themselves,
- * so the configured passphrase is passed straight through. It is a parameter
- * rather than a `@/config` import to keep this module free of environment
- * validation, the same way `@/lib/constants` is.
+ * The kit is constructed for the configured network, the same passphrase
+ * `signTransaction` and `signAuthEntry` pass on every call. The kit's own
+ * `WalletNetwork` enum values are the passphrases themselves, so the
+ * configured value goes straight through. This used to be pinned to
+ * `WalletNetwork.TESTNET`, which left the kit advertising testnet to wallet
+ * modules while the app built and signed mainnet transactions.
  */
-export async function connectWallet(networkPassphrase: string): Promise<WalletState> {
-  const kitModule = (await import(
-    "@creit.tech/stellar-wallets-kit"
-  )) as unknown as WalletKitModule;
+export async function connectWallet(): Promise<WalletState> {
+  const kitModule =
+    (await import('@creit.tech/stellar-wallets-kit')) as unknown as WalletKitModule
   const modules =
-    typeof kitModule.allowAllModules === "function"
+    typeof kitModule.allowAllModules === 'function'
       ? kitModule.allowAllModules()
-      : [];
+      : []
   const selectedWalletId =
-    kitModule.FREIGHTER_ID ?? kitModule.WalletType?.freighter ?? "freighter";
+    kitModule.FREIGHTER_ID ?? kitModule.WalletType?.freighter ?? 'freighter'
 
   const kit = new kitModule.StellarWalletsKit({
-    network: networkPassphrase,
+    network: STELLAR_CONFIG.networkPassphrase,
     selectedWalletId,
     modules,
-  });
+  })
 
-  kitHandle = { kit, selectedWalletId };
+  kitHandle = { kit, selectedWalletId }
 
-  const pickedWalletId = await selectWalletThroughModal(kit);
+  const pickedWalletId = await selectWalletThroughModal(kit)
   if (pickedWalletId) {
-    kitHandle = { kit, selectedWalletId: pickedWalletId };
+    kitHandle = { kit, selectedWalletId: pickedWalletId }
   }
 
-  const addressResult = await kit.getAddress();
+  const addressResult = await kit.getAddress()
   const address =
-    typeof addressResult === "string"
+    typeof addressResult === 'string'
       ? addressResult
-      : (addressResult.address ?? addressResult.publicKey ?? null);
+      : (addressResult.address ?? addressResult.publicKey ?? null)
 
   return {
     address,
-    walletName: kitHandle.selectedWalletId ?? "Stellar wallet",
+    walletName: kitHandle.selectedWalletId ?? 'Stellar wallet',
     connected: Boolean(address),
-  };
+  }
 }
 
 /**
@@ -134,7 +141,7 @@ export async function connectWallet(networkPassphrase: string): Promise<WalletSt
  * only valid from the registered signer, so switching is a routine action here.
  */
 export function disconnectWallet() {
-  kitHandle = null;
+  kitHandle = null
 }
 
 /**
@@ -159,57 +166,62 @@ export function disconnectWallet() {
  * dismissed. Read-only address reads must never prompt.
  */
 export async function getConnectedAddress(): Promise<string | null> {
-  if (!kitHandle?.kit) return null;
+  if (!kitHandle?.kit) return null
   try {
-    const addressResult = await kitHandle.kit.getAddress({ skipRequestAccess: true });
-    return typeof addressResult === "string"
+    const addressResult = await kitHandle.kit.getAddress({
+      skipRequestAccess: true,
+    })
+    return typeof addressResult === 'string'
       ? addressResult
-      : (addressResult.address ?? addressResult.publicKey ?? null);
+      : (addressResult.address ?? addressResult.publicKey ?? null)
   } catch {
-    return null;
+    return null
   }
 }
 
 export async function signAuthEntry(preimageXdr: string, address: string) {
   if (!kitHandle?.kit) {
-    throw new Error("No wallet is connected.");
+    throw new Error('No wallet is connected.')
   }
-  if (typeof kitHandle.kit.signAuthEntry !== "function") {
-    throw new Error("Connected wallet does not expose signAuthEntry.");
+  if (typeof kitHandle.kit.signAuthEntry !== 'function') {
+    throw new Error('Connected wallet does not expose signAuthEntry.')
   }
 
   const result = await kitHandle.kit.signAuthEntry(preimageXdr, {
     address,
     networkPassphrase: STELLAR_CONFIG.networkPassphrase,
-  });
-  if (typeof result === "string") {
-    return { signature: result };
+  })
+  if (typeof result === 'string') {
+    return { signature: result }
   }
   if (!result.signedAuthEntry) {
-    return undefined;
+    return undefined
   }
-  return { signature: result.signedAuthEntry, signerAddress: result.signerAddress };
+  return {
+    signature: result.signedAuthEntry,
+    signerAddress: result.signerAddress,
+  }
 }
 
 export async function signTransaction(transactionXdr: string, address: string) {
   if (!kitHandle?.kit) {
-    throw new Error("No wallet is connected.");
+    throw new Error('No wallet is connected.')
   }
-  if (typeof kitHandle.kit.signTransaction !== "function") {
-    throw new Error("Connected wallet does not expose signTransaction.");
+  if (typeof kitHandle.kit.signTransaction !== 'function') {
+    throw new Error('Connected wallet does not expose signTransaction.')
   }
 
   const result = await kitHandle.kit.signTransaction(transactionXdr, {
     address,
     networkPassphrase: STELLAR_CONFIG.networkPassphrase,
-  });
-  if (typeof result === "string") {
-    return { xdr: result };
+  })
+  if (typeof result === 'string') {
+    return { xdr: result }
   }
-  const xdr = result.signedTxXdr ?? result.signedTransaction;
-  if (!xdr) return undefined;
+  const xdr = result.signedTxXdr ?? result.signedTransaction
+  if (!xdr) return undefined
   // signerAddress is the account the wallet actually signed with -- see
   // signEnvelope in stellarClient.ts for why the caller must check this
   // instead of trusting the requested `address` was honored.
-  return { xdr, signerAddress: result.signerAddress };
+  return { xdr, signerAddress: result.signerAddress }
 }

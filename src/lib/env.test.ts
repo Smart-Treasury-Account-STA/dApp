@@ -1,15 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it } from 'vitest'
 
-import { ConfigError, readStellarConfig } from "@/lib/env";
+import { ConfigError, readStellarConfig } from '@/lib/env'
 
-const contract = "CB4KZJ3I4XANE6GWPAMXCNXQ34PTQWPXVKFBBMLNKV25GAOXQC7RQUMS";
-const account = "GAK3XILRBYBMBOCZMSLL2CLR6WPQLEIOC6ZCYYPTE4OIAX3PCFFO2YMU";
+const contract = 'CB4KZJ3I4XANE6GWPAMXCNXQ34PTQWPXVKFBBMLNKV25GAOXQC7RQUMS'
+const account = 'GAK3XILRBYBMBOCZMSLL2CLR6WPQLEIOC6ZCYYPTE4OIAX3PCFFO2YMU'
 
 function source(overrides: Record<string, string | undefined> = {}) {
   return {
-    NEXT_PUBLIC_STELLAR_RPC_URL: "https://soroban-testnet.stellar.org",
-    NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015",
-    NEXT_PUBLIC_STELLAR_EXPLORER_URL: "https://stellar.expert/explorer/testnet",
+    NEXT_PUBLIC_STELLAR_RPC_URL: 'https://soroban-testnet.stellar.org',
+    NEXT_PUBLIC_STELLAR_NETWORK_PASSPHRASE: 'Test SDF Network ; September 2015',
+    NEXT_PUBLIC_STELLAR_EXPLORER_URL: 'https://stellar.expert/explorer/testnet',
     NEXT_PUBLIC_SMART_ACCOUNT_ID: contract,
     NEXT_PUBLIC_POLICY_ENGINE_ID: contract,
     NEXT_PUBLIC_INTENT_REGISTRY_ID: contract,
@@ -19,78 +19,84 @@ function source(overrides: Record<string, string | undefined> = {}) {
     NEXT_PUBLIC_STA_ASSET_CONTRACT_ID: contract,
     NEXT_PUBLIC_TEST_RECIPIENT: account,
     ...overrides,
-  };
+  }
 }
 
-describe("readStellarConfig", () => {
-  it("returns a typed config for a valid source", () => {
-    const config = readStellarConfig(source());
-    expect(config.contracts.smartAccount).toBe(contract);
-    expect(config.networkPassphrase).toBe("Test SDF Network ; September 2015");
-  });
+describe('readStellarConfig', () => {
+  it('returns a typed config for a valid source', () => {
+    const config = readStellarConfig(source())
+    expect(config.contracts.smartAccount).toBe(contract)
+    expect(config.networkPassphrase).toBe('Test SDF Network ; September 2015')
+  })
 
-  it("rejects a missing variable", () => {
+  it('rejects a missing variable', () => {
     expect(() =>
-      readStellarConfig(source({ NEXT_PUBLIC_SMART_ACCOUNT_ID: undefined })),
-    ).toThrow(ConfigError);
-  });
+      readStellarConfig(source({ NEXT_PUBLIC_SMART_ACCOUNT_ID: undefined }))
+    ).toThrow(ConfigError)
+  })
 
-  it("rejects a malformed contract id", () => {
+  it('rejects a malformed contract id', () => {
     expect(() =>
-      readStellarConfig(source({ NEXT_PUBLIC_POLICY_ENGINE_ID: "not-a-contract" })),
-    ).toThrow(/NEXT_PUBLIC_POLICY_ENGINE_ID/);
-  });
+      readStellarConfig(
+        source({ NEXT_PUBLIC_POLICY_ENGINE_ID: 'not-a-contract' })
+      )
+    ).toThrow(/NEXT_PUBLIC_POLICY_ENGINE_ID/)
+  })
 
-  it("rejects an account id where a contract id is required", () => {
+  it('rejects an account id where a contract id is required', () => {
     expect(() =>
-      readStellarConfig(source({ NEXT_PUBLIC_INTENT_REGISTRY_ID: account })),
-    ).toThrow(/NEXT_PUBLIC_INTENT_REGISTRY_ID/);
-  });
+      readStellarConfig(source({ NEXT_PUBLIC_INTENT_REGISTRY_ID: account }))
+    ).toThrow(/NEXT_PUBLIC_INTENT_REGISTRY_ID/)
+  })
 
-  it("rejects a non https rpc url", () => {
+  it('rejects a non https rpc url', () => {
     expect(() =>
-      readStellarConfig(source({ NEXT_PUBLIC_STELLAR_RPC_URL: "ftp://rpc" })),
-    ).toThrow(/NEXT_PUBLIC_STELLAR_RPC_URL/);
-  });
+      readStellarConfig(source({ NEXT_PUBLIC_STELLAR_RPC_URL: 'ftp://rpc' }))
+    ).toThrow(/NEXT_PUBLIC_STELLAR_RPC_URL/)
+  })
 
-  it("resolves optional accountFactoryId/relayerExecutorAddress to null when absent, without throwing", () => {
-    const config = readStellarConfig(source());
-    expect(config.accountFactoryId).toBeNull();
-    expect(config.relayerExecutorAddress).toBeNull();
-  });
+  it('resolves optional accountFactoryId/relayerExecutorAddress to null when absent, without throwing', () => {
+    const config = readStellarConfig(source())
+    expect(config.accountFactoryId).toBeNull()
+    expect(config.relayerExecutorAddress).toBeNull()
+  })
 
-  it("accepts valid optional accountFactoryId/relayerExecutorAddress when present", () => {
+  it('accepts valid optional accountFactoryId/relayerExecutorAddress when present', () => {
     const config = readStellarConfig(
       source({
         NEXT_PUBLIC_ACCOUNT_FACTORY_ID: contract,
         NEXT_PUBLIC_RELAYER_EXECUTOR_ADDRESS: account,
-      }),
-    );
-    expect(config.accountFactoryId).toBe(contract);
-    expect(config.relayerExecutorAddress).toBe(account);
-  });
+      })
+    )
+    expect(config.accountFactoryId).toBe(contract)
+    expect(config.relayerExecutorAddress).toBe(account)
+  })
 
-  it("rejects a malformed accountFactoryId/relayerExecutorAddress when present", () => {
+  it('rejects a malformed accountFactoryId/relayerExecutorAddress when present', () => {
     expect(() =>
-      readStellarConfig(source({ NEXT_PUBLIC_ACCOUNT_FACTORY_ID: "not-a-contract" })),
-    ).toThrow(/NEXT_PUBLIC_ACCOUNT_FACTORY_ID/);
+      readStellarConfig(
+        source({ NEXT_PUBLIC_ACCOUNT_FACTORY_ID: 'not-a-contract' })
+      )
+    ).toThrow(/NEXT_PUBLIC_ACCOUNT_FACTORY_ID/)
     expect(() =>
-      readStellarConfig(source({ NEXT_PUBLIC_RELAYER_EXECUTOR_ADDRESS: "not-an-account" })),
-    ).toThrow(/NEXT_PUBLIC_RELAYER_EXECUTOR_ADDRESS/);
-  });
+      readStellarConfig(
+        source({ NEXT_PUBLIC_RELAYER_EXECUTOR_ADDRESS: 'not-an-account' })
+      )
+    ).toThrow(/NEXT_PUBLIC_RELAYER_EXECUTOR_ADDRESS/)
+  })
 
-  it("reports every invalid key at once", () => {
+  it('reports every invalid key at once', () => {
     try {
       readStellarConfig(
         source({
-          NEXT_PUBLIC_SMART_ACCOUNT_ID: "bad",
-          NEXT_PUBLIC_POLICY_ENGINE_ID: "bad",
-        }),
-      );
-      throw new Error("expected ConfigError");
+          NEXT_PUBLIC_SMART_ACCOUNT_ID: 'bad',
+          NEXT_PUBLIC_POLICY_ENGINE_ID: 'bad',
+        })
+      )
+      throw new Error('expected ConfigError')
     } catch (error) {
-      expect(error).toBeInstanceOf(ConfigError);
-      expect((error as ConfigError).issues).toHaveLength(2);
+      expect(error).toBeInstanceOf(ConfigError)
+      expect((error as ConfigError).issues).toHaveLength(2)
     }
-  });
-});
+  })
+})

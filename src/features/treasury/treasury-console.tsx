@@ -1,4 +1,8 @@
-"use client";
+'use client'
+
+import { useEffect, useMemo, useRef, useState } from 'react'
+
+import Link from 'next/link'
 
 import {
   Activity,
@@ -14,126 +18,123 @@ import {
   Split,
   Sun,
   Wallet,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import { useTheme } from "next-themes";
-import { toast } from "sonner";
-import { useEffect, useMemo, useRef, useState } from "react";
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import { useTheme } from 'next-themes'
+import { toast } from 'sonner'
 
-import Link from "next/link";
-
-import { Button } from "@/components/ui/button";
-import { NETWORK, STELLAR_CONFIG } from "@/config";
-import { computeLedgerWindow } from "@/features/treasury/drafts";
-import type { ContractSet } from "@/lib/env";
-import { makeIntentId, makeNonce, truncateAddress } from "@/lib/format";
-import { buildTransferAuthPlan } from "@/lib/smartAccountAuth";
-import { buildToastFeedback } from "@/lib/toastFeedback";
+import { Button } from '@/components/ui/button'
+import { NETWORK, STELLAR_CONFIG } from '@/config'
+import { GuardiansSection } from '@/features/treasury/components/guardians-section'
+import { PaymentSection } from '@/features/treasury/components/payment-section'
+import { PolicySection } from '@/features/treasury/components/policy-section'
+import { RelayerSection } from '@/features/treasury/components/relayer-section'
+import { ScheduleSection } from '@/features/treasury/components/schedule-section'
+import { SignersSection } from '@/features/treasury/components/signers-section'
+import { SplitSection } from '@/features/treasury/components/split-section'
+import {
+  ApprovalPlanSection,
+  CapabilitiesSection,
+  TreasurySection,
+} from '@/features/treasury/components/treasury-section'
+import { computeLedgerWindow } from '@/features/treasury/drafts'
+import {
+  useAssetHolding,
+  useContextRules,
+  useTreasurySnapshot,
+} from '@/features/treasury/queries'
+import { describeAssetReadiness } from '@/lib/assetHolding'
+import type { ContractSet } from '@/lib/env'
+import { makeIntentId, makeNonce, truncateAddress } from '@/lib/format'
+import { buildTransferAuthPlan } from '@/lib/smartAccountAuth'
+import { buildToastFeedback } from '@/lib/toastFeedback'
+import { useWallet } from '@/providers/wallet-provider'
 import type {
   NetworkHealth,
   PaymentDraft,
   ScheduleDraft,
   SimulationResult,
   SplitDraft,
-} from "@/types";
-import {
-  useAssetHolding,
-  useContextRules,
-  useTreasurySnapshot,
-} from "@/features/treasury/queries";
-import { describeAssetReadiness } from "@/lib/assetHolding";
-import { useWallet } from "@/providers/wallet-provider";
-import { GuardiansSection } from "@/features/treasury/components/guardians-section";
-import { PaymentSection } from "@/features/treasury/components/payment-section";
-import { PolicySection } from "@/features/treasury/components/policy-section";
-import { RelayerSection } from "@/features/treasury/components/relayer-section";
-import { ScheduleSection } from "@/features/treasury/components/schedule-section";
-import { SignersSection } from "@/features/treasury/components/signers-section";
-import { SplitSection } from "@/features/treasury/components/split-section";
-import {
-  ApprovalPlanSection,
-  CapabilitiesSection,
-  TreasurySection,
-} from "@/features/treasury/components/treasury-section";
+} from '@/types'
 
 const navItems: {
-  href: string;
-  icon: LucideIcon;
-  label: string;
+  href: string
+  icon: LucideIcon
+  label: string
 }[] = [
-  { href: "#treasury", icon: Activity, label: "Treasury" },
-  { href: "#signers", icon: ShieldCheck, label: "Signers" },
-  { href: "#guardians", icon: ShieldAlert, label: "Guardians" },
-  { href: "#policy", icon: ScrollText, label: "Policy" },
-  { href: "#payment", icon: SendHorizontal, label: "Payment" },
-  { href: "#split", icon: Split, label: "Split" },
-  { href: "#schedule", icon: CalendarClock, label: "Schedule" },
-  { href: "#relayer", icon: RadioTower, label: "Relayer" },
-];
+  { href: '#treasury', icon: Activity, label: 'Treasury' },
+  { href: '#signers', icon: ShieldCheck, label: 'Signers' },
+  { href: '#guardians', icon: ShieldAlert, label: 'Guardians' },
+  { href: '#policy', icon: ScrollText, label: 'Policy' },
+  { href: '#payment', icon: SendHorizontal, label: 'Payment' },
+  { href: '#split', icon: Split, label: 'Split' },
+  { href: '#schedule', icon: CalendarClock, label: 'Schedule' },
+  { href: '#relayer', icon: RadioTower, label: 'Relayer' },
+]
 
 export function TreasuryConsole({
   contracts = STELLAR_CONFIG.contracts,
 }: {
-  contracts?: ContractSet;
+  contracts?: ContractSet
 }) {
-  const { setTheme, resolvedTheme } = useTheme();
-  const { wallet, connect, disconnect } = useWallet();
-  const [notice, setNotice] = useState<SimulationResult | null>(null);
-  const [relayerSessionActive, setRelayerSessionActive] = useState(false);
+  const { setTheme, resolvedTheme } = useTheme()
+  const { wallet, connect, disconnect } = useWallet()
+  const [notice, setNotice] = useState<SimulationResult | null>(null)
+  const [relayerSessionActive, setRelayerSessionActive] = useState(false)
   const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>({
     asset: contracts.staAsset,
     destination: STELLAR_CONFIG.testDestination,
-    amount: "5000000",
+    amount: '5000000',
     nonce: makeNonce(),
     expectedPolicyVersion: 1,
-  });
+  })
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft>({
     asset: contracts.staAsset,
     destination: STELLAR_CONFIG.testDestination,
-    amount: "1000000",
+    amount: '1000000',
     nonce: makeNonce(),
     expectedPolicyVersion: 1,
     intentId: makeIntentId(),
-    startLedger: "0",
-    endLedger: "0",
-    maxExecutions: "1",
-    intervalLedgers: "0",
-  });
+    startLedger: '0',
+    endLedger: '0',
+    maxExecutions: '1',
+    intervalLedgers: '0',
+  })
   const [splitDraft, setSplitDraft] = useState<SplitDraft>({
     asset: contracts.staAsset,
     destinations: [
-      { destination: STELLAR_CONFIG.testDestination, amount: "1000000" },
-      { destination: "", amount: "" },
+      { destination: STELLAR_CONFIG.testDestination, amount: '1000000' },
+      { destination: '', amount: '' },
     ],
     nonce: makeNonce(),
     expectedPolicyVersion: 1,
-  });
+  })
 
-  const snapshotQuery = useTreasurySnapshot(wallet.address, contracts);
-  const rulesQuery = useContextRules(wallet.address, contracts);
+  const snapshotQuery = useTreasurySnapshot(wallet.address, contracts)
+  const rulesQuery = useContextRules(wallet.address, contracts)
   // The token contract's gate on the treasury's own holding -- checked before
   // any policy this project owns, and not reflected anywhere in TreasuryStatus.
-  const assetHoldingQuery = useAssetHolding(wallet.address, contracts);
+  const assetHoldingQuery = useAssetHolding(wallet.address, contracts)
   const assetReadiness = assetHoldingQuery.data
     ? describeAssetReadiness(assetHoldingQuery.data)
-    : null;
+    : null
 
-  const policyVersion = snapshotQuery.data?.policyVersion ?? null;
-  const latestLedger = snapshotQuery.data?.latestLedger ?? null;
-  const rules = useMemo(() => rulesQuery.data ?? [], [rulesQuery.data]);
+  const policyVersion = snapshotQuery.data?.policyVersion ?? null
+  const latestLedger = snapshotQuery.data?.latestLedger ?? null
+  const rules = useMemo(() => rulesQuery.data ?? [], [rulesQuery.data])
 
   const health: NetworkHealth = !wallet.connected
-    ? "idle"
+    ? 'idle'
     : snapshotQuery.isPending
-      ? "loading"
+      ? 'loading'
       : snapshotQuery.isError
-        ? "degraded"
-        : "ready";
+        ? 'degraded'
+        : 'ready'
 
   const authPlan = useMemo(
     () => buildTransferAuthPlan(paymentDraft, wallet, rules),
-    [paymentDraft, rules, wallet],
-  );
+    [paymentDraft, rules, wallet]
+  )
 
   // Raise every notice as a toast. The actions that produce one sit far down a
   // 3000px page, so a fixed header panel was invisible to whoever just
@@ -141,24 +142,25 @@ export function TreasuryConsole({
   // buildToastFeedback folds the diagnostic's first line and an explorer link
   // into it, so removing the header panel does not silently drop that detail.
   useEffect(() => {
-    if (!notice) return;
-    const feedback = buildToastFeedback(notice, STELLAR_CONFIG.explorerBaseUrl);
+    if (!notice) return
+    const feedback = buildToastFeedback(notice, STELLAR_CONFIG.explorerBaseUrl)
     const show =
-      feedback.kind === "success"
+      feedback.kind === 'success'
         ? toast.success
-        : feedback.kind === "warning"
+        : feedback.kind === 'warning'
           ? toast.warning
-          : toast.error;
+          : toast.error
     show(feedback.title, {
       description: feedback.description,
       action: feedback.explorerUrl
         ? {
-            label: "View transaction",
-            onClick: () => window.open(feedback.explorerUrl as string, "_blank"),
+            label: 'View transaction',
+            onClick: () =>
+              window.open(feedback.explorerUrl as string, '_blank'),
           }
         : undefined,
-    });
-  }, [notice]);
+    })
+  }, [notice])
 
   // Seed both drafts' expectedPolicyVersion, and the schedule draft's ledger
   // window, from the live on-chain state the first time it's successfully
@@ -168,59 +170,65 @@ export function TreasuryConsole({
   // one-shot flag) so reconnecting a different wallet resyncs once, but this
   // never clobbers an in-progress manual edit on subsequent refetches of the
   // same wallet's snapshot.
-  const syncedPolicyVersionAddressRef = useRef<string | null>(null);
+  const syncedPolicyVersionAddressRef = useRef<string | null>(null)
   useEffect(() => {
-    if (policyVersion === null || latestLedger === null) return;
-    if (syncedPolicyVersionAddressRef.current === wallet.address) return;
-    syncedPolicyVersionAddressRef.current = wallet.address;
-    setPaymentDraft((draft) => ({ ...draft, expectedPolicyVersion: policyVersion }));
-    setSplitDraft((draft) => ({ ...draft, expectedPolicyVersion: policyVersion }));
+    if (policyVersion === null || latestLedger === null) return
+    if (syncedPolicyVersionAddressRef.current === wallet.address) return
+    syncedPolicyVersionAddressRef.current = wallet.address
+    setPaymentDraft((draft) => ({
+      ...draft,
+      expectedPolicyVersion: policyVersion,
+    }))
+    setSplitDraft((draft) => ({
+      ...draft,
+      expectedPolicyVersion: policyVersion,
+    }))
     setScheduleDraft((draft) => {
-      const next = { ...draft, expectedPolicyVersion: policyVersion };
-      if (draft.startLedger === "0" && draft.endLedger === "0") {
-        const { startLedger, endLedger } = computeLedgerWindow(latestLedger);
-        next.startLedger = String(startLedger);
-        next.endLedger = String(endLedger);
+      const next = { ...draft, expectedPolicyVersion: policyVersion }
+      if (draft.startLedger === '0' && draft.endLedger === '0') {
+        const { startLedger, endLedger } = computeLedgerWindow(latestLedger)
+        next.startLedger = String(startLedger)
+        next.endLedger = String(endLedger)
       }
-      return next;
-    });
-  }, [latestLedger, policyVersion, wallet.address]);
+      return next
+    })
+  }, [latestLedger, policyVersion, wallet.address])
 
   async function onConnectWallet() {
-    setNotice(null);
+    setNotice(null)
     try {
-      const connected = await connect();
+      const connected = await connect()
       setNotice({
         ok: true,
-        title: "Wallet connected",
+        title: 'Wallet connected',
         detail: `${truncateAddress(connected.address)} is connected on ${NETWORK.label}.`,
-      });
+      })
     } catch (error) {
       setNotice({
         ok: false,
-        title: "Wallet connection failed",
+        title: 'Wallet connection failed',
         detail: error instanceof Error ? error.message : String(error),
-      });
+      })
     }
   }
 
   function onDisconnectWallet() {
-    disconnect();
+    disconnect()
     setNotice({
       ok: true,
-      title: "Wallet disconnected",
-      detail: "Treasury reads are paused until a wallet is connected again.",
-    });
+      title: 'Wallet disconnected',
+      detail: 'Treasury reads are paused until a wallet is connected again.',
+    })
   }
 
   async function onRefreshState() {
-    setNotice(null);
-    snapshotQuery.refetch();
-    rulesQuery.refetch();
+    setNotice(null)
+    snapshotQuery.refetch()
+    rulesQuery.refetch()
   }
 
   return (
-    <main className="grid min-h-screen grid-cols-[280px_minmax(0,1fr)] bg-background text-foreground max-lg:grid-cols-1">
+    <main className="bg-background text-foreground grid min-h-screen grid-cols-[280px_minmax(0,1fr)] max-lg:grid-cols-1">
       <aside className="sticky top-0 flex h-screen flex-col gap-7 bg-slate-950 p-6 text-slate-50 max-lg:static max-lg:h-auto">
         <div className="flex items-center gap-3">
           <ShieldCheck className="text-emerald-300" size={26} />
@@ -230,7 +238,10 @@ export function TreasuryConsole({
           </div>
         </div>
 
-        <nav className="grid gap-2 max-lg:grid-cols-4 max-sm:grid-cols-1" aria-label="Sections">
+        <nav
+          className="grid gap-2 max-lg:grid-cols-4 max-sm:grid-cols-1"
+          aria-label="Sections"
+        >
           {navItems.map(({ href, icon: Icon, label }) => (
             <a
               className="flex min-h-10 items-center gap-2 rounded-md px-3 text-sm text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
@@ -251,8 +262,12 @@ export function TreasuryConsole({
         </nav>
 
         <div className="mt-auto grid gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4 max-lg:mt-0">
-          <span className="text-xs font-semibold uppercase text-slate-400">Operator wallet</span>
-          <strong className="break-all">{truncateAddress(wallet.address)}</strong>
+          <span className="text-xs font-semibold text-slate-400 uppercase">
+            Operator wallet
+          </span>
+          <strong className="break-all">
+            {truncateAddress(wallet.address)}
+          </strong>
           {wallet.connected ? (
             <Button onClick={onDisconnectWallet}>
               <LogOut size={18} />
@@ -270,7 +285,7 @@ export function TreasuryConsole({
       <section className="grid content-start gap-5 p-7 max-sm:p-4">
         <header className="flex min-h-20 items-center justify-between gap-4 max-sm:flex-col max-sm:items-start">
           <div>
-            <span className="mb-1 block text-xs font-bold uppercase text-muted-foreground">
+            <span className="text-muted-foreground mb-1 block text-xs font-bold uppercase">
               Operator console
             </span>
             <h1 className="text-3xl font-semibold tracking-normal max-sm:text-2xl">
@@ -279,7 +294,9 @@ export function TreasuryConsole({
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
-              onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+              onClick={() =>
+                setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')
+              }
               size="icon"
               variant="secondary"
               title="Toggle theme"
@@ -315,11 +332,23 @@ export function TreasuryConsole({
           snapshot={snapshotQuery.data ?? null}
         />
 
-        <SignersSection contracts={contracts} onNotice={setNotice} wallet={wallet} />
+        <SignersSection
+          contracts={contracts}
+          onNotice={setNotice}
+          wallet={wallet}
+        />
 
-        <GuardiansSection contracts={contracts} onNotice={setNotice} wallet={wallet} />
+        <GuardiansSection
+          contracts={contracts}
+          onNotice={setNotice}
+          wallet={wallet}
+        />
 
-        <PolicySection contracts={contracts} onNotice={setNotice} wallet={wallet} />
+        <PolicySection
+          contracts={contracts}
+          onNotice={setNotice}
+          wallet={wallet}
+        />
 
         <section className="grid grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)] gap-5 max-xl:grid-cols-1">
           <PaymentSection
@@ -369,5 +398,5 @@ export function TreasuryConsole({
         <CapabilitiesSection />
       </section>
     </main>
-  );
+  )
 }

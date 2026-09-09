@@ -1,4 +1,4 @@
-import { neon } from "@neondatabase/serverless";
+import { neon } from '@neondatabase/serverless'
 
 /**
  * The single seam between this app's stores and Postgres.
@@ -22,13 +22,13 @@ import { neon } from "@neondatabase/serverless";
  * necessarily present. Failing here gives a clear message at the first query
  * instead of breaking the build. */
 function connectionString(): string {
-  const url = process.env.DATABASE_URL;
+  const url = process.env.DATABASE_URL
   if (!url) {
     throw new Error(
-      "DATABASE_URL must be configured before reading or writing persisted state.",
-    );
+      'DATABASE_URL must be configured before reading or writing persisted state.'
+    )
   }
-  return url;
+  return url
 }
 
 /**
@@ -40,16 +40,16 @@ function connectionString(): string {
  */
 export async function query<T = Record<string, unknown>>(
   text: string,
-  params: unknown[] = [],
+  params: unknown[] = []
 ): Promise<T[]> {
-  const rows = await neon(connectionString()).query(text, params);
-  return rows as T[];
+  const rows = await neon(connectionString()).query(text, params)
+  return rows as T[]
 }
 
 /** Postgres `timestamptz` comes back as a `Date`; the record types this app
  * exposes over its API use ISO strings, and have since before there was a
  * database. Converting at the seam keeps that JSON shape unchanged. */
 export function toIsoString(value: unknown): string {
-  if (value instanceof Date) return value.toISOString();
-  return String(value);
+  if (value instanceof Date) return value.toISOString()
+  return String(value)
 }

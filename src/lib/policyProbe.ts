@@ -1,15 +1,16 @@
-import type { PolicyProbeReason, PolicyProbeVerdict, ProbeInput } from "@/types";
-export type { PolicyProbeReason };
+import type { PolicyProbeReason, PolicyProbeVerdict, ProbeInput } from '@/types'
 
-export type SimulatePolicyFn = (input: ProbeInput) => Promise<void>;
+export type { PolicyProbeReason }
+
+export type SimulatePolicyFn = (input: ProbeInput) => Promise<void>
 
 const CODE_TO_REASON: Record<number, PolicyProbeReason> = {
-  2003: "asset",
-  2004: "destination",
-  2005: "amount",
-  2006: "version",
-  2008: "operation",
-};
+  2003: 'asset',
+  2004: 'destination',
+  2005: 'amount',
+  2006: 'version',
+  2008: 'operation',
+}
 
 /**
  * Whether a rejection is about the payment as a whole rather than about the
@@ -25,30 +26,32 @@ const CODE_TO_REASON: Record<number, PolicyProbeReason> = {
  * must not be blamed on a specific line.
  */
 export function isWholePaymentReason(reason: PolicyProbeReason): boolean {
-  return reason !== "destination" && reason !== "amount";
+  return reason !== 'destination' && reason !== 'amount'
 }
 
 export function classifyProbeFailure(message: string): PolicyProbeVerdict {
-  const match = message.match(/Error\(Contract, #(\d+)\)/);
+  const match = message.match(/Error\(Contract, #(\d+)\)/)
   if (!match) {
-    return { allowed: false, reason: "unknown" };
+    return { allowed: false, reason: 'unknown' }
   }
-  const code = Number(match[1]);
-  const reason = CODE_TO_REASON[code];
+  const code = Number(match[1])
+  const reason = CODE_TO_REASON[code]
   return reason
     ? { allowed: false, reason, code }
-    : { allowed: false, reason: "unknown", code };
+    : { allowed: false, reason: 'unknown', code }
 }
 
 export async function probePolicy(
   simulate: SimulatePolicyFn,
-  input: ProbeInput,
+  input: ProbeInput
 ): Promise<PolicyProbeVerdict> {
   try {
-    await simulate(input);
-    return { allowed: true };
+    await simulate(input)
+    return { allowed: true }
   } catch (error) {
-    return classifyProbeFailure(error instanceof Error ? error.message : String(error));
+    return classifyProbeFailure(
+      error instanceof Error ? error.message : String(error)
+    )
   }
 }
 
@@ -63,43 +66,46 @@ export async function probePolicy(
  */
 export async function findAmountCap(
   simulate: SimulatePolicyFn,
-  input: Omit<ProbeInput, "amount">,
+  input: Omit<ProbeInput, 'amount'>
 ): Promise<bigint | null> {
   const accepts = async (amount: bigint) => {
-    const verdict = await probePolicy(simulate, { ...input, amount: amount.toString() });
-    if (verdict.allowed || verdict.reason === "destination") return true;
-    if (verdict.reason === "amount") return false;
-    return null;
-  };
+    const verdict = await probePolicy(simulate, {
+      ...input,
+      amount: amount.toString(),
+    })
+    if (verdict.allowed || verdict.reason === 'destination') return true
+    if (verdict.reason === 'amount') return false
+    return null
+  }
 
-  let low = 0n;
-  let high: bigint | null = null;
-  let candidate = 1n;
+  let low = 0n
+  let high: bigint | null = null
+  let candidate = 1n
 
   for (let step = 0; step < 40 && high === null; step += 1) {
-    const result = await accepts(candidate);
-    if (result === null) return null;
+    const result = await accepts(candidate)
+    if (result === null) return null
     if (result) {
-      low = candidate;
-      candidate *= 10n;
+      low = candidate
+      candidate *= 10n
     } else {
-      high = candidate;
+      high = candidate
     }
   }
 
-  if (high === null) return null;
-  let confirmedHigh: bigint = high;
+  if (high === null) return null
+  let confirmedHigh: bigint = high
 
   while (confirmedHigh - low > 1n) {
-    const middle = low + (confirmedHigh - low) / 2n;
-    const result = await accepts(middle);
-    if (result === null) return null;
+    const middle = low + (confirmedHigh - low) / 2n
+    const result = await accepts(middle)
+    if (result === null) return null
     if (result) {
-      low = middle;
+      low = middle
     } else {
-      confirmedHigh = middle;
+      confirmedHigh = middle
     }
   }
 
-  return low === 0n ? null : low;
+  return low === 0n ? null : low
 }

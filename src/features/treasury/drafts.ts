@@ -1,89 +1,99 @@
-import { Address } from "@stellar/stellar-sdk";
+import { Address } from '@stellar/stellar-sdk'
 
-import { LEDGER_CLOSE_SECONDS } from "@/lib/constants";
-import type { PaymentDraft, ScheduleDraft, SplitDraft } from "@/types";
+import { LEDGER_CLOSE_SECONDS } from '@/lib/constants'
+import type { PaymentDraft, ScheduleDraft, SplitDraft } from '@/types'
 
-const INTENT_ID_PATTERN = /^(0x)?[0-9a-fA-F]{64}$/;
-const MAX_U32 = 2 ** 32 - 1;
-const MAX_U64 = (1n << 64n) - 1n;
+const INTENT_ID_PATTERN = /^(0x)?[0-9a-fA-F]{64}$/
+const MAX_U32 = 2 ** 32 - 1
+const MAX_U64 = (1n << 64n) - 1n
 
 function assertAddress(label: string, value: string) {
   try {
-    new Address(value);
+    new Address(value)
   } catch {
-    throw new Error(`${label} must be a valid Stellar account or contract address.`);
+    throw new Error(
+      `${label} must be a valid Stellar account or contract address.`
+    )
   }
 }
 
 function parsePositiveBigInt(label: string, value: string) {
   try {
-    const parsed = BigInt(value);
+    const parsed = BigInt(value)
     if (parsed <= 0n) {
-      throw new Error();
+      throw new Error()
     }
-    return parsed;
+    return parsed
   } catch {
-    throw new Error(`${label} must be a positive integer.`);
+    throw new Error(`${label} must be a positive integer.`)
   }
 }
 
 function parseU32(label: string, value: string | number) {
-  const parsed = Number(value);
+  const parsed = Number(value)
   if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > MAX_U32) {
-    throw new Error(`${label} must be an integer between 0 and ${MAX_U32}.`);
+    throw new Error(`${label} must be an integer between 0 and ${MAX_U32}.`)
   }
-  return parsed;
+  return parsed
 }
 
 export function validatePaymentDraft(draft: PaymentDraft) {
-  assertAddress("Asset contract", draft.asset);
-  assertAddress("Destination", draft.destination);
-  parsePositiveBigInt("Amount", draft.amount);
-  const nonce = parsePositiveBigInt("Nonce", draft.nonce);
+  assertAddress('Asset contract', draft.asset)
+  assertAddress('Destination', draft.destination)
+  parsePositiveBigInt('Amount', draft.amount)
+  const nonce = parsePositiveBigInt('Nonce', draft.nonce)
   if (nonce > MAX_U64) {
-    throw new Error("Nonce must fit in u64.");
+    throw new Error('Nonce must fit in u64.')
   }
-  if (!Number.isSafeInteger(draft.expectedPolicyVersion) || draft.expectedPolicyVersion < 1) {
-    throw new Error("Policy version must be a positive integer.");
+  if (
+    !Number.isSafeInteger(draft.expectedPolicyVersion) ||
+    draft.expectedPolicyVersion < 1
+  ) {
+    throw new Error('Policy version must be a positive integer.')
   }
 }
 
 export function validateScheduleDraft(draft: ScheduleDraft) {
-  validatePaymentDraft({ ...draft, nonce: "1" });
+  validatePaymentDraft({ ...draft, nonce: '1' })
   if (!INTENT_ID_PATTERN.test(draft.intentId)) {
-    throw new Error("Intent ID must be 32 bytes encoded as 64 hex characters.");
+    throw new Error('Intent ID must be 32 bytes encoded as 64 hex characters.')
   }
-  const startLedger = parseU32("Start ledger", draft.startLedger);
-  const endLedger = parseU32("End ledger", draft.endLedger);
-  const maxExecutions = parseU32("Max executions", draft.maxExecutions);
-  parseU32("Interval ledgers", draft.intervalLedgers ?? 0);
+  const startLedger = parseU32('Start ledger', draft.startLedger)
+  const endLedger = parseU32('End ledger', draft.endLedger)
+  const maxExecutions = parseU32('Max executions', draft.maxExecutions)
+  parseU32('Interval ledgers', draft.intervalLedgers ?? 0)
   if (maxExecutions < 1) {
-    throw new Error("Max executions must be at least 1.");
+    throw new Error('Max executions must be at least 1.')
   }
   if (startLedger >= endLedger) {
-    throw new Error("Start ledger must be lower than end ledger.");
+    throw new Error('Start ledger must be lower than end ledger.')
   }
 }
 
 export function validateSplitDraft(draft: SplitDraft) {
-  assertAddress("Asset contract", draft.asset);
-  const nonce = parsePositiveBigInt("Nonce", draft.nonce);
+  assertAddress('Asset contract', draft.asset)
+  const nonce = parsePositiveBigInt('Nonce', draft.nonce)
   if (nonce > MAX_U64) {
-    throw new Error("Nonce must fit in u64.");
+    throw new Error('Nonce must fit in u64.')
   }
-  if (!Number.isSafeInteger(draft.expectedPolicyVersion) || draft.expectedPolicyVersion < 1) {
-    throw new Error("Policy version must be a positive integer.");
+  if (
+    !Number.isSafeInteger(draft.expectedPolicyVersion) ||
+    draft.expectedPolicyVersion < 1
+  ) {
+    throw new Error('Policy version must be a positive integer.')
   }
   if (draft.destinations.length < 2) {
-    throw new Error("A split needs at least two destinations — use a plain payment for one.");
+    throw new Error(
+      'A split needs at least two destinations — use a plain payment for one.'
+    )
   }
   draft.destinations.forEach((entry, index) => {
-    assertAddress(`Destination ${index + 1}`, entry.destination);
-    parsePositiveBigInt(`Amount ${index + 1}`, entry.amount);
-  });
-  const addresses = draft.destinations.map((entry) => entry.destination);
+    assertAddress(`Destination ${index + 1}`, entry.destination)
+    parsePositiveBigInt(`Amount ${index + 1}`, entry.amount)
+  })
+  const addresses = draft.destinations.map((entry) => entry.destination)
   if (new Set(addresses).size !== addresses.length) {
-    throw new Error("Split destinations must be distinct addresses.");
+    throw new Error('Split destinations must be distinct addresses.')
   }
 }
 
@@ -97,10 +107,12 @@ export function validateSplitDraft(draft: SplitDraft) {
  */
 export function computeLedgerWindow(
   latestLedger: number,
-  options: { startDelaySeconds?: number; durationSeconds?: number } = {},
+  options: { startDelaySeconds?: number; durationSeconds?: number } = {}
 ) {
-  const { startDelaySeconds = 120, durationSeconds = 3_600 } = options;
-  const startLedger = latestLedger + Math.ceil(startDelaySeconds / LEDGER_CLOSE_SECONDS);
-  const endLedger = startLedger + Math.ceil(durationSeconds / LEDGER_CLOSE_SECONDS);
-  return { startLedger, endLedger };
+  const { startDelaySeconds = 120, durationSeconds = 3_600 } = options
+  const startLedger =
+    latestLedger + Math.ceil(startDelaySeconds / LEDGER_CLOSE_SECONDS)
+  const endLedger =
+    startLedger + Math.ceil(durationSeconds / LEDGER_CLOSE_SECONDS)
+  return { startLedger, endLedger }
 }

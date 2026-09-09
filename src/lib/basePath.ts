@@ -8,9 +8,9 @@
  * means no prefix, which keeps route-level tests independent of the
  * deployment layout.
  */
-export const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+export const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? ''
 
 /** Prefix an app-relative path (`/api/...`) with the deployment base path. */
 export function apiUrl(path: `/${string}`): string {
-  return `${BASE_PATH}${path}`;
+  return `${BASE_PATH}${path}`
 }

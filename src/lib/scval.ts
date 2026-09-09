@@ -1,4 +1,4 @@
-import { xdr } from "@stellar/stellar-sdk";
+import { xdr } from '@stellar/stellar-sdk'
 
 /**
  * Builds the `ScMap` representation of a Soroban `#[contracttype]` struct.
@@ -23,7 +23,7 @@ export function structScVal(fields: Record<string, xdr.ScVal>): xdr.ScVal {
           new xdr.ScMapEntry({
             key: xdr.ScVal.scvSymbol(key),
             val,
-          }),
-      ),
-  );
+          })
+      )
+  )
 }

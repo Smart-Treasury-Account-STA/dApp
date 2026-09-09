@@ -37,6 +37,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The pre-commit hook (simple-git-hooks + lint-staged) formats staged
+      # files locally, but it can be bypassed with `git commit --no-verify`
+      # and never runs for edits made through the GitHub web UI. This is the
+      # gate that actually holds.
+      - name: Format check
+        run: pnpm format:check
+
       - name: Lint
         run: pnpm lint
 

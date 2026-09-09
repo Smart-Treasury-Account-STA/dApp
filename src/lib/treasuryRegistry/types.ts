@@ -1,29 +1,29 @@
-import type { ContractSet } from "@/lib/env";
+import type { ContractSet } from '@/lib/env'
 
 export type TreasuryRecord = {
-  smartAccountId: string;
-  policyEngineId: string;
-  intentRegistryId: string;
-  recoveryManagerId: string;
-  transferAdapterId: string;
-  splitAdapterId: string;
-  ownerAddress: string;
-  executorAddress: string;
-  deployTxHash: string;
-  createdAt: string;
-};
+  smartAccountId: string
+  policyEngineId: string
+  intentRegistryId: string
+  recoveryManagerId: string
+  transferAdapterId: string
+  splitAdapterId: string
+  ownerAddress: string
+  executorAddress: string
+  deployTxHash: string
+  createdAt: string
+}
 
 export type CreateTreasuryInput = {
-  smartAccountId: string;
-  policyEngineId: string;
-  intentRegistryId: string;
-  recoveryManagerId: string;
-  transferAdapterId: string;
-  splitAdapterId: string;
-  ownerAddress: string;
-  executorAddress: string;
-  deployTxHash: string;
-};
+  smartAccountId: string
+  policyEngineId: string
+  intentRegistryId: string
+  recoveryManagerId: string
+  transferAdapterId: string
+  splitAdapterId: string
+  ownerAddress: string
+  executorAddress: string
+  deployTxHash: string
+}
 
 /**
  * Maps a stored record to the `ContractSet` shape the read/write layer
@@ -34,7 +34,10 @@ export type CreateTreasuryInput = {
  * dApp only ever deals with one test asset, so every treasury shares the
  * globally configured one. A deliberate scope assumption, not a bug.
  */
-export function toContractSet(record: TreasuryRecord, staAsset: string): ContractSet {
+export function toContractSet(
+  record: TreasuryRecord,
+  staAsset: string
+): ContractSet {
   return {
     smartAccount: record.smartAccountId,
     policyEngine: record.policyEngineId,
@@ -43,5 +46,5 @@ export function toContractSet(record: TreasuryRecord, staAsset: string): Contrac
     transferAdapter: record.transferAdapterId,
     splitAdapter: record.splitAdapterId,
     staAsset,
-  };
+  }
 }

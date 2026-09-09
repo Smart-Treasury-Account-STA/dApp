@@ -1,5 +1,5 @@
-import { TreasuryConsole } from "@/features/treasury/treasury-console";
+import { TreasuryConsole } from '@/features/treasury/treasury-console'
 
 export default function HomePage() {
-  return <TreasuryConsole />;
+  return <TreasuryConsole />
 }

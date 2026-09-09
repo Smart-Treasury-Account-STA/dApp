@@ -21,44 +21,42 @@
  */
 
 /** The `IntentCreated` topic — `#[contractevent(topics = ["intent"])]`. */
-const INTENT_CREATED_TOPIC = "intent";
+const INTENT_CREATED_TOPIC = 'intent'
 
-const INTENT_ID_BYTES = 32;
+const INTENT_ID_BYTES = 32
 
 export type ScheduledIntentRecord = {
-  intentId: string;
-  asset: string | null;
-  destination: string | null;
-  amount: bigint | null;
-  startLedger: number | null;
-  endLedger: number | null;
-  maxExecutions: number | null;
-  executionCount: number | null;
-  policyVersion: number | null;
-  cancelled: boolean;
+  intentId: string
+  asset: string | null
+  destination: string | null
+  amount: bigint | null
+  startLedger: number | null
+  endLedger: number | null
+  maxExecutions: number | null
+  executionCount: number | null
+  policyVersion: number | null
+  cancelled: boolean
   /**
    * True when `get_intent` could not be read back for this id. The row is
    * still listed: an id that exists on-chain but cannot be decoded is a
    * different thing from one that was never created, and dropping it would
    * hide a scheduled payment that may still execute.
    */
-  unreadable: boolean;
-};
+  unreadable: boolean
+}
 
 export type IntentStatus =
-  | "unknown"
-  | "cancelled"
-  | "exhausted"
-  | "expired"
-  | "pending"
-  | "active";
+  'unknown' | 'cancelled' | 'exhausted' | 'expired' | 'pending' | 'active'
 
 /** One decoded contract event — only its natively-decoded topics matter here. */
-export type IntentEvent = { topics: unknown[] };
+export type IntentEvent = { topics: unknown[] }
 
 function toIntentId(topic: unknown): string | null {
-  if (!(topic instanceof Uint8Array) || topic.length !== INTENT_ID_BYTES) return null;
-  return Array.from(topic, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  if (!(topic instanceof Uint8Array) || topic.length !== INTENT_ID_BYTES)
+    return null
+  return Array.from(topic, (byte) => byte.toString(16).padStart(2, '0')).join(
+    ''
+  )
 }
 
 /**
@@ -69,18 +67,18 @@ function toIntentId(topic: unknown): string | null {
  * cancel form feeds these straight back through `bytesN32ScVal`.
  */
 export function collectIntentIds(events: IntentEvent[]): string[] {
-  const ids: string[] = [];
-  const seen = new Set<string>();
+  const ids: string[] = []
+  const seen = new Set<string>()
 
   for (const event of events) {
-    if (event.topics[0] !== INTENT_CREATED_TOPIC) continue;
-    const id = toIntentId(event.topics[1]);
-    if (id === null || seen.has(id)) continue;
-    seen.add(id);
-    ids.push(id);
+    if (event.topics[0] !== INTENT_CREATED_TOPIC) continue
+    const id = toIntentId(event.topics[1])
+    if (id === null || seen.has(id)) continue
+    seen.add(id)
+    ids.push(id)
   }
 
-  return ids;
+  return ids
 }
 
 /**
@@ -96,23 +94,24 @@ export function collectIntentIds(events: IntentEvent[]): string[] {
  */
 export function describeIntentStatus(
   record: ScheduledIntentRecord,
-  latestLedger: number,
+  latestLedger: number
 ): IntentStatus {
-  if (record.unreadable) return "unknown";
-  if (record.cancelled) return "cancelled";
+  if (record.unreadable) return 'unknown'
+  if (record.cancelled) return 'cancelled'
 
-  const { executionCount, maxExecutions, startLedger, endLedger } = record;
+  const { executionCount, maxExecutions, startLedger, endLedger } = record
   if (
     executionCount !== null &&
     maxExecutions !== null &&
     maxExecutions > 0 &&
     executionCount >= maxExecutions
   ) {
-    return "exhausted";
+    return 'exhausted'
   }
 
-  if (endLedger !== null && endLedger > 0 && latestLedger > endLedger) return "expired";
-  if (startLedger !== null && latestLedger < startLedger) return "pending";
+  if (endLedger !== null && endLedger > 0 && latestLedger > endLedger)
+    return 'expired'
+  if (startLedger !== null && latestLedger < startLedger) return 'pending'
 
-  return "active";
+  return 'active'
 }

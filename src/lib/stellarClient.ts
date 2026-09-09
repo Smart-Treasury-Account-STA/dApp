@@ -1,68 +1,73 @@
 import {
   Address,
   BASE_FEE,
-  authorizeEntry,
   Contract,
   Operation,
   Transaction,
   TransactionBuilder,
+  authorizeEntry,
   hash,
   nativeToScVal,
   rpc,
   scValToNative,
   xdr,
-} from "@stellar/stellar-sdk";
-import { Buffer } from "buffer";
+} from '@stellar/stellar-sdk'
+import { Buffer } from 'buffer'
 
-import { NETWORK, STELLAR_CONFIG } from "@/config";
-import { validatePaymentDraft, validateScheduleDraft, validateSplitDraft } from "@/features/treasury/drafts";
-import { countAuthContexts, selectInvocationForAddress } from "@/lib/authTree";
-import type { ContractSet } from "@/lib/env";
-import type { AssetHolding } from "@/lib/assetHolding";
-import { describeSimulationFailure } from "@/lib/format";
-import { classifyProbeFailure, isWholePaymentReason } from "@/lib/policyProbe";
-import type { LedgerClock } from "@/lib/ledgerClock";
-import { collectIntentIds } from "@/lib/scheduledIntents";
-import type { IntentEvent, ScheduledIntentRecord } from "@/lib/scheduledIntents";
-import { structScVal } from "@/lib/scval";
-import { validationFailure } from "@/lib/simulationResult";
-import { selectRuleForSigner } from "@/lib/smartAccountAuth";
-import { decodeWalletSignature } from "@/lib/walletSignature";
+import { NETWORK, STELLAR_CONFIG } from '@/config'
+import {
+  validatePaymentDraft,
+  validateScheduleDraft,
+  validateSplitDraft,
+} from '@/features/treasury/drafts'
+import type { AssetHolding } from '@/lib/assetHolding'
+import { countAuthContexts, selectInvocationForAddress } from '@/lib/authTree'
+import type { ContractSet } from '@/lib/env'
+import { describeSimulationFailure } from '@/lib/format'
+import type { LedgerClock } from '@/lib/ledgerClock'
+import { classifyProbeFailure, isWholePaymentReason } from '@/lib/policyProbe'
+import { collectIntentIds } from '@/lib/scheduledIntents'
+import type { IntentEvent, ScheduledIntentRecord } from '@/lib/scheduledIntents'
+import { structScVal } from '@/lib/scval'
+import { validationFailure } from '@/lib/simulationResult'
+import { selectRuleForSigner } from '@/lib/smartAccountAuth'
+import { decodeWalletSignature } from '@/lib/walletSignature'
 import type {
   ContextRule,
   PaymentDraft,
   ScheduleDraft,
   SimulationResult,
   SplitDraft,
-  TreasuryStatus,
   TransactionReceipt,
+  TreasuryStatus,
   WalletSigning,
-} from "@/types";
+} from '@/types'
 
-type SimulationValue = string | number | boolean | bigint | null | Record<string, unknown>;
+type SimulationValue =
+  string | number | boolean | bigint | null | Record<string, unknown>
 
 type SimulatedContractCall = {
-  value: SimulationValue;
-};
+  value: SimulationValue
+}
 
 type ContractRuleRecord = {
-  name?: unknown;
-  context_type?: unknown;
-  contextType?: unknown;
-  signers?: unknown;
-  signer_ids?: unknown;
-  policies?: unknown;
-  policy_ids?: unknown;
-  valid_until?: unknown;
-};
+  name?: unknown
+  context_type?: unknown
+  contextType?: unknown
+  signers?: unknown
+  signer_ids?: unknown
+  policies?: unknown
+  policy_ids?: unknown
+  valid_until?: unknown
+}
 
 type CustomAuthInput = {
-  rootInvocation: xdr.SorobanAuthorizedInvocation;
-  contextRuleIds: number[];
-  signerAddress: string;
-  signatureExpirationLedger: number;
-  contracts: ContractSet;
-};
+  rootInvocation: xdr.SorobanAuthorizedInvocation
+  contextRuleIds: number[]
+  signerAddress: string
+  signatureExpirationLedger: number
+  contracts: ContractSet
+}
 
 /**
  * Asks the host which invocation tree the treasury has to authorize.
@@ -80,133 +85,136 @@ async function discoverTreasuryInvocation(
   sourceAddress: string,
   functionName: string,
   args: xdr.ScVal[],
-  contracts: ContractSet,
+  contracts: ContractSet
 ): Promise<xdr.SorobanAuthorizedInvocation> {
-  const server = getServer();
-  const source = await server.getAccount(sourceAddress);
-  const contract = new Contract(contracts.smartAccount);
+  const server = getServer()
+  const source = await server.getAccount(sourceAddress)
+  const contract = new Contract(contracts.smartAccount)
   const tx = new TransactionBuilder(source, {
     fee: BASE_FEE,
     networkPassphrase: STELLAR_CONFIG.networkPassphrase,
   })
     .addOperation(contract.call(functionName, ...args))
     .setTimeout(60)
-    .build();
+    .build()
 
-  const simulation = await server.simulateTransaction(tx);
+  const simulation = await server.simulateTransaction(tx)
   if (isSimulationError(simulation)) {
-    throw new Error(simulation.error);
+    throw new Error(simulation.error)
   }
 
   const recorded = selectInvocationForAddress(
     simulation.result?.auth ?? [],
-    contracts.smartAccount,
-  );
+    contracts.smartAccount
+  )
   if (!recorded) {
     throw new Error(
-      "Simulation recorded no authorization requirement for the treasury account.",
-    );
+      'Simulation recorded no authorization requirement for the treasury account.'
+    )
   }
 
-  return recorded;
+  return recorded
 }
 
 export function getServer() {
-  return new rpc.Server(STELLAR_CONFIG.rpcUrl);
+  return new rpc.Server(STELLAR_CONFIG.rpcUrl)
 }
 
 function isSimulationError(
-  simulation: rpc.Api.SimulateTransactionResponse,
+  simulation: rpc.Api.SimulateTransactionResponse
 ): simulation is rpc.Api.SimulateTransactionErrorResponse {
-  return "error" in simulation;
+  return 'error' in simulation
 }
 
 function readSimulationValue(
-  simulation: rpc.Api.SimulateTransactionResponse,
+  simulation: rpc.Api.SimulateTransactionResponse
 ): SimulationValue {
   if (isSimulationError(simulation)) {
-    throw new Error(simulation.error);
+    throw new Error(simulation.error)
   }
 
-  const retval = simulation.result?.retval;
-  if (!retval) return null;
+  const retval = simulation.result?.retval
+  if (!retval) return null
 
-  return scValToNative(retval) as SimulationValue;
+  return scValToNative(retval) as SimulationValue
 }
 
 async function simulateContractCall(
   sourceAddress: string,
   contractId: string,
   method: string,
-  args: xdr.ScVal[] = [],
+  args: xdr.ScVal[] = []
 ): Promise<SimulatedContractCall> {
-  const server = getServer();
-  const source = await server.getAccount(sourceAddress);
-  const contract = new Contract(contractId);
+  const server = getServer()
+  const source = await server.getAccount(sourceAddress)
+  const contract = new Contract(contractId)
   const tx = new TransactionBuilder(source, {
     fee: BASE_FEE,
     networkPassphrase: STELLAR_CONFIG.networkPassphrase,
   })
     .addOperation(contract.call(method, ...args))
     .setTimeout(60)
-    .build();
+    .build()
 
-  const simulation = await server.simulateTransaction(tx);
-  return { value: readSimulationValue(simulation) };
+  const simulation = await server.simulateTransaction(tx)
+  return { value: readSimulationValue(simulation) }
 }
 
 export function addressScVal(address: string) {
-  return new Address(address).toScVal();
+  return new Address(address).toScVal()
 }
 
 function addressScAddress(address: string) {
-  return new Address(address).toScAddress();
+  return new Address(address).toScAddress()
 }
 
 export function symbolScVal(value: string) {
-  return xdr.ScVal.scvSymbol(value);
+  return xdr.ScVal.scvSymbol(value)
 }
 
 export function i128ScVal(value: string) {
-  return nativeToScVal(BigInt(value), { type: "i128" });
+  return nativeToScVal(BigInt(value), { type: 'i128' })
 }
 
 export function u32ScVal(value: number | string) {
-  return nativeToScVal(Number(value), { type: "u32" });
+  return nativeToScVal(Number(value), { type: 'u32' })
 }
 
 function u64ScVal(value: number | string) {
-  return nativeToScVal(BigInt(value), { type: "u64" });
+  return nativeToScVal(BigInt(value), { type: 'u64' })
 }
 
 export function boolScVal(value: boolean) {
-  return nativeToScVal(value);
+  return nativeToScVal(value)
 }
 
 export function bytesN32ScVal(hex: string) {
-  const normalized = hex.replace(/^0x/, "");
-  const parts = normalized.match(/.{1,2}/g) ?? [];
-  const bytes = Buffer.from(parts.map((byte) => parseInt(byte, 16)));
+  const normalized = hex.replace(/^0x/, '')
+  const parts = normalized.match(/.{1,2}/g) ?? []
+  const bytes = Buffer.from(parts.map((byte) => parseInt(byte, 16)))
 
   if (bytes.length !== 32) {
-    throw new Error("Intent ID must be 32 bytes encoded as 64 hex characters.");
+    throw new Error('Intent ID must be 32 bytes encoded as 64 hex characters.')
   }
 
-  return xdr.ScVal.scvBytes(bytes);
+  return xdr.ScVal.scvBytes(bytes)
 }
 
 function bytesScVal(bytes: Buffer) {
-  return xdr.ScVal.scvBytes(bytes);
+  return xdr.ScVal.scvBytes(bytes)
 }
 
-function policyCheckScVal(draft: PaymentDraft | ScheduleDraft, operation = "transfer") {
+function policyCheckScVal(
+  draft: PaymentDraft | ScheduleDraft,
+  operation = 'transfer'
+) {
   return structScVal({
     operation: symbolScVal(operation),
     asset: addressScVal(draft.asset),
     destination: addressScVal(draft.destination),
     amount: i128ScVal(draft.amount),
     expected_version: u32ScVal(draft.expectedPolicyVersion),
-  });
+  })
 }
 
 function scheduledIntentScVal(draft: ScheduleDraft, contracts: ContractSet) {
@@ -223,20 +231,25 @@ function scheduledIntentScVal(draft: ScheduleDraft, contracts: ContractSet) {
     policy_version: u32ScVal(draft.expectedPolicyVersion),
     adapter: addressScVal(contracts.transferAdapter),
     cancelled: boolScVal(false),
-  });
+  })
 }
 
-export function contractInvocation(contractId: string, functionName: string, args: xdr.ScVal[]) {
+export function contractInvocation(
+  contractId: string,
+  functionName: string,
+  args: xdr.ScVal[]
+) {
   return new xdr.SorobanAuthorizedInvocation({
-    function: xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(
-      new xdr.InvokeContractArgs({
-        contractAddress: addressScAddress(contractId),
-        functionName,
-        args,
-      }),
-    ),
+    function:
+      xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(
+        new xdr.InvokeContractArgs({
+          contractAddress: addressScAddress(contractId),
+          functionName,
+          args,
+        })
+      ),
     subInvocations: [],
-  });
+  })
 }
 
 export function addressCredentialsEntry({
@@ -246,11 +259,11 @@ export function addressCredentialsEntry({
   signature,
   signatureExpirationLedger,
 }: {
-  address: string;
-  invocation: xdr.SorobanAuthorizedInvocation;
-  nonce: string;
-  signature: xdr.ScVal;
-  signatureExpirationLedger: number;
+  address: string
+  invocation: xdr.SorobanAuthorizedInvocation
+  nonce: string
+  signature: xdr.ScVal
+  signatureExpirationLedger: number
 }) {
   return new xdr.SorobanAuthorizationEntry({
     credentials: xdr.SorobanCredentials.sorobanCredentialsAddress(
@@ -259,16 +272,16 @@ export function addressCredentialsEntry({
         nonce: xdr.Int64.fromString(nonce),
         signatureExpirationLedger,
         signature,
-      }),
+      })
     ),
     rootInvocation: invocation,
-  });
+  })
 }
 
 function signaturePayload(
   invocation: xdr.SorobanAuthorizedInvocation,
   nonce: string,
-  signatureExpirationLedger: number,
+  signatureExpirationLedger: number
 ) {
   const preimage = xdr.HashIdPreimage.envelopeTypeSorobanAuthorization(
     new xdr.HashIdPreimageSorobanAuthorization({
@@ -276,20 +289,20 @@ function signaturePayload(
       nonce: xdr.Int64.fromString(nonce),
       signatureExpirationLedger,
       invocation,
-    }),
-  );
-  return hash(preimage.toXDR());
+    })
+  )
+  return hash(preimage.toXDR())
 }
 
 export function randomAuthNonce() {
-  const high = BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER));
+  const high = BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER))
   const nonce =
-    (high ^ BigInt(Date.now())) & ((BigInt(1) << BigInt(62)) - BigInt(1));
-  return nonce.toString();
+    (high ^ BigInt(Date.now())) & ((BigInt(1) << BigInt(62)) - BigInt(1))
+  return nonce.toString()
 }
 
 export function signerDelegatedScVal(address: string) {
-  return xdr.ScVal.scvVec([symbolScVal("Delegated"), addressScVal(address)]);
+  return xdr.ScVal.scvVec([symbolScVal('Delegated'), addressScVal(address)])
 }
 
 /** `ContextRuleType::Default` -- the unit-variant encoding, same shape as
@@ -300,16 +313,19 @@ export function signerDelegatedScVal(address: string) {
  * every smart_account-gated call in this dApp is a call to smart_account
  * itself). */
 export function contextTypeDefaultScVal() {
-  return xdr.ScVal.scvVec([symbolScVal("Default")]);
+  return xdr.ScVal.scvVec([symbolScVal('Default')])
 }
 
-function smartAccountAuthPayload(signerAddress: string, contextRuleIdsScVal: xdr.ScVal) {
+function smartAccountAuthPayload(
+  signerAddress: string,
+  contextRuleIdsScVal: xdr.ScVal
+) {
   const signersMap = xdr.ScVal.scvMap([
     new xdr.ScMapEntry({
       key: signerDelegatedScVal(signerAddress),
       val: bytesScVal(Buffer.alloc(0)),
     }),
-  ]);
+  ])
 
   // Routed through structScVal like every other contract struct: these two
   // keys happen to be in sorted order already, and nothing should depend on
@@ -317,7 +333,7 @@ function smartAccountAuthPayload(signerAddress: string, contextRuleIdsScVal: xdr
   return structScVal({
     context_rule_ids: contextRuleIdsScVal,
     signers: signersMap,
-  });
+  })
 }
 
 /**
@@ -332,7 +348,7 @@ function smartAccountAuthPayload(signerAddress: string, contextRuleIdsScVal: xdr
 export async function signDelegatedAuthEntry(
   entry: xdr.SorobanAuthorizationEntry,
   wallet: WalletSigning,
-  signatureExpirationLedger: number,
+  signatureExpirationLedger: number
 ): Promise<xdr.SorobanAuthorizationEntry> {
   // The wallet is handed the HashIdPreimage and returns raw signature bytes.
   // Passing it the entry itself makes it fail to parse; expecting an entry back
@@ -341,9 +357,12 @@ export async function signDelegatedAuthEntry(
   return authorizeEntry(
     entry,
     async (preimage) => {
-      const result = await wallet.signAuthEntry(preimage.toXDR("base64"), wallet.address);
+      const result = await wallet.signAuthEntry(
+        preimage.toXDR('base64'),
+        wallet.address
+      )
       if (!result) {
-        throw new Error("Wallet did not return a signed authorization entry.");
+        throw new Error('Wallet did not return a signed authorization entry.')
       }
       // Freighter reports which account it actually signed with. That can
       // diverge from the account we asked for (e.g. its active account
@@ -353,20 +372,20 @@ export async function signDelegatedAuthEntry(
       // doesn't match payload". Trust what the wallet reports instead, and
       // fail with the actual mismatch when it doesn't match the signer this
       // treasury action needs.
-      const signerAddress = result.signerAddress ?? wallet.address;
+      const signerAddress = result.signerAddress ?? wallet.address
       if (signerAddress !== wallet.address) {
         throw new Error(
-          `Wallet signed with ${signerAddress} instead of the expected signer ${wallet.address}. Switch to that account in your wallet and try again.`,
-        );
+          `Wallet signed with ${signerAddress} instead of the expected signer ${wallet.address}. Switch to that account in your wallet and try again.`
+        )
       }
       return {
         signature: decodeWalletSignature(result.signature),
         publicKey: signerAddress,
-      };
+      }
     },
     signatureExpirationLedger,
-    STELLAR_CONFIG.networkPassphrase,
-  );
+    STELLAR_CONFIG.networkPassphrase
+  )
 }
 
 /**
@@ -383,19 +402,19 @@ export async function signDelegatedAuthEntry(
  */
 export async function signEnvelope(
   wallet: WalletSigning,
-  transactionXdr: string,
+  transactionXdr: string
 ): Promise<string> {
-  const result = await wallet.signTransaction(transactionXdr, wallet.address);
+  const result = await wallet.signTransaction(transactionXdr, wallet.address)
   if (!result) {
-    throw new Error("Wallet did not return a signed transaction envelope.");
+    throw new Error('Wallet did not return a signed transaction envelope.')
   }
-  const signerAddress = result.signerAddress ?? wallet.address;
+  const signerAddress = result.signerAddress ?? wallet.address
   if (signerAddress !== wallet.address) {
     throw new Error(
-      `Wallet signed with ${signerAddress} instead of the expected signer ${wallet.address}. Switch to that account in your wallet and try again.`,
-    );
+      `Wallet signed with ${signerAddress} instead of the expected signer ${wallet.address}. Switch to that account in your wallet and try again.`
+    )
   }
-  return result.xdr;
+  return result.xdr
 }
 
 function buildUnsignedCustomAuthEntries({
@@ -406,17 +425,21 @@ function buildUnsignedCustomAuthEntries({
   contracts,
 }: CustomAuthInput) {
   if (contextRuleIds.length === 0) {
-    throw new Error("No SmartAccount context rule is selected.");
+    throw new Error('No SmartAccount context rule is selected.')
   }
 
-  const entryANonce = randomAuthNonce();
+  const entryANonce = randomAuthNonce()
   const rootPayload = signaturePayload(
     rootInvocation,
     entryANonce,
-    signatureExpirationLedger,
-  );
-  const contextRuleIdsScVal = xdr.ScVal.scvVec(contextRuleIds.map((id) => u32ScVal(id)));
-  const authDigest = hash(Buffer.concat([rootPayload, contextRuleIdsScVal.toXDR()]));
+    signatureExpirationLedger
+  )
+  const contextRuleIdsScVal = xdr.ScVal.scvVec(
+    contextRuleIds.map((id) => u32ScVal(id))
+  )
+  const authDigest = hash(
+    Buffer.concat([rootPayload, contextRuleIdsScVal.toXDR()])
+  )
 
   const entryA = addressCredentialsEntry({
     address: contracts.smartAccount,
@@ -424,33 +447,33 @@ function buildUnsignedCustomAuthEntries({
     nonce: entryANonce,
     signatureExpirationLedger,
     signature: smartAccountAuthPayload(signerAddress, contextRuleIdsScVal),
-  });
+  })
 
   const entryB = addressCredentialsEntry({
     address: signerAddress,
-    invocation: contractInvocation(contracts.smartAccount, "__check_auth", [
+    invocation: contractInvocation(contracts.smartAccount, '__check_auth', [
       bytesScVal(authDigest),
     ]),
     nonce: randomAuthNonce(),
     signatureExpirationLedger,
     signature: xdr.ScVal.scvVoid(),
-  });
+  })
 
-  return { entryA, entryB };
+  return { entryA, entryB }
 }
 
 export function invokeContractOperation(
   contractId: string,
   functionName: string,
   args: xdr.ScVal[],
-  auth: xdr.SorobanAuthorizationEntry[],
+  auth: xdr.SorobanAuthorizationEntry[]
 ) {
   return Operation.invokeContractFunction({
     contract: contractId,
     function: functionName,
     args,
     auth,
-  });
+  })
 }
 
 function transferArgs(draft: PaymentDraft) {
@@ -460,7 +483,7 @@ function transferArgs(draft: PaymentDraft) {
     i128ScVal(draft.amount),
     u64ScVal(draft.nonce),
     u32ScVal(draft.expectedPolicyVersion),
-  ];
+  ]
 }
 
 function splitArgs(draft: SplitDraft) {
@@ -469,35 +492,41 @@ function splitArgs(draft: SplitDraft) {
     // `split_adapter::execute_split` names this argument `recipients`; the
     // value it carries is this dApp's `destinations` list. The contract's
     // spelling stops at the call boundary.
-    xdr.ScVal.scvVec(draft.destinations.map((entry) => addressScVal(entry.destination))),
-    xdr.ScVal.scvVec(draft.destinations.map((entry) => i128ScVal(entry.amount))),
+    xdr.ScVal.scvVec(
+      draft.destinations.map((entry) => addressScVal(entry.destination))
+    ),
+    xdr.ScVal.scvVec(
+      draft.destinations.map((entry) => i128ScVal(entry.amount))
+    ),
     u64ScVal(draft.nonce),
     u32ScVal(draft.expectedPolicyVersion),
-  ];
+  ]
 }
 
 function cancelScheduleArgs(intentId: string) {
-  return [bytesN32ScVal(intentId)];
+  return [bytesN32ScVal(intentId)]
 }
 
 function getSignerAddresses(value: SimulationValue) {
   const serialized = JSON.stringify(value, (_key, nestedValue) =>
-    typeof nestedValue === "bigint" ? nestedValue.toString() : nestedValue,
-  );
-  return Array.from(new Set(serialized.match(/G[A-Z2-7]{55}/g) ?? []));
+    typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue
+  )
+  return Array.from(new Set(serialized.match(/G[A-Z2-7]{55}/g) ?? []))
 }
 
-export async function submitSignedTransaction(signedTx: Transaction): Promise<TransactionReceipt> {
-  const server = getServer();
-  const sendResponse = await server.sendTransaction(signedTx);
-  if (sendResponse.status === "ERROR") {
-    throw new Error(`Submission failed: ${sendResponse.status}`);
+export async function submitSignedTransaction(
+  signedTx: Transaction
+): Promise<TransactionReceipt> {
+  const server = getServer()
+  const sendResponse = await server.sendTransaction(signedTx)
+  if (sendResponse.status === 'ERROR') {
+    throw new Error(`Submission failed: ${sendResponse.status}`)
   }
-  if (sendResponse.status === "TRY_AGAIN_LATER") {
-    throw new Error("RPC asked the dApp to retry submission later.");
+  if (sendResponse.status === 'TRY_AGAIN_LATER') {
+    throw new Error('RPC asked the dApp to retry submission later.')
   }
-  if (sendResponse.status === "DUPLICATE") {
-    throw new Error("RPC reported a duplicate transaction submission.");
+  if (sendResponse.status === 'DUPLICATE') {
+    throw new Error('RPC reported a duplicate transaction submission.')
   }
 
   // Testnet usually closes a ledger in ~5s, but inclusion has been observed
@@ -506,9 +535,9 @@ export async function submitSignedTransaction(signedTx: Transaction): Promise<Tr
   // wait now covers that case. Timing out is no longer read as a failure —
   // describeReceipt reports it as still pending.
   for (let attempt = 0; attempt < 90; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    const txResult = await server.getTransaction(sendResponse.hash);
-    if (txResult.status !== "NOT_FOUND") {
+    await new Promise((resolve) => setTimeout(resolve, 2000))
+    const txResult = await server.getTransaction(sendResponse.hash)
+    if (txResult.status !== 'NOT_FOUND') {
       return {
         hash: sendResponse.hash,
         status: txResult.status,
@@ -516,8 +545,11 @@ export async function submitSignedTransaction(signedTx: Transaction): Promise<Tr
         // Present on both SUCCESS and FAILED (not on the NOT_FOUND variant,
         // which this branch already excludes) -- one events array per
         // operation; this dApp's transactions always have exactly one.
-        events: "events" in txResult ? txResult.events.contractEventsXdr[0] : undefined,
-      };
+        events:
+          'events' in txResult
+            ? txResult.events.contractEventsXdr[0]
+            : undefined,
+      }
     }
   }
 
@@ -525,7 +557,7 @@ export async function submitSignedTransaction(signedTx: Transaction): Promise<Tr
     hash: sendResponse.hash,
     status: sendResponse.status,
     latestLedger: sendResponse.latestLedger,
-  };
+  }
 }
 
 export async function signAndSubmitContractInvocation({
@@ -535,26 +567,26 @@ export async function signAndSubmitContractInvocation({
   wallet,
   contracts = STELLAR_CONFIG.contracts,
 }: {
-  args: xdr.ScVal[];
-  functionName: string;
-  sourceAddress: string;
-  wallet: WalletSigning;
-  contracts?: ContractSet;
+  args: xdr.ScVal[]
+  functionName: string
+  sourceAddress: string
+  wallet: WalletSigning
+  contracts?: ContractSet
 }): Promise<TransactionReceipt> {
-  const server = getServer();
-  const latestLedger = await server.getLatestLedger();
-  const signatureExpirationLedger = latestLedger.sequence + 100;
-  const source = await server.getAccount(sourceAddress);
-  const rules = await loadContextRules(sourceAddress, contracts);
-  const matchedRule = selectRuleForSigner(rules, wallet.address);
+  const server = getServer()
+  const latestLedger = await server.getLatestLedger()
+  const signatureExpirationLedger = latestLedger.sequence + 100
+  const source = await server.getAccount(sourceAddress)
+  const rules = await loadContextRules(sourceAddress, contracts)
+  const matchedRule = selectRuleForSigner(rules, wallet.address)
 
   if (!matchedRule) {
-    throw new Error("No SmartAccount context rule is available for approval.");
+    throw new Error('No SmartAccount context rule is available for approval.')
   }
   if (matchedRule.signerCount > 0 && matchedRule.signerAddresses.length === 0) {
     throw new Error(
-      "Could not verify delegated signer addresses for the matched SmartAccount rule.",
-    );
+      'Could not verify delegated signer addresses for the matched SmartAccount rule.'
+    )
   }
   if (
     matchedRule.signerAddresses.length > 0 &&
@@ -563,36 +595,36 @@ export async function signAndSubmitContractInvocation({
     throw new Error(
       `Connected wallet is not a delegated signer on any SmartAccount context rule. Rules on-chain: ${rules
         .map((rule) => `${rule.id} (${rule.name})`)
-        .join(", ")}.`,
-    );
+        .join(', ')}.`
+    )
   }
 
   const rootInvocation = await discoverTreasuryInvocation(
     sourceAddress,
     functionName,
     args,
-    contracts,
-  );
+    contracts
+  )
   // One context_rule_id per authorization context the tree produces. The
   // treasury validates every context against the same rule, so this repeats
   // the matched rule rather than selecting a different one per node.
   const contextRuleIds = Array.from(
     { length: countAuthContexts(rootInvocation) },
-    () => matchedRule.id,
-  );
+    () => matchedRule.id
+  )
   const { entryA, entryB } = buildUnsignedCustomAuthEntries({
     contextRuleIds,
     rootInvocation,
     signerAddress: wallet.address,
     signatureExpirationLedger,
     contracts,
-  });
+  })
 
   const signedEntryB = await signDelegatedAuthEntry(
     entryB,
     wallet,
-    signatureExpirationLedger,
-  );
+    signatureExpirationLedger
+  )
 
   const tx = new TransactionBuilder(source, {
     fee: BASE_FEE,
@@ -602,71 +634,82 @@ export async function signAndSubmitContractInvocation({
       invokeContractOperation(contracts.smartAccount, functionName, args, [
         entryA,
         signedEntryB,
-      ]),
+      ])
     )
     .setTimeout(120)
-    .build();
+    .build()
 
-  const prepared = await server.prepareTransaction(tx);
-  const signedTxXdr = await signEnvelope(wallet, prepared.toXDR());
+  const prepared = await server.prepareTransaction(tx)
+  const signedTxXdr = await signEnvelope(wallet, prepared.toXDR())
 
   return submitSignedTransaction(
-    new Transaction(signedTxXdr, STELLAR_CONFIG.networkPassphrase),
-  );
+    new Transaction(signedTxXdr, STELLAR_CONFIG.networkPassphrase)
+  )
 }
 
 function getRecord(value: SimulationValue): Record<string, unknown> {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value;
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value
   }
-  return {};
+  return {}
 }
 
 function countCollection(value: unknown, fallback: number) {
-  if (Array.isArray(value)) return value.length;
-  if (value instanceof Map) return value.size;
-  return fallback;
+  if (Array.isArray(value)) return value.length
+  if (value instanceof Map) return value.size
+  return fallback
 }
 
 function readTreasuryStatus(value: SimulationValue): TreasuryStatus {
-  const record = getRecord(value);
+  const record = getRecord(value)
 
   return {
     initialized: Boolean(record.initialized ?? true),
     paused: Boolean(record.paused ?? false),
     frozen: Boolean(record.frozen ?? false),
-    policyVersionHint: Number(record.policy_version_hint ?? record.policyVersionHint ?? 0),
-  };
+    policyVersionHint: Number(
+      record.policy_version_hint ?? record.policyVersionHint ?? 0
+    ),
+  }
 }
 
 function readContextRule(id: number, value: SimulationValue): ContextRule {
-  const raw = getRecord(value) as ContractRuleRecord;
+  const raw = getRecord(value) as ContractRuleRecord
 
   return {
     id,
     name: String(raw.name ?? `Context rule ${id}`),
-    contextType: String(raw.context_type ?? raw.contextType ?? "Default"),
+    contextType: String(raw.context_type ?? raw.contextType ?? 'Default'),
     signerCount: countCollection(raw.signers ?? raw.signer_ids, 1),
     policyCount: countCollection(raw.policies ?? raw.policy_ids, 0),
     signerAddresses: getSignerAddresses(value),
-    validUntil: typeof raw.valid_until === "number" ? raw.valid_until : undefined,
+    validUntil:
+      typeof raw.valid_until === 'number' ? raw.valid_until : undefined,
     raw,
-  };
+  }
 }
 
 export async function loadTreasurySnapshot(
   sourceAddress: string,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ) {
-  const status = await simulateContractCall(sourceAddress, contracts.smartAccount, "status");
-  const version = await simulateContractCall(sourceAddress, contracts.policyEngine, "version");
-  const latestLedger = await getLatestLedger();
+  const status = await simulateContractCall(
+    sourceAddress,
+    contracts.smartAccount,
+    'status'
+  )
+  const version = await simulateContractCall(
+    sourceAddress,
+    contracts.policyEngine,
+    'version'
+  )
+  const latestLedger = await getLatestLedger()
 
   return {
     status: readTreasuryStatus(status.value),
     policyVersion: Number(version.value ?? 1),
     latestLedger,
-  };
+  }
 }
 
 /**
@@ -677,40 +720,44 @@ export async function loadTreasurySnapshot(
  */
 export async function loadContextRules(
   sourceAddress: string,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ): Promise<ContextRule[]> {
   const countResult = await simulateContractCall(
     sourceAddress,
     contracts.smartAccount,
-    "get_context_rules_count",
-  );
-  const count = Number(countResult.value ?? 0);
-  const rules: ContextRule[] = [];
-  const maxId = count + 32;
+    'get_context_rules_count'
+  )
+  const count = Number(countResult.value ?? 0)
+  const rules: ContextRule[] = []
+  const maxId = count + 32
 
   for (let id = 0; rules.length < count && id < maxId; id += 1) {
     try {
       const result = await simulateContractCall(
         sourceAddress,
         contracts.smartAccount,
-        "get_context_rule",
-        [u32ScVal(id)],
-      );
-      rules.push(readContextRule(id, result.value));
+        'get_context_rule',
+        [u32ScVal(id)]
+      )
+      rules.push(readContextRule(id, result.value))
     } catch {
       // No rule at this id — removed or never allocated. Keep scanning.
     }
   }
 
-  return rules;
+  return rules
 }
 
 export async function loadOwner(
   sourceAddress: string,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ): Promise<string | null> {
-  const result = await simulateContractCall(sourceAddress, contracts.smartAccount, "get_owner");
-  return typeof result.value === "string" ? result.value : null;
+  const result = await simulateContractCall(
+    sourceAddress,
+    contracts.smartAccount,
+    'get_owner'
+  )
+  return typeof result.value === 'string' ? result.value : null
 }
 
 /**
@@ -733,39 +780,45 @@ export async function loadOwner(
 export async function loadAssetHolding(
   sourceAddress: string,
   holder: string,
-  assetContractId: string,
+  assetContractId: string
 ): Promise<AssetHolding> {
-  let balance: bigint | null = null;
-  let missing = false;
+  let balance: bigint | null = null
+  let missing = false
 
   try {
-    const result = await simulateContractCall(sourceAddress, assetContractId, "balance", [
-      addressScVal(holder),
-    ]);
+    const result = await simulateContractCall(
+      sourceAddress,
+      assetContractId,
+      'balance',
+      [addressScVal(holder)]
+    )
     balance =
-      typeof result.value === "bigint"
+      typeof result.value === 'bigint'
         ? result.value
-        : typeof result.value === "string" || typeof result.value === "number"
+        : typeof result.value === 'string' || typeof result.value === 'number'
           ? BigInt(result.value)
-          : null;
+          : null
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = error instanceof Error ? error.message : String(error)
     // #13 is the token's TrustlineMissing -- verified against the live testnet
     // SAC, alongside #8/#10/#11 (see explainContractError's own note).
-    missing = /Error\(Contract, #13\)/.test(message);
+    missing = /Error\(Contract, #13\)/.test(message)
   }
 
-  let authorized: boolean | null = null;
+  let authorized: boolean | null = null
   try {
-    const result = await simulateContractCall(sourceAddress, assetContractId, "authorized", [
-      addressScVal(holder),
-    ]);
-    authorized = typeof result.value === "boolean" ? result.value : null;
+    const result = await simulateContractCall(
+      sourceAddress,
+      assetContractId,
+      'authorized',
+      [addressScVal(holder)]
+    )
+    authorized = typeof result.value === 'boolean' ? result.value : null
   } catch {
-    authorized = null;
+    authorized = null
   }
 
-  return { balance, authorized, missing };
+  return { balance, authorized, missing }
 }
 
 /** The contracts a `smart_account` is actually wired to, read from its own
@@ -773,13 +826,13 @@ export async function loadAssetHolding(
  * smart_account, or one whose storage layout changed, must surface as "not
  * found" rather than as a silent match. */
 export type SmartAccountLinks = {
-  owner: string | null;
-  policyEngine: string | null;
-  intentRegistry: string | null;
-  recoveryManager: string | null;
-  transferAdapter: string | null;
-  splitAdapter: string | null;
-};
+  owner: string | null
+  policyEngine: string | null
+  intentRegistry: string | null
+  recoveryManager: string | null
+  transferAdapter: string | null
+  splitAdapter: string | null
+}
 
 /**
  * Reads a smart_account's linked contract set straight from its instance
@@ -799,74 +852,74 @@ export type SmartAccountLinks = {
  * "not wired at all"; neither may be treated as a match.
  */
 export async function loadSmartAccountLinks(
-  smartAccountId: string,
+  smartAccountId: string
 ): Promise<SmartAccountLinks | null> {
   const key = xdr.LedgerKey.contractData(
     new xdr.LedgerKeyContractData({
       contract: new Address(smartAccountId).toScAddress(),
       key: xdr.ScVal.scvLedgerKeyContractInstance(),
       durability: xdr.ContractDataDurability.persistent(),
-    }),
-  );
+    })
+  )
 
-  const response = await getServer().getLedgerEntries(key);
-  const entry = response.entries[0];
-  if (!entry) return null;
+  const response = await getServer().getLedgerEntries(key)
+  const entry = response.entries[0]
+  if (!entry) return null
 
-  const storage = entry.val.contractData().val().instance().storage() ?? [];
+  const storage = entry.val.contractData().val().instance().storage() ?? []
 
   // Keys are either a bare symbol (`PolicyEngine`) or a two-symbol vec
   // (`["Adapter", "transfer"]`); `scValToNative` renders those as a string and
   // a string array respectively. Verified against the live testnet instance of
   // CCMPGTBA...ODUDL, whose 11 entries this parse reproduces exactly.
-  const byKey = new Map<string, unknown>();
+  const byKey = new Map<string, unknown>()
   for (const item of storage) {
-    const rawKey = scValToNative(item.key()) as unknown;
-    const name = Array.isArray(rawKey) ? rawKey.join("/") : String(rawKey);
-    byKey.set(name, scValToNative(item.val()) as unknown);
+    const rawKey = scValToNative(item.key()) as unknown
+    const name = Array.isArray(rawKey) ? rawKey.join('/') : String(rawKey)
+    byKey.set(name, scValToNative(item.val()) as unknown)
   }
 
   const address = (name: string) => {
-    const value = byKey.get(name);
-    return typeof value === "string" ? value : null;
-  };
+    const value = byKey.get(name)
+    return typeof value === 'string' ? value : null
+  }
 
   return {
-    owner: address("Owner"),
-    policyEngine: address("PolicyEngine"),
-    intentRegistry: address("IntentRegistry"),
-    recoveryManager: address("RecoveryManager"),
-    transferAdapter: address("Adapter/transfer"),
-    splitAdapter: address("Adapter/split"),
-  };
+    owner: address('Owner'),
+    policyEngine: address('PolicyEngine'),
+    intentRegistry: address('IntentRegistry'),
+    recoveryManager: address('RecoveryManager'),
+    transferAdapter: address('Adapter/transfer'),
+    splitAdapter: address('Adapter/split'),
+  }
 }
 
 export async function loadSignerId(
   sourceAddress: string,
   signerAddress: string,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ) {
   const result = await simulateContractCall(
     sourceAddress,
     contracts.smartAccount,
-    "get_signer_id",
-    [signerDelegatedScVal(signerAddress)],
-  );
-  return Number(result.value ?? 0);
+    'get_signer_id',
+    [signerDelegatedScVal(signerAddress)]
+  )
+  return Number(result.value ?? 0)
 }
 
 export async function checkIsGuardian(
   sourceAddress: string,
   guardianAddress: string,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ) {
   const result = await simulateContractCall(
     sourceAddress,
     contracts.recoveryManager,
-    "is_guardian",
-    [addressScVal(guardianAddress)],
-  );
-  return Boolean(result.value);
+    'is_guardian',
+    [addressScVal(guardianAddress)]
+  )
+  return Boolean(result.value)
 }
 
 /**
@@ -875,19 +928,19 @@ export async function checkIsGuardian(
  */
 export function simulatePolicyProbe(
   sourceAddress: string,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ) {
   return async (input: {
-    asset: string;
-    destination: string;
-    operation: string;
-    amount: string;
-    expectedVersion: number;
+    asset: string
+    destination: string
+    operation: string
+    amount: string
+    expectedVersion: number
   }) => {
     await simulateContractCall(
       sourceAddress,
       contracts.policyEngine,
-      "validate_policy",
+      'validate_policy',
       [
         structScVal({
           operation: symbolScVal(input.operation),
@@ -896,9 +949,9 @@ export function simulatePolicyProbe(
           amount: i128ScVal(input.amount),
           expected_version: u32ScVal(input.expectedVersion),
         }),
-      ],
-    );
-  };
+      ]
+    )
+  }
 }
 
 /**
@@ -913,51 +966,51 @@ export async function submitAsSourceAccount({
   functionName,
   wallet,
 }: {
-  args: xdr.ScVal[];
-  contractId: string;
-  functionName: string;
-  wallet: WalletSigning;
+  args: xdr.ScVal[]
+  contractId: string
+  functionName: string
+  wallet: WalletSigning
 }): Promise<TransactionReceipt> {
-  const server = getServer();
-  const source = await server.getAccount(wallet.address);
+  const server = getServer()
+  const source = await server.getAccount(wallet.address)
   const tx = new TransactionBuilder(source, {
     fee: BASE_FEE,
     networkPassphrase: STELLAR_CONFIG.networkPassphrase,
   })
     .addOperation(new Contract(contractId).call(functionName, ...args))
     .setTimeout(120)
-    .build();
+    .build()
 
-  const prepared = await server.prepareTransaction(tx);
-  const signedTxXdr = await signEnvelope(wallet, prepared.toXDR());
+  const prepared = await server.prepareTransaction(tx)
+  const signedTxXdr = await signEnvelope(wallet, prepared.toXDR())
 
   return submitSignedTransaction(
-    new Transaction(signedTxXdr, STELLAR_CONFIG.networkPassphrase),
-  );
+    new Transaction(signedTxXdr, STELLAR_CONFIG.networkPassphrase)
+  )
 }
 
 export async function approveAndSubmitTransfer(
   wallet: WalletSigning,
   draft: PaymentDraft,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ): Promise<TransactionReceipt> {
-  validatePaymentDraft(draft);
-  const policyResult = await simulatePolicy(wallet.address, draft, contracts);
+  validatePaymentDraft(draft)
+  const policyResult = await simulatePolicy(wallet.address, draft, contracts)
   if (!policyResult.ok) {
-    throw new Error(policyResult.detail);
+    throw new Error(policyResult.detail)
   }
-  const nonceUsed = await checkNonce(wallet.address, draft.nonce, contracts);
+  const nonceUsed = await checkNonce(wallet.address, draft.nonce, contracts)
   if (nonceUsed) {
-    throw new Error("Nonce has already been used.");
+    throw new Error('Nonce has already been used.')
   }
 
   return signAndSubmitContractInvocation({
     args: transferArgs(draft),
-    functionName: "execute_transfer_payment",
+    functionName: 'execute_transfer_payment',
     sourceAddress: wallet.address,
     wallet,
     contracts,
-  });
+  })
 }
 
 /**
@@ -972,110 +1025,128 @@ export async function approveAndSubmitTransfer(
 export class ScheduledIntentExistsError extends Error {
   constructor(readonly intentId: string) {
     super(
-      `Intent ${intentId.slice(0, 8)} already exists on-chain. Intent IDs are single-use — a new one has been generated.`,
-    );
-    this.name = "ScheduledIntentExistsError";
+      `Intent ${intentId.slice(0, 8)} already exists on-chain. Intent IDs are single-use — a new one has been generated.`
+    )
+    this.name = 'ScheduledIntentExistsError'
   }
 }
 
 export async function approveAndSubmitSchedule(
   wallet: WalletSigning,
   draft: ScheduleDraft,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ): Promise<TransactionReceipt> {
-  validateScheduleDraft(draft);
-  const policyResult = await simulatePolicy(wallet.address, draft, contracts);
+  validateScheduleDraft(draft)
+  const policyResult = await simulatePolicy(wallet.address, draft, contracts)
   if (!policyResult.ok) {
-    throw new Error(policyResult.detail);
+    throw new Error(policyResult.detail)
   }
-  const exists = await checkScheduledIntentExists(wallet.address, draft.intentId, contracts);
+  const exists = await checkScheduledIntentExists(
+    wallet.address,
+    draft.intentId,
+    contracts
+  )
   if (exists) {
-    throw new ScheduledIntentExistsError(draft.intentId);
+    throw new ScheduledIntentExistsError(draft.intentId)
   }
 
   return signAndSubmitContractInvocation({
     args: [scheduledIntentScVal(draft, contracts)],
-    functionName: "create_scheduled_payment",
+    functionName: 'create_scheduled_payment',
     sourceAddress: wallet.address,
     wallet,
     contracts,
-  });
+  })
 }
 
 export async function approveAndSubmitSplit(
   wallet: WalletSigning,
   draft: SplitDraft,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ): Promise<TransactionReceipt> {
-  validateSplitDraft(draft);
-  const policyResult = await simulateSplitPolicy(wallet.address, draft, contracts);
+  validateSplitDraft(draft)
+  const policyResult = await simulateSplitPolicy(
+    wallet.address,
+    draft,
+    contracts
+  )
   if (!policyResult.ok) {
-    throw new Error(policyResult.detail);
+    throw new Error(policyResult.detail)
   }
-  const nonceUsed = await checkNonce(wallet.address, draft.nonce, contracts);
+  const nonceUsed = await checkNonce(wallet.address, draft.nonce, contracts)
   if (nonceUsed) {
-    throw new Error("Nonce has already been used.");
+    throw new Error('Nonce has already been used.')
   }
 
   return signAndSubmitContractInvocation({
     args: splitArgs(draft),
-    functionName: "execute_split_payment",
+    functionName: 'execute_split_payment',
     sourceAddress: wallet.address,
     wallet,
     contracts,
-  });
+  })
 }
 
 export async function approveAndSubmitCancelSchedule(
   wallet: WalletSigning,
   intentId: string,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ): Promise<TransactionReceipt> {
   if (!/^(0x)?[0-9a-fA-F]{64}$/.test(intentId)) {
-    throw new Error("Intent ID must be 32 bytes encoded as 64 hex characters.");
+    throw new Error('Intent ID must be 32 bytes encoded as 64 hex characters.')
   }
-  const exists = await checkScheduledIntentExists(wallet.address, intentId, contracts);
+  const exists = await checkScheduledIntentExists(
+    wallet.address,
+    intentId,
+    contracts
+  )
   if (!exists) {
-    throw new Error("No scheduled intent exists on-chain for this ID.");
+    throw new Error('No scheduled intent exists on-chain for this ID.')
   }
 
   return signAndSubmitContractInvocation({
     args: cancelScheduleArgs(intentId),
-    functionName: "cancel_scheduled_payment",
+    functionName: 'cancel_scheduled_payment',
     sourceAddress: wallet.address,
     wallet,
     contracts,
-  });
+  })
 }
 
 export async function getLatestLedger() {
-  const result = await getServer().getLatestLedger();
-  return result.sequence;
+  const result = await getServer().getLatestLedger()
+  return result.sequence
 }
 
 export async function checkNonce(
   sourceAddress: string,
   nonce: string,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ) {
-  const result = await simulateContractCall(sourceAddress, contracts.smartAccount, "is_nonce_used", [
-    u64ScVal(nonce),
-  ]);
-  return Boolean(result.value);
+  const result = await simulateContractCall(
+    sourceAddress,
+    contracts.smartAccount,
+    'is_nonce_used',
+    [u64ScVal(nonce)]
+  )
+  return Boolean(result.value)
 }
 
 export async function checkScheduledIntentExists(
   sourceAddress: string,
   intentId: string,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ) {
   try {
-    await simulateContractCall(sourceAddress, contracts.intentRegistry, "get_intent", [
-      bytesN32ScVal(intentId),
-    ]);
-    return true;
+    await simulateContractCall(
+      sourceAddress,
+      contracts.intentRegistry,
+      'get_intent',
+      [bytesN32ScVal(intentId)]
+    )
+    return true
   } catch {
-    return false;
+    return false
   }
 }
 
@@ -1086,26 +1157,29 @@ export async function checkScheduledIntentExists(
 export async function loadIntentPolicyVersion(
   sourceAddress: string,
   intentId: string,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ): Promise<number | null> {
   try {
-    const result = await simulateContractCall(sourceAddress, contracts.intentRegistry, "get_intent", [
-      bytesN32ScVal(intentId),
-    ]);
-    const record = getRecord(result.value);
-    const version = record.policy_version;
-    return typeof version === "number" ? version : null;
+    const result = await simulateContractCall(
+      sourceAddress,
+      contracts.intentRegistry,
+      'get_intent',
+      [bytesN32ScVal(intentId)]
+    )
+    const record = getRecord(result.value)
+    const version = record.policy_version
+    return typeof version === 'number' ? version : null
   } catch {
-    return null;
+    return null
   }
 }
 
 function readOptionalNumber(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
 function readOptionalString(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
+  return typeof value === 'string' && value.length > 0 ? value : null
 }
 
 /** Decodes one `ScheduledIntent` field-by-field rather than by shape.
@@ -1114,14 +1188,17 @@ function readOptionalString(value: unknown): string | null {
  * declare (`interval_ledgers`), so anything absent has to read as "unknown"
  * instead of failing the whole row.
  */
-function readScheduledIntent(intentId: string, value: SimulationValue): ScheduledIntentRecord {
-  const raw = getRecord(value);
+function readScheduledIntent(
+  intentId: string,
+  value: SimulationValue
+): ScheduledIntentRecord {
+  const raw = getRecord(value)
 
   return {
     intentId,
     asset: readOptionalString(raw.asset),
     destination: readOptionalString(raw.destination),
-    amount: typeof raw.amount === "bigint" ? raw.amount : null,
+    amount: typeof raw.amount === 'bigint' ? raw.amount : null,
     startLedger: readOptionalNumber(raw.start_ledger),
     endLedger: readOptionalNumber(raw.end_ledger),
     maxExecutions: readOptionalNumber(raw.max_executions),
@@ -1129,7 +1206,7 @@ function readScheduledIntent(intentId: string, value: SimulationValue): Schedule
     policyVersion: readOptionalNumber(raw.policy_version),
     cancelled: Boolean(raw.cancelled),
     unreadable: false,
-  };
+  }
 }
 
 /** The ledger a `getEvents` cursor has reached — its leading TOID's high 32
@@ -1138,26 +1215,26 @@ function readScheduledIntent(intentId: string, value: SimulationValue): Schedule
  * slice held no matching event, which happens routinely mid-scan. */
 function cursorLedger(cursor: string): number {
   try {
-    return Number(BigInt(cursor.split("-")[0]) >> 32n);
+    return Number(BigInt(cursor.split('-')[0]) >> 32n)
   } catch {
-    return Number.MAX_SAFE_INTEGER;
+    return Number.MAX_SAFE_INTEGER
   }
 }
 
 function decodeEventTopics(topics: xdr.ScVal[]): unknown[] {
   return topics.map((topic) => {
     try {
-      return scValToNative(topic);
+      return scValToNative(topic)
     } catch {
-      return null;
+      return null
     }
-  });
+  })
 }
 
 /** Hard stop on a scan that would otherwise walk the whole retention window
  * one bounded slice at a time. 60 pages covers the testnet window in practice;
  * hitting it truncates the list rather than hanging the panel. */
-const MAX_EVENT_PAGES = 60;
+const MAX_EVENT_PAGES = 60
 
 /**
  * Every scheduled payment this treasury's registry still has events for,
@@ -1177,38 +1254,40 @@ const MAX_EVENT_PAGES = 60;
  */
 export async function loadScheduledIntents(
   sourceAddress: string,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ): Promise<{
-  intents: ScheduledIntentRecord[];
-  latestLedger: number;
-  clock: LedgerClock;
-  retentionLedgers: number | undefined;
-  truncated: boolean;
+  intents: ScheduledIntentRecord[]
+  latestLedger: number
+  clock: LedgerClock
+  retentionLedgers: number | undefined
+  truncated: boolean
 }> {
-  const server = getServer();
-  const health = await server.getHealth();
-  const filters = [{ type: "contract" as const, contractIds: [contracts.intentRegistry] }];
+  const server = getServer()
+  const health = await server.getHealth()
+  const filters = [
+    { type: 'contract' as const, contractIds: [contracts.intentRegistry] },
+  ]
 
-  const events: IntentEvent[] = [];
-  let latestLedger = health.latestLedger;
-  let cursor: string | undefined;
-  let truncated = false;
+  const events: IntentEvent[] = []
+  let latestLedger = health.latestLedger
+  let cursor: string | undefined
+  let truncated = false
 
   for (let page = 0; page < MAX_EVENT_PAGES; page += 1) {
     const response = await server.getEvents(
       cursor
         ? { filters, limit: 200, cursor }
-        : { filters, limit: 200, startLedger: health.oldestLedger },
-    );
+        : { filters, limit: 200, startLedger: health.oldestLedger }
+    )
 
-    latestLedger = response.latestLedger ?? latestLedger;
+    latestLedger = response.latestLedger ?? latestLedger
     for (const event of response.events) {
-      events.push({ topics: decodeEventTopics(event.topic) });
+      events.push({ topics: decodeEventTopics(event.topic) })
     }
 
-    if (!response.cursor || cursorLedger(response.cursor) >= latestLedger) break;
-    cursor = response.cursor;
-    truncated = page === MAX_EVENT_PAGES - 1;
+    if (!response.cursor || cursorLedger(response.cursor) >= latestLedger) break
+    cursor = response.cursor
+    truncated = page === MAX_EVENT_PAGES - 1
   }
 
   const intents = await Promise.all(
@@ -1217,10 +1296,10 @@ export async function loadScheduledIntents(
         const result = await simulateContractCall(
           sourceAddress,
           contracts.intentRegistry,
-          "get_intent",
-          [bytesN32ScVal(intentId)],
-        );
-        return readScheduledIntent(intentId, result.value);
+          'get_intent',
+          [bytesN32ScVal(intentId)]
+        )
+        return readScheduledIntent(intentId, result.value)
       } catch {
         // The id was announced on-chain, so the row stays: an intent that
         // cannot be read is not the same as one that was never created.
@@ -1236,10 +1315,10 @@ export async function loadScheduledIntents(
           policyVersion: null,
           cancelled: false,
           unreadable: true,
-        } satisfies ScheduledIntentRecord;
+        } satisfies ScheduledIntentRecord
       }
-    }),
-  );
+    })
+  )
 
   return {
     intents,
@@ -1254,7 +1333,7 @@ export async function loadScheduledIntents(
     },
     retentionLedgers: health.ledgerRetentionWindow,
     truncated,
-  };
+  }
 }
 
 /**
@@ -1267,45 +1346,47 @@ export async function loadScheduledIntents(
  */
 export async function simulateWriteOperation(
   operation: { args: xdr.ScVal[]; contractId: string; functionName: string },
-  sourceAddress: string,
+  sourceAddress: string
 ): Promise<void> {
   await simulateContractCall(
     sourceAddress,
     operation.contractId,
     operation.functionName,
-    operation.args,
-  );
+    operation.args
+  )
 }
 
 export async function simulatePolicy(
   sourceAddress: string,
   draft: PaymentDraft,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ): Promise<SimulationResult> {
-  const invalid = validationFailure(() => validatePaymentDraft(draft));
-  if (invalid) return invalid;
+  const invalid = validationFailure(() => validatePaymentDraft(draft))
+  if (invalid) return invalid
 
   try {
-    await simulateContractCall(sourceAddress, contracts.policyEngine, "validate_policy", [
-      policyCheckScVal(draft, "transfer"),
-    ]);
+    await simulateContractCall(
+      sourceAddress,
+      contracts.policyEngine,
+      'validate_policy',
+      [policyCheckScVal(draft, 'transfer')]
+    )
     return {
       ok: true,
-      title: "Policy simulation passed",
-      detail:
-        `Asset, destination, amount, operation, and expected policy version are accepted on ${NETWORK.name}.`,
-    };
+      title: 'Policy simulation passed',
+      detail: `Asset, destination, amount, operation, and expected policy version are accepted on ${NETWORK.name}.`,
+    }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const failure = describeSimulationFailure(message);
+    const message = error instanceof Error ? error.message : String(error)
+    const failure = describeSimulationFailure(message)
     return {
       ok: false,
       title: failure.rejectedByContract
-        ? "Policy rejected this payment"
-        : "Policy check could not run",
+        ? 'Policy rejected this payment'
+        : 'Policy check could not run',
       detail: failure.detail,
       diagnostic: message,
-    };
+    }
   }
 }
 
@@ -1319,202 +1400,214 @@ export async function simulatePolicy(
 export async function simulateSplitPolicy(
   sourceAddress: string,
   draft: SplitDraft,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ): Promise<SimulationResult> {
-  const invalid = validationFailure(() => validateSplitDraft(draft));
-  if (invalid) return invalid;
+  const invalid = validationFailure(() => validateSplitDraft(draft))
+  if (invalid) return invalid
 
   for (const [index, entry] of draft.destinations.entries()) {
     try {
-      await simulateContractCall(sourceAddress, contracts.policyEngine, "validate_policy", [
-        policyCheckScVal(
-          {
-            asset: draft.asset,
-            destination: entry.destination,
-            amount: entry.amount,
-            nonce: "1",
-            expectedPolicyVersion: draft.expectedPolicyVersion,
-          },
-          "split",
-        ),
-      ]);
+      await simulateContractCall(
+        sourceAddress,
+        contracts.policyEngine,
+        'validate_policy',
+        [
+          policyCheckScVal(
+            {
+              asset: draft.asset,
+              destination: entry.destination,
+              amount: entry.amount,
+              nonce: '1',
+              expectedPolicyVersion: draft.expectedPolicyVersion,
+            },
+            'split'
+          ),
+        ]
+      )
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const failure = describeSimulationFailure(message);
+      const message = error instanceof Error ? error.message : String(error)
+      const failure = describeSimulationFailure(message)
       // Only `destination` and `amount` belong to the entry being checked. The
       // asset, the operation and the policy version are the same for every
       // destination, so naming this one would send the operator to edit an
       // address that is not the problem -- the loop simply stopped here first.
-      const verdict = classifyProbeFailure(message);
-      const wholePayment = isWholePaymentReason(verdict.allowed ? "unknown" : verdict.reason);
+      const verdict = classifyProbeFailure(message)
+      const wholePayment = isWholePaymentReason(
+        verdict.allowed ? 'unknown' : verdict.reason
+      )
       return {
         ok: false,
         title: failure.rejectedByContract
           ? wholePayment
-            ? "Policy rejected this split payment"
+            ? 'Policy rejected this split payment'
             : `Policy rejected destination ${index + 1}`
-          : "Policy check could not run",
+          : 'Policy check could not run',
         detail:
           failure.rejectedByContract && wholePayment
             ? `${failure.detail} It applies to the whole payment, not to destination ${index + 1} — every destination would be rejected the same way.`
             : failure.detail,
         diagnostic: message,
-      };
+      }
     }
   }
 
   return {
     ok: true,
-    title: "Policy simulation passed",
+    title: 'Policy simulation passed',
     detail: `Every destination, amount, and the expected policy version are accepted on ${NETWORK.name}.`,
-  };
+  }
 }
 
 export async function simulateTransfer(
   sourceAddress: string,
   draft: PaymentDraft,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ): Promise<SimulationResult> {
-  const invalid = validationFailure(() => validatePaymentDraft(draft));
-  if (invalid) return invalid;
+  const invalid = validationFailure(() => validatePaymentDraft(draft))
+  if (invalid) return invalid
 
   try {
-    const nonceUsed = await checkNonce(sourceAddress, draft.nonce, contracts);
+    const nonceUsed = await checkNonce(sourceAddress, draft.nonce, contracts)
     if (nonceUsed) {
       return {
         ok: false,
-        title: "Nonce already used",
-        detail: "Generate a fresh nonce before asking the signer to approve.",
-      };
+        title: 'Nonce already used',
+        detail: 'Generate a fresh nonce before asking the signer to approve.',
+      }
     }
 
     await simulateContractCall(
       sourceAddress,
       contracts.smartAccount,
-      "execute_transfer_payment",
+      'execute_transfer_payment',
       [
         addressScVal(draft.asset),
         addressScVal(draft.destination),
         i128ScVal(draft.amount),
         u64ScVal(draft.nonce),
         u32ScVal(draft.expectedPolicyVersion),
-      ],
-    );
+      ]
+    )
 
     return {
       ok: true,
-      title: "Transfer simulation built",
+      title: 'Transfer simulation built',
       detail:
-        "The unsigned transfer invocation is structurally valid. Final submission still requires SmartAccount custom auth entries.",
-    };
+        'The unsigned transfer invocation is structurally valid. Final submission still requires SmartAccount custom auth entries.',
+    }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const failure = describeSimulationFailure(message);
+    const message = error instanceof Error ? error.message : String(error)
+    const failure = describeSimulationFailure(message)
     return {
       ok: false,
       title:
-        failure.kind === "authorization"
-          ? "Transfer simulation needs auth"
+        failure.kind === 'authorization'
+          ? 'Transfer simulation needs auth'
           : failure.rejectedByContract
-            ? "Transfer rejected by the contract"
-            : "Transfer simulation could not run",
+            ? 'Transfer rejected by the contract'
+            : 'Transfer simulation could not run',
       detail: failure.detail,
       diagnostic: message,
-    };
+    }
   }
 }
 
 export async function simulateSplit(
   sourceAddress: string,
   draft: SplitDraft,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ): Promise<SimulationResult> {
-  const invalid = validationFailure(() => validateSplitDraft(draft));
-  if (invalid) return invalid;
+  const invalid = validationFailure(() => validateSplitDraft(draft))
+  if (invalid) return invalid
 
   try {
-    const nonceUsed = await checkNonce(sourceAddress, draft.nonce, contracts);
+    const nonceUsed = await checkNonce(sourceAddress, draft.nonce, contracts)
     if (nonceUsed) {
       return {
         ok: false,
-        title: "Nonce already used",
-        detail: "Generate a fresh nonce before asking the signer to approve.",
-      };
+        title: 'Nonce already used',
+        detail: 'Generate a fresh nonce before asking the signer to approve.',
+      }
     }
 
     await simulateContractCall(
       sourceAddress,
       contracts.smartAccount,
-      "execute_split_payment",
-      splitArgs(draft),
-    );
+      'execute_split_payment',
+      splitArgs(draft)
+    )
 
     return {
       ok: true,
-      title: "Split simulation built",
+      title: 'Split simulation built',
       detail:
-        "The unsigned split invocation is structurally valid. Final submission still requires SmartAccount custom auth entries.",
-    };
+        'The unsigned split invocation is structurally valid. Final submission still requires SmartAccount custom auth entries.',
+    }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const failure = describeSimulationFailure(message);
+    const message = error instanceof Error ? error.message : String(error)
+    const failure = describeSimulationFailure(message)
     return {
       ok: false,
       title:
-        failure.kind === "authorization"
-          ? "Split simulation needs auth"
+        failure.kind === 'authorization'
+          ? 'Split simulation needs auth'
           : failure.rejectedByContract
-            ? "Split rejected by the contract"
-            : "Split simulation could not run",
+            ? 'Split rejected by the contract'
+            : 'Split simulation could not run',
       detail: failure.detail,
       diagnostic: message,
-    };
+    }
   }
 }
 
 export async function simulateSchedule(
   sourceAddress: string,
   draft: ScheduleDraft,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ): Promise<SimulationResult> {
-  const invalid = validationFailure(() => validateScheduleDraft(draft));
-  if (invalid) return invalid;
+  const invalid = validationFailure(() => validateScheduleDraft(draft))
+  if (invalid) return invalid
 
   try {
-    const exists = await checkScheduledIntentExists(sourceAddress, draft.intentId, contracts);
+    const exists = await checkScheduledIntentExists(
+      sourceAddress,
+      draft.intentId,
+      contracts
+    )
     if (exists) {
       return {
         ok: false,
-        title: "Intent already exists",
-        detail: "Generate a new intent ID before creating this scheduled payment.",
-      };
+        title: 'Intent already exists',
+        detail:
+          'Generate a new intent ID before creating this scheduled payment.',
+      }
     }
 
     await simulateContractCall(
       sourceAddress,
       contracts.smartAccount,
-      "create_scheduled_payment",
-      [scheduledIntentScVal(draft, contracts)],
-    );
+      'create_scheduled_payment',
+      [scheduledIntentScVal(draft, contracts)]
+    )
     return {
       ok: true,
-      title: "Schedule simulation built",
+      title: 'Schedule simulation built',
       detail:
-        "The scheduled intent shape is valid. The contract will pin current policy version and adapter at creation.",
-    };
+        'The scheduled intent shape is valid. The contract will pin current policy version and adapter at creation.',
+    }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const failure = describeSimulationFailure(message);
+    const message = error instanceof Error ? error.message : String(error)
+    const failure = describeSimulationFailure(message)
     return {
       ok: false,
       title:
-        failure.kind === "authorization"
-          ? "Schedule simulation needs auth"
+        failure.kind === 'authorization'
+          ? 'Schedule simulation needs auth'
           : failure.rejectedByContract
-            ? "Schedule rejected by the contract"
-            : "Schedule simulation could not run",
+            ? 'Schedule rejected by the contract'
+            : 'Schedule simulation could not run',
       detail: failure.detail,
       diagnostic: message,
-    };
+    }
   }
 }

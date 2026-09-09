@@ -1,6 +1,6 @@
-import { Buffer } from "buffer";
+import { Buffer } from 'buffer'
 
-const ED25519_SIGNATURE_BYTES = 64;
+const ED25519_SIGNATURE_BYTES = 64
 
 /**
  * Decodes the signature a wallet returned for an authorization entry into its
@@ -20,17 +20,17 @@ const ED25519_SIGNATURE_BYTES = 64;
  * working if the kit fixes its side.
  */
 export function decodeWalletSignature(value: string): Buffer {
-  const decoded = Buffer.from(value, "base64");
+  const decoded = Buffer.from(value, 'base64')
   if (decoded.length === ED25519_SIGNATURE_BYTES) {
-    return decoded;
+    return decoded
   }
 
-  const unwrapped = Buffer.from(decoded.toString("utf8"), "base64");
+  const unwrapped = Buffer.from(decoded.toString('utf8'), 'base64')
   if (unwrapped.length === ED25519_SIGNATURE_BYTES) {
-    return unwrapped;
+    return unwrapped
   }
 
   throw new Error(
-    `Wallet returned ${decoded.length} bytes where a 64-byte ed25519 signature was expected.`,
-  );
+    `Wallet returned ${decoded.length} bytes where a 64-byte ed25519 signature was expected.`
+  )
 }

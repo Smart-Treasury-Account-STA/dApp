@@ -1,4 +1,4 @@
-import { Address, xdr } from "@stellar/stellar-sdk";
+import { Address, xdr } from '@stellar/stellar-sdk'
 
 /**
  * Counts the authorization contexts an invocation tree produces.
@@ -9,10 +9,12 @@ import { Address, xdr } from "@stellar/stellar-sdk";
  * `transfer` is a second node and a second context; creating a scheduled
  * intent moves nothing and stays a single node.
  */
-export function countAuthContexts(invocation: xdr.SorobanAuthorizedInvocation): number {
+export function countAuthContexts(
+  invocation: xdr.SorobanAuthorizedInvocation
+): number {
   return invocation
     .subInvocations()
-    .reduce((total, sub) => total + countAuthContexts(sub), 1);
+    .reduce((total, sub) => total + countAuthContexts(sub), 1)
 }
 
 /**
@@ -26,22 +28,25 @@ export function countAuthContexts(invocation: xdr.SorobanAuthorizedInvocation): 
  */
 export function selectInvocationForAddress(
   entries: xdr.SorobanAuthorizationEntry[],
-  address: string,
+  address: string
 ): xdr.SorobanAuthorizedInvocation | null {
   for (const entry of entries) {
-    const credentials = entry.credentials();
+    const credentials = entry.credentials()
     if (
       credentials.switch().value !==
       xdr.SorobanCredentialsType.sorobanCredentialsAddress().value
     ) {
-      continue;
+      continue
     }
-    if (Address.fromScAddress(credentials.address().address()).toString() === address) {
-      return entry.rootInvocation();
+    if (
+      Address.fromScAddress(credentials.address().address()).toString() ===
+      address
+    ) {
+      return entry.rootInvocation()
     }
   }
 
-  return null;
+  return null
 }
 
 /**
@@ -57,22 +62,25 @@ export function selectInvocationForAddress(
  */
 export function selectAllInvocationsForAddress(
   entries: xdr.SorobanAuthorizationEntry[],
-  address: string,
+  address: string
 ): xdr.SorobanAuthorizedInvocation[] {
-  const matches: xdr.SorobanAuthorizedInvocation[] = [];
+  const matches: xdr.SorobanAuthorizedInvocation[] = []
 
   for (const entry of entries) {
-    const credentials = entry.credentials();
+    const credentials = entry.credentials()
     if (
       credentials.switch().value !==
       xdr.SorobanCredentialsType.sorobanCredentialsAddress().value
     ) {
-      continue;
+      continue
     }
-    if (Address.fromScAddress(credentials.address().address()).toString() === address) {
-      matches.push(entry.rootInvocation());
+    if (
+      Address.fromScAddress(credentials.address().address()).toString() ===
+      address
+    ) {
+      matches.push(entry.rootInvocation())
     }
   }
 
-  return matches;
+  return matches
 }

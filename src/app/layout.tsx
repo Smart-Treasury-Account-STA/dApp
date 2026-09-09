@@ -1,19 +1,20 @@
-import type { Metadata } from "next";
-import type { ReactNode } from "react";
+import type { ReactNode } from 'react'
 
-import { AppProviders } from "@/providers/app-providers";
-import "@/app/globals.css";
+import type { Metadata } from 'next'
+
+import '@/app/globals.css'
+import { AppProviders } from '@/providers/app-providers'
 
 export const metadata: Metadata = {
-  title: "Smart Treasury Account",
+  title: 'Smart Treasury Account',
   description:
-    "Operator console for Smart Treasury Account: policy-controlled payments, approvals, scheduled operations, and recovery on Stellar.",
-};
+    'Operator console for Smart Treasury Account: policy-controlled payments, approvals, scheduled operations, and recovery on Stellar.',
+}
 
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: ReactNode;
+  children: ReactNode
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
@@ -21,5 +22,5 @@ export default function RootLayout({
         <AppProviders>{children}</AppProviders>
       </body>
     </html>
-  );
+  )
 }

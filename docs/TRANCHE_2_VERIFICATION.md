@@ -12,7 +12,7 @@ All 7 contracts (`smart_account`, `policy_engine`, `intent_registry`, `recovery_
 - **Inspection**: `status`, `is_guardian`, `version` read back correctly against live state.
 - **Policy-version pinning + nonce replay, live**: a real signer-authorized `execute_transfer_payment` was submitted on-chain — treasury balance dropped 1,000,000,000 → 995,000,000, `is_nonce_used(1)` flipped `false` → `true`.
 - **Invalid actions rejected**: live `validate_policy` calls show `RecipientNotAllowed` (#2004) and `AmountAboveLimit` (#2005) correctly rejected.
-- **Minor nuance**: the live invalid-rejection demo used the permissionless `validate_policy` read, not a second live *signed* invalid execute — equivalent cases (replay, version mismatch, frozen treasury) are proven by the 120-test local suite rather than a second on-chain transaction.
+- **Minor nuance**: the live invalid-rejection demo used the permissionless `validate_policy` read, not a second live _signed_ invalid execute — equivalent cases (replay, version mismatch, frozen treasury) are proven by the 120-test local suite rather than a second on-chain transaction.
 
 ## Deliverable 2 — Testnet dApp and Wallet Flow ($21,000) — ✅ Satisfied
 
@@ -22,7 +22,7 @@ Every pipeline stage is real, not stubbed (no TODO/mock markers found in `src`):
 - **Treasury dashboard, signer screens, policy screens**: backed by live RPC reads/simulations.
 - **Payment prep → simulate → approve → submit → track**: full pipeline including genuine SmartAccount custom authorization (Entry A root `AuthPayload` + Entry B delegated-signer digest via `__check_auth`) — the hard, contract-specific part, implemented correctly rather than faked with a plain wallet signature.
 - **Contract addresses**: `.env.example` matches the deployment record exactly.
-- **Scope note (confirmed on follow-up)**: the dApp configures an *existing* treasury only — signers, policy rules, status. It does **not** create/bootstrap a new `smart_account` (no `initialize` call anywhere in `src/`). This is intentional per `smart-contracts/docs/DAPP_INTEGRATION_SPEC.md` §9, which explicitly scopes "treasury bootstrapping" to ops/CLI tooling (Deliverable 1), not the dApp — not a gap against the deliverable text, which only ever says "configure or inspect **a** treasury account."
+- **Scope note (confirmed on follow-up)**: the dApp configures an _existing_ treasury only — signers, policy rules, status. It does **not** create/bootstrap a new `smart_account` (no `initialize` call anywhere in `src/`). This is intentional per `smart-contracts/docs/DAPP_INTEGRATION_SPEC.md` §9, which explicitly scopes "treasury bootstrapping" to ops/CLI tooling (Deliverable 1), not the dApp — not a gap against the deliverable text, which only ever says "configure or inspect **a** treasury account."
 
 ## Deliverable 3 — Testnet Scheduled Payment Relayer ($13,500) — ✅ Satisfied
 
@@ -41,4 +41,4 @@ All three "how to measure completion" criteria are met on live testnet, with all
 
 One remaining follow-up, not blocking:
 
-1. If a "create new treasury" flow *in* the dApp is wanted (currently CLI-only), that is new scope beyond what Tranche 2 committed to.
+1. If a "create new treasury" flow _in_ the dApp is wanted (currently CLI-only), that is new scope beyond what Tranche 2 committed to.

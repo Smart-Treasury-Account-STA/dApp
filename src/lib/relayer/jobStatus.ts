@@ -1,4 +1,4 @@
-import type { RelayerJobRecord } from "@/lib/relayer/types";
+import type { RelayerJobRecord } from '@/lib/relayer/types'
 
 /**
  * Whether a relayer job has reached a state it will never leave.
@@ -13,6 +13,8 @@ import type { RelayerJobRecord } from "@/lib/relayer/types";
  * thing back. Kept in its own module, free of Node and database imports, so
  * `executeRelayerJob` and the browser can hold the same definition.
  */
-export function isTerminalRelayerJob(job: Pick<RelayerJobRecord, "status">): boolean {
-  return job.status === "blocked" || job.status === "executed";
+export function isTerminalRelayerJob(
+  job: Pick<RelayerJobRecord, 'status'>
+): boolean {
+  return job.status === 'blocked' || job.status === 'executed'
 }

@@ -1,21 +1,33 @@
-import { loadSmartAccountLinks } from "@/lib/stellarClient";
-import type { SmartAccountLinks } from "@/lib/stellarClient";
-import type { TreasuryRecord } from "@/lib/treasuryRegistry/types";
+import { loadSmartAccountLinks } from '@/lib/stellarClient'
+import type { SmartAccountLinks } from '@/lib/stellarClient'
+import type { TreasuryRecord } from '@/lib/treasuryRegistry/types'
 
 /** Claimed field -> the instance-storage field it must equal. `executorAddress`
  * and `deployTxHash` are deliberately absent; see the doc comment below. */
 const CHECKED_FIELDS: Array<{
-  claim: keyof TreasuryRecord;
-  link: keyof SmartAccountLinks;
-  label: string;
+  claim: keyof TreasuryRecord
+  link: keyof SmartAccountLinks
+  label: string
 }> = [
-  { claim: "ownerAddress", link: "owner", label: "owner" },
-  { claim: "policyEngineId", link: "policyEngine", label: "policy engine" },
-  { claim: "intentRegistryId", link: "intentRegistry", label: "intent registry" },
-  { claim: "recoveryManagerId", link: "recoveryManager", label: "recovery manager" },
-  { claim: "transferAdapterId", link: "transferAdapter", label: "transfer adapter" },
-  { claim: "splitAdapterId", link: "splitAdapter", label: "split adapter" },
-];
+  { claim: 'ownerAddress', link: 'owner', label: 'owner' },
+  { claim: 'policyEngineId', link: 'policyEngine', label: 'policy engine' },
+  {
+    claim: 'intentRegistryId',
+    link: 'intentRegistry',
+    label: 'intent registry',
+  },
+  {
+    claim: 'recoveryManagerId',
+    link: 'recoveryManager',
+    label: 'recovery manager',
+  },
+  {
+    claim: 'transferAdapterId',
+    link: 'transferAdapter',
+    label: 'transfer adapter',
+  },
+  { claim: 'splitAdapterId', link: 'splitAdapter', label: 'split adapter' },
+]
 
 /**
  * The access control for treasury registration: rather than an admin token
@@ -46,25 +58,27 @@ const CHECKED_FIELDS: Array<{
  *   durably checkable: the transaction leaves the RPC's ~7 day history, after
  *   which no amount of reading can confirm it.
  */
-export async function verifyTreasuryRegistration(record: TreasuryRecord): Promise<void> {
-  const links = await loadSmartAccountLinks(record.smartAccountId);
+export async function verifyTreasuryRegistration(
+  record: TreasuryRecord
+): Promise<void> {
+  const links = await loadSmartAccountLinks(record.smartAccountId)
 
   if (!links) {
     throw new Error(
-      `Treasury registration could not be verified: no contract instance exists at ${record.smartAccountId}.`,
-    );
+      `Treasury registration could not be verified: no contract instance exists at ${record.smartAccountId}.`
+    )
   }
 
   const mismatches = CHECKED_FIELDS.filter(
-    ({ claim, link }) => links[link] !== record[claim],
+    ({ claim, link }) => links[link] !== record[claim]
   ).map(
     ({ claim, link, label }) =>
-      `${label} is ${links[link] ?? "unset"} on-chain, not the claimed ${String(record[claim])}`,
-  );
+      `${label} is ${links[link] ?? 'unset'} on-chain, not the claimed ${String(record[claim])}`
+  )
 
   if (mismatches.length > 0) {
     throw new Error(
-      `Treasury registration could not be verified for ${record.smartAccountId}: ${mismatches.join("; ")}.`,
-    );
+      `Treasury registration could not be verified for ${record.smartAccountId}: ${mismatches.join('; ')}.`
+    )
   }
 }

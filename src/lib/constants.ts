@@ -6,4 +6,4 @@
  * validation) so pure modules like `@/features/treasury/drafts` can import it
  * without dragging `NEXT_PUBLIC_*` validation into their test suite.
  */
-export const LEDGER_CLOSE_SECONDS = 5;
+export const LEDGER_CLOSE_SECONDS = 5

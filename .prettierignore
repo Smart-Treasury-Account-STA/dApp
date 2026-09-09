@@ -1,0 +1,25 @@
+node_modules
+
+# Build output and caches
+.next
+out
+dist
+build
+coverage
+*.tsbuildinfo
+
+# Other git worktrees live here: formatting them would rewrite files that
+# belong to a different branch's checkout.
+.worktrees
+
+# Platform and local runtime state
+.vercel
+.relayer
+.treasuries
+
+# Generated, and noisy to reflow
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+*.lock
+next-env.d.ts

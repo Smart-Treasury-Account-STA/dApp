@@ -1,12 +1,13 @@
-import { findEvent, parseContractEvents } from "sta-sdk";
-import type { SimulationResult, TransactionReceipt } from "@/types";
+import { findEvent, parseContractEvents } from 'sta-sdk'
+
+import type { SimulationResult, TransactionReceipt } from '@/types'
 
 export type ReceiptLabels = {
   /** Shown once the network has confirmed the transaction. */
-  confirmedTitle: string;
+  confirmedTitle: string
   /** Shown while the outcome is still unknown. */
-  submittedTitle: string;
-};
+  submittedTitle: string
+}
 
 /**
  * A short, human-readable line built from whichever of this dApp's known
@@ -17,33 +18,33 @@ export type ReceiptLabels = {
  * status line without an awkward empty append.
  */
 function summarizeEvents(receipt: TransactionReceipt): string | null {
-  if (!receipt.events || receipt.events.length === 0) return null;
-  const parsed = parseContractEvents(receipt.events);
+  if (!receipt.events || receipt.events.length === 0) return null
+  const parsed = parseContractEvents(receipt.events)
 
-  const paid = findEvent(parsed, "pay_ok");
+  const paid = findEvent(parsed, 'pay_ok')
   if (paid) {
-    return `Paid ${paid.amount.toString()} of ${paid.asset} to ${paid.destination}.`;
+    return `Paid ${paid.amount.toString()} of ${paid.asset} to ${paid.destination}.`
   }
-  const split = findEvent(parsed, "splt_ok");
+  const split = findEvent(parsed, 'splt_ok')
   if (split) {
     // `recipient_count` is `SplitExecuted`'s own field name; the sentence it
     // feeds uses this dApp's word for the same thing.
-    return `Split ${split.asset} across ${split.recipient_count} destination${split.recipient_count === 1 ? "" : "s"}.`;
+    return `Split ${split.asset} across ${split.recipient_count} destination${split.recipient_count === 1 ? '' : 's'}.`
   }
-  const scheduled = findEvent(parsed, "auto_ok");
+  const scheduled = findEvent(parsed, 'auto_ok')
   if (scheduled) {
-    return `Executed child ${scheduled.child_sequence} of the scheduled payment: ${scheduled.amount.toString()} of ${scheduled.asset} to ${scheduled.destination}.`;
+    return `Executed child ${scheduled.child_sequence} of the scheduled payment: ${scheduled.amount.toString()} of ${scheduled.asset} to ${scheduled.destination}.`
   }
-  const created = findEvent(parsed, "intent");
+  const created = findEvent(parsed, 'intent')
   if (created) {
-    return `Scheduled intent ${created.intent_id.toString("hex").slice(0, 8)}… created.`;
+    return `Scheduled intent ${created.intent_id.toString('hex').slice(0, 8)}… created.`
   }
-  const cancelled = findEvent(parsed, "cancel");
+  const cancelled = findEvent(parsed, 'cancel')
   if (cancelled) {
-    return `Scheduled intent ${cancelled.intent_id.toString("hex").slice(0, 8)}… cancelled.`;
+    return `Scheduled intent ${cancelled.intent_id.toString('hex').slice(0, 8)}… cancelled.`
   }
 
-  return null;
+  return null
 }
 
 /**
@@ -58,25 +59,27 @@ function summarizeEvents(receipt: TransactionReceipt): string | null {
  */
 export function describeReceipt(
   receipt: TransactionReceipt,
-  labels: ReceiptLabels,
+  labels: ReceiptLabels
 ): SimulationResult {
-  if (receipt.status === "SUCCESS") {
-    const eventSummary = summarizeEvents(receipt);
+  if (receipt.status === 'SUCCESS') {
+    const eventSummary = summarizeEvents(receipt)
     return {
       ok: true,
       title: labels.confirmedTitle,
-      detail: eventSummary ? `${eventSummary} (SUCCESS)` : "Transaction status: SUCCESS",
+      detail: eventSummary
+        ? `${eventSummary} (SUCCESS)`
+        : 'Transaction status: SUCCESS',
       txHash: receipt.hash,
-    };
+    }
   }
 
-  if (receipt.status === "FAILED") {
+  if (receipt.status === 'FAILED') {
     return {
       ok: false,
-      title: "Transaction rejected on-chain",
-      detail: "Transaction status: FAILED",
+      title: 'Transaction rejected on-chain',
+      detail: 'Transaction status: FAILED',
       txHash: receipt.hash,
-    };
+    }
   }
 
   return {
@@ -85,5 +88,5 @@ export function describeReceipt(
     title: labels.submittedTitle,
     detail: `Transaction status: ${receipt.status}. It was accepted for submission and may still confirm — open the transaction to see the final result.`,
     txHash: receipt.hash,
-  };
+  }
 }

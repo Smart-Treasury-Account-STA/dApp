@@ -1,4 +1,4 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next'
 
 // The dApp is served under https://smarttreasury.io/app. The marketing site
 // (org/marketing) owns the apex domain and proxies /app/* to this project's
@@ -6,7 +6,7 @@ import type { NextConfig } from "next";
 // the /app prefix. `next/link` and the router add it on their own; plain
 // `fetch` calls do not, so they go through `apiUrl()` in src/lib/basePath.ts,
 // which reads the same value back from NEXT_PUBLIC_BASE_PATH.
-const BASE_PATH = "/app";
+const BASE_PATH = '/app'
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -23,13 +23,13 @@ const nextConfig: NextConfig = {
       // deployment) nothing is served at `/` once basePath is set. Send it
       // to the console instead of a 404.
       {
-        source: "/",
+        source: '/',
         destination: BASE_PATH,
         basePath: false,
         permanent: false,
       },
-    ];
+    ]
   },
-};
+}
 
-export default nextConfig;
+export default nextConfig

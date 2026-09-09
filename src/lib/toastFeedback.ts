@@ -1,11 +1,11 @@
-import type { SimulationResult } from "@/types";
+import type { SimulationResult } from '@/types'
 
 export type ToastFeedback = {
-  kind: "success" | "error" | "warning";
-  title: string;
-  description: string;
-  explorerUrl: string | null;
-};
+  kind: 'success' | 'error' | 'warning'
+  title: string
+  description: string
+  explorerUrl: string | null
+}
 
 /**
  * Maps a `SimulationResult` to what a toast needs to show.
@@ -19,21 +19,23 @@ export type ToastFeedback = {
  */
 export function buildToastFeedback(
   result: SimulationResult,
-  explorerBaseUrl: string,
+  explorerBaseUrl: string
 ): ToastFeedback {
-  const diagnosticSummary = result.diagnostic?.split("\n")[0];
+  const diagnosticSummary = result.diagnostic?.split('\n')[0]
   const description = diagnosticSummary
     ? `${result.detail}\n${diagnosticSummary}`
-    : result.detail;
+    : result.detail
 
   // A pending submission is neither: green claims a confirmation the network
   // has not given, red claims a failure that did not happen.
-  const kind = result.pending ? "warning" : result.ok ? "success" : "error";
+  const kind = result.pending ? 'warning' : result.ok ? 'success' : 'error'
 
   return {
     kind,
     title: result.title,
     description,
-    explorerUrl: result.txHash ? `${explorerBaseUrl}/tx/${result.txHash}` : null,
-  };
+    explorerUrl: result.txHash
+      ? `${explorerBaseUrl}/tx/${result.txHash}`
+      : null,
+  }
 }

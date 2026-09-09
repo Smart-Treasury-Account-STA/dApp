@@ -1,12 +1,15 @@
-import { STELLAR_CONFIG } from "@/config";
-import type { ContractSet } from "@/lib/env";
-import { signAuthEntry, signTransaction } from "@/lib/wallet";
-import { signAndSubmitContractInvocation, submitAsSourceAccount } from "@/lib/stellarClient";
-import type { WriteOperation } from "@/lib/treasuryWrites";
-import type { TransactionReceipt, WalletSigning } from "@/types";
+import { STELLAR_CONFIG } from '@/config'
+import type { ContractSet } from '@/lib/env'
+import {
+  signAndSubmitContractInvocation,
+  submitAsSourceAccount,
+} from '@/lib/stellarClient'
+import type { WriteOperation } from '@/lib/treasuryWrites'
+import { signAuthEntry, signTransaction } from '@/lib/wallet'
+import type { TransactionReceipt, WalletSigning } from '@/types'
 
 export function walletSigner(address: string): WalletSigning {
-  return { address, signAuthEntry, signTransaction };
+  return { address, signAuthEntry, signTransaction }
 }
 
 /**
@@ -24,16 +27,16 @@ export function walletSigner(address: string): WalletSigning {
 export async function executeWriteOperation(
   operation: WriteOperation,
   wallet: WalletSigning,
-  contracts: ContractSet = STELLAR_CONFIG.contracts,
+  contracts: ContractSet = STELLAR_CONFIG.contracts
 ): Promise<TransactionReceipt> {
-  if (operation.strategy === "custom-account") {
+  if (operation.strategy === 'custom-account') {
     return signAndSubmitContractInvocation({
       args: operation.args,
       functionName: operation.functionName,
       sourceAddress: wallet.address,
       wallet,
       contracts,
-    });
+    })
   }
 
   return submitAsSourceAccount({
@@ -41,5 +44,5 @@ export async function executeWriteOperation(
     contractId: operation.contractId,
     functionName: operation.functionName,
     wallet,
-  });
+  })
 }

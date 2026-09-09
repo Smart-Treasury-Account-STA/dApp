@@ -1,4 +1,4 @@
-import type { SimulationResult } from "@/types";
+import type { SimulationResult } from '@/types'
 
 /**
  * Runs a client-side draft validator and turns a rejection into a result the
@@ -13,15 +13,17 @@ import type { SimulationResult } from "@/types";
  * Returns null when the draft is valid, so callers read as
  * `const invalid = validationFailure(...); if (invalid) return invalid;`.
  */
-export function validationFailure(validate: () => void): SimulationResult | null {
+export function validationFailure(
+  validate: () => void
+): SimulationResult | null {
   try {
-    validate();
-    return null;
+    validate()
+    return null
   } catch (error) {
     return {
       ok: false,
-      title: "Check the form before simulating",
+      title: 'Check the form before simulating',
       detail: error instanceof Error ? error.message : String(error),
-    };
+    }
   }
 }

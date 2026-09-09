@@ -1,6 +1,6 @@
-import * as React from "react";
+import * as React from 'react'
 
-import { cn } from "@/lib/utils";
+import { cn } from '@/lib/utils'
 
 export function Separator({
   className,
@@ -8,9 +8,9 @@ export function Separator({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("h-px w-full bg-border", className)}
+      className={cn('bg-border h-px w-full', className)}
       role="separator"
       {...props}
     />
-  );
+  )
 }

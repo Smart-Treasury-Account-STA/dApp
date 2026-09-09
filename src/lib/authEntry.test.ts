@@ -1,11 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { Address, Keypair, hash, xdr } from "@stellar/stellar-sdk";
-import { Buffer } from "buffer";
+import { Address, Keypair, hash, xdr } from '@stellar/stellar-sdk'
+import { Buffer } from 'buffer'
+import { describe, expect, it } from 'vitest'
 
-import { signDelegatedAuthEntry, signEnvelope } from "./stellarClient";
-import type { WalletSigning } from "@/types";
+import type { WalletSigning } from '@/types'
 
-const CONTRACT = "CB4KZJ3I4XANE6GWPAMXCNXQ34PTQWPXVKFBBMLNKV25GAOXQC7RQUMS";
+import { signDelegatedAuthEntry, signEnvelope } from './stellarClient'
+
+const CONTRACT = 'CB4KZJ3I4XANE6GWPAMXCNXQ34PTQWPXVKFBBMLNKV25GAOXQC7RQUMS'
 
 /**
  * Behaves like Freighter: it parses whatever it is handed strictly as a
@@ -20,20 +21,20 @@ function freighterLikeWallet(keypair: Keypair): WalletSigning {
   return {
     address: keypair.publicKey(),
     async signAuthEntry(authEntryXdr: string) {
-      const preimage = xdr.HashIdPreimage.fromXDR(authEntryXdr, "base64");
-      const signature = keypair.sign(hash(preimage.toXDR()));
+      const preimage = xdr.HashIdPreimage.fromXDR(authEntryXdr, 'base64')
+      const signature = keypair.sign(hash(preimage.toXDR()))
       return {
         // Double-encoded, exactly as the wallets kit delivers it: it calls
         // `Buffer.from(signedAuthEntry).toString("base64")` on a value
         // Freighter already returned as a base64 string.
-        signature: Buffer.from(signature.toString("base64")).toString("base64"),
+        signature: Buffer.from(signature.toString('base64')).toString('base64'),
         signerAddress: keypair.publicKey(),
-      };
+      }
     },
     async signTransaction() {
-      throw new Error("signTransaction is not part of this path.");
+      throw new Error('signTransaction is not part of this path.')
     },
-  };
+  }
 }
 
 /**
@@ -47,166 +48,185 @@ function freighterLikeWallet(keypair: Keypair): WalletSigning {
  * "signature doesn't match payload", which gives no hint that the wrong
  * account signed.
  */
-function wrongAccountWallet(expectedAddress: string, wrongSigner: Keypair): WalletSigning {
+function wrongAccountWallet(
+  expectedAddress: string,
+  wrongSigner: Keypair
+): WalletSigning {
   return {
     address: expectedAddress,
     async signAuthEntry(authEntryXdr: string) {
-      const preimage = xdr.HashIdPreimage.fromXDR(authEntryXdr, "base64");
-      const signature = wrongSigner.sign(hash(preimage.toXDR()));
+      const preimage = xdr.HashIdPreimage.fromXDR(authEntryXdr, 'base64')
+      const signature = wrongSigner.sign(hash(preimage.toXDR()))
       return {
-        signature: Buffer.from(signature.toString("base64")).toString("base64"),
+        signature: Buffer.from(signature.toString('base64')).toString('base64'),
         signerAddress: wrongSigner.publicKey(),
-      };
+      }
     },
     async signTransaction() {
-      throw new Error("signTransaction is not part of this path.");
+      throw new Error('signTransaction is not part of this path.')
     },
-  };
+  }
 }
 
-function unsignedDelegatedEntry(signerAddress: string, expirationLedger: number) {
+function unsignedDelegatedEntry(
+  signerAddress: string,
+  expirationLedger: number
+) {
   const invocation = new xdr.SorobanAuthorizedInvocation({
-    function: xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(
-      new xdr.InvokeContractArgs({
-        contractAddress: new Address(CONTRACT).toScAddress(),
-        functionName: "__check_auth",
-        args: [xdr.ScVal.scvU32(1)],
-      }),
-    ),
+    function:
+      xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(
+        new xdr.InvokeContractArgs({
+          contractAddress: new Address(CONTRACT).toScAddress(),
+          functionName: '__check_auth',
+          args: [xdr.ScVal.scvU32(1)],
+        })
+      ),
     subInvocations: [],
-  });
+  })
 
   return new xdr.SorobanAuthorizationEntry({
     credentials: xdr.SorobanCredentials.sorobanCredentialsAddress(
       new xdr.SorobanAddressCredentials({
         address: new Address(signerAddress).toScAddress(),
-        nonce: xdr.Int64.fromString("12345"),
+        nonce: xdr.Int64.fromString('12345'),
         signatureExpirationLedger: expirationLedger,
         signature: xdr.ScVal.scvVec([]),
-      }),
+      })
     ),
     rootInvocation: invocation,
-  });
+  })
 }
 
-describe("signDelegatedAuthEntry", () => {
-  const keypair = Keypair.random();
-  const expirationLedger = 5_000_000;
+describe('signDelegatedAuthEntry', () => {
+  const keypair = Keypair.random()
+  const expirationLedger = 5_000_000
 
-  it("hands the wallet a preimage it can parse", async () => {
-    const entry = unsignedDelegatedEntry(keypair.publicKey(), expirationLedger);
+  it('hands the wallet a preimage it can parse', async () => {
+    const entry = unsignedDelegatedEntry(keypair.publicKey(), expirationLedger)
 
     await expect(
-      signDelegatedAuthEntry(entry, freighterLikeWallet(keypair), expirationLedger),
-    ).resolves.toBeDefined();
-  });
+      signDelegatedAuthEntry(
+        entry,
+        freighterLikeWallet(keypair),
+        expirationLedger
+      )
+    ).resolves.toBeDefined()
+  })
 
-  it("returns an entry carrying a real signature", async () => {
-    const entry = unsignedDelegatedEntry(keypair.publicKey(), expirationLedger);
+  it('returns an entry carrying a real signature', async () => {
+    const entry = unsignedDelegatedEntry(keypair.publicKey(), expirationLedger)
 
     const signed = await signDelegatedAuthEntry(
       entry,
       freighterLikeWallet(keypair),
-      expirationLedger,
-    );
+      expirationLedger
+    )
 
-    const credentials = signed.credentials().address();
-    expect(credentials.signatureExpirationLedger()).toBe(expirationLedger);
+    const credentials = signed.credentials().address()
+    expect(credentials.signatureExpirationLedger()).toBe(expirationLedger)
     // An unsigned entry carries an empty vec; a signed one must not.
-    expect(credentials.signature().vec()?.length ?? 0).toBeGreaterThan(0);
-  });
+    expect(credentials.signature().vec()?.length ?? 0).toBeGreaterThan(0)
+  })
 
-  it("preserves the invocation the signer approved", async () => {
-    const entry = unsignedDelegatedEntry(keypair.publicKey(), expirationLedger);
+  it('preserves the invocation the signer approved', async () => {
+    const entry = unsignedDelegatedEntry(keypair.publicKey(), expirationLedger)
 
     const signed = await signDelegatedAuthEntry(
       entry,
       freighterLikeWallet(keypair),
-      expirationLedger,
-    );
+      expirationLedger
+    )
 
-    expect(signed.rootInvocation().toXDR("base64")).toBe(
-      entry.rootInvocation().toXDR("base64"),
-    );
-  });
+    expect(signed.rootInvocation().toXDR('base64')).toBe(
+      entry.rootInvocation().toXDR('base64')
+    )
+  })
 
-  it("fails loudly when the wallet returns nothing", async () => {
-    const entry = unsignedDelegatedEntry(keypair.publicKey(), expirationLedger);
+  it('fails loudly when the wallet returns nothing', async () => {
+    const entry = unsignedDelegatedEntry(keypair.publicKey(), expirationLedger)
     const silentWallet: WalletSigning = {
       address: keypair.publicKey(),
       async signAuthEntry() {
-        return undefined;
+        return undefined
       },
       async signTransaction() {
-        return undefined;
+        return undefined
       },
-    };
+    }
 
     await expect(
-      signDelegatedAuthEntry(entry, silentWallet, expirationLedger),
-    ).rejects.toThrow(/did not return a signed authorization entry/i);
-  });
+      signDelegatedAuthEntry(entry, silentWallet, expirationLedger)
+    ).rejects.toThrow(/did not return a signed authorization entry/i)
+  })
 
-  it("fails with an actionable message when the wallet signs with a different account", async () => {
-    const entry = unsignedDelegatedEntry(keypair.publicKey(), expirationLedger);
-    const wrongSigner = Keypair.random();
+  it('fails with an actionable message when the wallet signs with a different account', async () => {
+    const entry = unsignedDelegatedEntry(keypair.publicKey(), expirationLedger)
+    const wrongSigner = Keypair.random()
 
     await expect(
       signDelegatedAuthEntry(
         entry,
         wrongAccountWallet(keypair.publicKey(), wrongSigner),
-        expirationLedger,
-      ),
+        expirationLedger
+      )
     ).rejects.toThrow(
-      new RegExp(`${wrongSigner.publicKey()}.*instead of.*${keypair.publicKey()}`, "i"),
-    );
-  });
-});
+      new RegExp(
+        `${wrongSigner.publicKey()}.*instead of.*${keypair.publicKey()}`,
+        'i'
+      )
+    )
+  })
+})
 
-describe("signEnvelope", () => {
-  const EXPECTED = "GEXPECTED0000000000000000000000000000000000000000000000";
-  const WRONG = "GWRONG00000000000000000000000000000000000000000000000000";
+describe('signEnvelope', () => {
+  const EXPECTED = 'GEXPECTED0000000000000000000000000000000000000000000000'
+  const WRONG = 'GWRONG00000000000000000000000000000000000000000000000000'
 
-  function wallet(signTransaction: WalletSigning["signTransaction"]): WalletSigning {
+  function wallet(
+    signTransaction: WalletSigning['signTransaction']
+  ): WalletSigning {
     return {
       address: EXPECTED,
       async signAuthEntry() {
-        throw new Error("signAuthEntry is not part of this path.");
+        throw new Error('signAuthEntry is not part of this path.')
       },
       signTransaction,
-    };
+    }
   }
 
-  it("returns the signed xdr when the wallet signs with the expected account", async () => {
-    const w = wallet(async () => ({ xdr: "signed-xdr", signerAddress: EXPECTED }));
+  it('returns the signed xdr when the wallet signs with the expected account', async () => {
+    const w = wallet(async () => ({
+      xdr: 'signed-xdr',
+      signerAddress: EXPECTED,
+    }))
 
-    await expect(signEnvelope(w, "unsigned-xdr")).resolves.toBe("signed-xdr");
-  });
+    await expect(signEnvelope(w, 'unsigned-xdr')).resolves.toBe('signed-xdr')
+  })
 
   it("treats a missing signerAddress as the expected signer, for wallet kits that don't report one", async () => {
-    const w = wallet(async () => ({ xdr: "signed-xdr" }));
+    const w = wallet(async () => ({ xdr: 'signed-xdr' }))
 
-    await expect(signEnvelope(w, "unsigned-xdr")).resolves.toBe("signed-xdr");
-  });
+    await expect(signEnvelope(w, 'unsigned-xdr')).resolves.toBe('signed-xdr')
+  })
 
-  it("fails with an actionable message when the wallet signs with a different account", async () => {
+  it('fails with an actionable message when the wallet signs with a different account', async () => {
     // Same production bug as signDelegatedAuthEntry above, one layer up:
     // the envelope signature. Freighter's active account didn't match the
     // one requested, and this is the only signature check at all for a
     // source-account-strategy write -- no custom AuthPayload to catch it
     // another way.
-    const w = wallet(async () => ({ xdr: "signed-xdr", signerAddress: WRONG }));
+    const w = wallet(async () => ({ xdr: 'signed-xdr', signerAddress: WRONG }))
 
-    await expect(signEnvelope(w, "unsigned-xdr")).rejects.toThrow(
-      new RegExp(`${WRONG}.*instead of.*${EXPECTED}`, "i"),
-    );
-  });
+    await expect(signEnvelope(w, 'unsigned-xdr')).rejects.toThrow(
+      new RegExp(`${WRONG}.*instead of.*${EXPECTED}`, 'i')
+    )
+  })
 
-  it("fails loudly when the wallet returns nothing", async () => {
-    const w = wallet(async () => undefined);
+  it('fails loudly when the wallet returns nothing', async () => {
+    const w = wallet(async () => undefined)
 
-    await expect(signEnvelope(w, "unsigned-xdr")).rejects.toThrow(
-      /did not return a signed transaction envelope/i,
-    );
-  });
-});
+    await expect(signEnvelope(w, 'unsigned-xdr')).rejects.toThrow(
+      /did not return a signed transaction envelope/i
+    )
+  })
+})
