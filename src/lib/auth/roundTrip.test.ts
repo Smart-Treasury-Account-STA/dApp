@@ -25,9 +25,7 @@ describe('challenge to session, end to end', () => {
   it('resolves to the address that signed the challenge it was given', () => {
     const wallet = Keypair.random()
     const challenge = issueChallenge(SECRET, wallet.publicKey())
-    const signed = wallet
-      .sign(Buffer.from(challenge, 'utf8'))
-      .toString('base64')
+    const signed = wallet.signMessage(challenge).toString('base64')
 
     expect(authenticate(challenge, signed)).toBe(wallet.publicKey())
   })
@@ -38,9 +36,7 @@ describe('challenge to session, end to end', () => {
     const victim = Keypair.random()
     const attacker = Keypair.random()
     const challenge = issueChallenge(SECRET, victim.publicKey())
-    const signed = attacker
-      .sign(Buffer.from(challenge, 'utf8'))
-      .toString('base64')
+    const signed = attacker.signMessage(challenge).toString('base64')
 
     expect(authenticate(challenge, signed)).toBeNull()
   })
@@ -51,7 +47,7 @@ describe('challenge to session, end to end', () => {
     const wallet = Keypair.random()
     const challenge = issueChallenge(SECRET, wallet.publicKey())
     const body = challenge.slice(0, challenge.lastIndexOf('.'))
-    const signed = wallet.sign(Buffer.from(body, 'utf8')).toString('base64')
+    const signed = wallet.signMessage(body).toString('base64')
 
     expect(authenticate(challenge, signed)).toBeNull()
   })

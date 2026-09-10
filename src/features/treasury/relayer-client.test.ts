@@ -51,10 +51,25 @@ describe('openWalletRelayerSession', () => {
     expect(sign).not.toHaveBeenCalled()
   })
 
-  it('reports a rejected signature rather than reporting success', async () => {
+  it("reports a rejected signature with the server's reason, not success", async () => {
     fetchMock
       .mockResolvedValueOnce(json({ challenge: 'ch' }))
-      .mockResolvedValueOnce(json({ error: 'bad' }, false))
+      .mockResolvedValueOnce(json({ error: 'Invalid credentials.' }, false))
+
+    await expect(
+      openWalletRelayerSession(ADDRESS, async () => 'sig')
+    ).rejects.toThrow('Invalid credentials.')
+  })
+
+  it('falls back to a generic message when the rejection carries no body', async () => {
+    fetchMock
+      .mockResolvedValueOnce(json({ challenge: 'ch' }))
+      .mockResolvedValueOnce(
+        new Response('', {
+          status: 502,
+          headers: { 'content-type': 'text/plain' },
+        })
+      )
 
     await expect(
       openWalletRelayerSession(ADDRESS, async () => 'sig')

@@ -240,6 +240,17 @@ export async function signMessage(message: string, address: string) {
       'This wallet cannot sign messages. Connect a wallet that supports message signing to continue.'
     )
   }
+  // Same check as signDelegatedAuthEntry: Freighter signs with whichever
+  // account is active in the extension, not necessarily the one asked for.
+  // The server would reject that signature with nothing more specific than
+  // "not accepted", so name the mismatch here, where it can be acted on.
+  const signerAddress =
+    typeof result === 'string' ? address : (result?.signerAddress ?? address)
+  if (signerAddress !== address) {
+    throw new Error(
+      `Wallet signed with ${signerAddress} instead of the connected account ${address}. Switch to that account in your wallet and try again.`
+    )
+  }
   return signedMessage
 }
 

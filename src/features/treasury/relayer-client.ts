@@ -153,7 +153,10 @@ export async function openWalletRelayerSession(
     body: JSON.stringify({ challenge, signedMessage }),
   })
   if (!response.ok) {
-    throw new Error('The wallet signature was not accepted.')
+    const payload = (await response.json().catch(() => null)) as {
+      error?: string
+    } | null
+    throw new Error(payload?.error ?? 'The wallet signature was not accepted.')
   }
 }
 
