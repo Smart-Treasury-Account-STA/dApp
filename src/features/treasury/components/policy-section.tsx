@@ -84,7 +84,7 @@ export function PolicySection({
     maxSingleTransfer: '10000000',
   })
   const [destinationDraft, setDestinationDraft] = useState(
-    STELLAR_CONFIG.testDestination
+    STELLAR_CONFIG.defaultDestination
   )
   const [operationDraft, setOperationDraft] = useState<string>(
     KNOWN_OPERATIONS[0]

@@ -49,6 +49,7 @@ import type {
   IntentStatus,
   ScheduledIntentRecord,
 } from '@/lib/scheduledIntents'
+import { simulationSourceAddress } from '@/lib/simulationSource'
 import {
   ScheduledIntentExistsError,
   approveAndSubmitCancelSchedule,
@@ -319,7 +320,7 @@ export function ScheduleSection({
   })
 
   async function onScheduleSimulation() {
-    const source = wallet.address ?? STELLAR_CONFIG.testDestination
+    const source = simulationSourceAddress(wallet.address)
     onNotice(await simulateSchedule(source, draft, contracts))
   }
 

@@ -23,6 +23,7 @@ import type { AssetHolding } from '@/lib/assetHolding'
 import type { ContractSet } from '@/lib/env'
 import { makeNonce } from '@/lib/format'
 import { describeReceipt } from '@/lib/receipt'
+import { simulationSourceAddress } from '@/lib/simulationSource'
 import {
   approveAndSubmitSplit,
   simulateSplit,
@@ -108,7 +109,7 @@ export function SplitSection({
   }
 
   async function onSplitSimulation() {
-    const source = wallet.address ?? STELLAR_CONFIG.testDestination
+    const source = simulationSourceAddress(wallet.address)
     onNotice(await simulateSplit(source, draft, contracts))
   }
 

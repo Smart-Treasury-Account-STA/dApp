@@ -23,6 +23,7 @@ import type { AssetHolding } from '@/lib/assetHolding'
 import type { ContractSet } from '@/lib/env'
 import { makeNonce } from '@/lib/format'
 import { describeReceipt } from '@/lib/receipt'
+import { simulationSourceAddress } from '@/lib/simulationSource'
 import {
   approveAndSubmitTransfer,
   checkNonce,
@@ -97,18 +98,18 @@ export function PaymentSection({
   })
 
   async function onPolicyCheck() {
-    const source = wallet.address ?? STELLAR_CONFIG.testDestination
+    const source = simulationSourceAddress(wallet.address)
     onNotice(await simulatePolicy(source, draft, contracts))
   }
 
   async function onTransferSimulation() {
-    const source = wallet.address ?? STELLAR_CONFIG.testDestination
+    const source = simulationSourceAddress(wallet.address)
     onNotice(await simulateTransfer(source, draft, contracts))
   }
 
   async function onNonceCheck() {
     try {
-      const source = wallet.address ?? STELLAR_CONFIG.testDestination
+      const source = simulationSourceAddress(wallet.address)
       const used = await checkNonce(source, draft.nonce, contracts)
       onNotice({
         ok: !used,
