@@ -54,38 +54,6 @@ export async function executeRelayerJob(
   return payload.job
 }
 
-export async function runDueRelayerJobs() {
-  const response = await fetch(apiUrl('/api/relayer/run'), {
-    method: 'POST',
-    credentials: 'same-origin',
-  })
-  if (!response.ok) {
-    const payload = (await response.json()) as { error?: string }
-    throw new Error(payload.error ?? 'Could not run due relayer jobs.')
-  }
-  const payload = (await response.json()) as { updated: RelayerJobRecord[] }
-  return payload.updated
-}
-
-export async function openRelayerSession(token: string) {
-  const response = await fetch(apiUrl('/api/relayer/session'), {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ token }),
-  })
-  if (!response.ok) {
-    throw new Error('Invalid operator token.')
-  }
-}
-
-export async function closeRelayerSession() {
-  await fetch(apiUrl('/api/relayer/session'), {
-    method: 'DELETE',
-    credentials: 'same-origin',
-  })
-}
-
 export type RelayerSessionState = {
   active: boolean
   /** `operator`, a Stellar address, or null when there is no session. */
@@ -165,9 +133,8 @@ export async function openWalletRelayerSession(
  * wallet session if none does.
  *
  * Any live session is enough to *reach* the server; whether it may act on a
- * given treasury is the server's decision, per treasury. So an operator who
- * already unlocked is not asked to sign, and a returning wallet is not asked
- * twice within its session.
+ * given treasury is the server's decision, per treasury. So a returning
+ * wallet is not asked to sign twice within its session.
  */
 export async function ensureRelayerSession(
   address: string,

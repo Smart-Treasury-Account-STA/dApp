@@ -80,7 +80,6 @@ export function TreasuryConsole({
   const { setTheme, resolvedTheme } = useTheme()
   const { wallet, connect, disconnect } = useWallet()
   const [notice, setNotice] = useState<SimulationResult | null>(null)
-  const [relayerSessionActive, setRelayerSessionActive] = useState(false)
   const [paymentDraft, setPaymentDraft] = useState<PaymentDraft>({
     asset: contracts.defaultAsset,
     destination: STELLAR_CONFIG.defaultDestination,
@@ -390,8 +389,7 @@ export function TreasuryConsole({
         <RelayerSection
           contracts={contracts}
           onNotice={setNotice}
-          onSessionActiveChange={setRelayerSessionActive}
-          sessionActive={relayerSessionActive}
+          wallet={wallet}
         />
 
         <CapabilitiesSection />

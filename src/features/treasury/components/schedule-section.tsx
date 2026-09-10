@@ -229,8 +229,7 @@ export function ScheduleSection({
    * per treasury.
    *
    * `ensureRelayerSession` skips the signature when a session is already
-   * open, so an operator who unlocked the panel is not prompted, and a wallet
-   * is asked once rather than on every queue.
+   * open, so a wallet is asked once rather than on every queue.
    */
   async function authenticateForQueueing() {
     if (!wallet.address) {
@@ -239,7 +238,6 @@ export function ScheduleSection({
     await ensureRelayerSession(wallet.address, (message) =>
       signMessage(message, wallet.address as string)
     )
-    queryClient.invalidateQueries({ queryKey: ['relayer-session'] })
   }
 
   const queueRelayerJobMutation = useMutation({
