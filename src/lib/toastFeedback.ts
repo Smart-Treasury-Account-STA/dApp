@@ -26,9 +26,15 @@ export function buildToastFeedback(
     ? `${result.detail}\n${diagnosticSummary}`
     : result.detail
 
-  // A pending submission is neither: green claims a confirmation the network
-  // has not given, red claims a failure that did not happen.
-  const kind = result.pending ? 'warning' : result.ok ? 'success' : 'error'
+  // Green is reserved for outcomes that are settled -- a simulation that
+  // answered, a confirmed transaction, a completed local action. A
+  // transaction still waiting on the signer or on the network is neither:
+  // green would claim a confirmation nobody gave, red a failure that did not
+  // happen.
+  //
+  // `ok` is read first on purpose: `pending` narrows a success, it never
+  // softens a failure.
+  const kind = !result.ok ? 'error' : result.pending ? 'warning' : 'success'
 
   return {
     kind,

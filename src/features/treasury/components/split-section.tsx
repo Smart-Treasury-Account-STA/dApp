@@ -78,6 +78,7 @@ export function SplitSection({
     onMutate: () => {
       onNotice({
         ok: true,
+        pending: true,
         title: 'Split approval requested',
         detail:
           'Approve the SmartAccount authorization entry and the prepared split transaction.',

@@ -74,6 +74,7 @@ export function PaymentSection({
     onMutate: () => {
       onNotice({
         ok: true,
+        pending: true,
         title: 'Wallet approval requested',
         detail:
           'Approve the SmartAccount authorization entry, then approve the prepared transaction envelope.',

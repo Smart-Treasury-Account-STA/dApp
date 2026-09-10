@@ -173,6 +173,7 @@ export function ScheduleSection({
     onMutate: () => {
       onNotice({
         ok: true,
+        pending: true,
         title: 'Schedule approval requested',
         detail:
           'Approve the SmartAccount authorization entry and the prepared schedule transaction.',
@@ -293,6 +294,7 @@ export function ScheduleSection({
     onMutate: () => {
       onNotice({
         ok: true,
+        pending: true,
         title: 'Cancellation approval requested',
         detail:
           'Approve the SmartAccount authorization entry to cancel this scheduled payment.',

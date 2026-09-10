@@ -83,6 +83,54 @@ describe('buildToastFeedback', () => {
     expect(feedback.explorerUrl).toBe(`${EXPLORER}/tx/abc123`)
   })
 
+  it('shows a wallet prompt awaiting the signer as a warning', () => {
+    // The signer has been asked and has not answered. Nothing is signed,
+    // nothing is submitted, and the toast that follows it -- confirmed,
+    // still pending, or failed -- is the one that settles the matter.
+    const feedback = buildToastFeedback(
+      {
+        ok: true,
+        pending: true,
+        title: 'Wallet approval requested',
+        detail: 'Approve the authorization entry, then the envelope.',
+      },
+      EXPLORER
+    )
+
+    expect(feedback.kind).toBe('warning')
+  })
+
+  it('keeps a passing simulation green', () => {
+    // A simulation reports on itself: asked to check, it checked, and it
+    // answered. Nothing about it is unresolved, so it is not a warning.
+    const feedback = buildToastFeedback(
+      {
+        ok: true,
+        title: 'Policy simulation passed',
+        detail: 'Asset, destination, amount and version are accepted.',
+      },
+      EXPLORER
+    )
+
+    expect(feedback.kind).toBe('success')
+  })
+
+  it('reports a failure as an error even when it is flagged pending', () => {
+    // `pending` narrows a success; it must never soften a failure into a
+    // warning, whatever order the fields arrive in.
+    const feedback = buildToastFeedback(
+      {
+        ok: false,
+        pending: true,
+        title: 'Transfer rejected by the contract',
+        detail: 'Policy rejected the destination.',
+      },
+      EXPLORER
+    )
+
+    expect(feedback.kind).toBe('error')
+  })
+
   it('keeps the description to just the detail when there is no diagnostic', () => {
     const feedback = buildToastFeedback(
       {

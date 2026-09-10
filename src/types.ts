@@ -67,8 +67,10 @@ export type ScheduleDraft = PaymentDraft & {
 export type SimulationResult = {
   ok: boolean
   /**
-   * The network has neither confirmed nor rejected this yet. Not a failure —
-   * `ok` stays true — but not a confirmation to report either.
+   * Narrows `ok: true`: the network has neither confirmed nor rejected this
+   * yet. Two shapes reach here — a wallet prompt the signer has not answered,
+   * and a submission whose confirmation the poll never saw. Neither is a
+   * failure, and neither is a confirmation to report as one.
    */
   pending?: boolean
   title: string
