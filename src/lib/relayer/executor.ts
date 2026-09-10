@@ -15,6 +15,7 @@ import { findEvent, parseContractEvents } from 'sta-sdk'
 
 import { STELLAR_CONFIG } from '@/config'
 import type { ContractSet } from '@/lib/env'
+import { truncateAddress } from '@/lib/format'
 import { inclusionFee } from '@/lib/inclusionFee'
 import { isTerminalRelayerJob } from '@/lib/relayer/jobStatus'
 import {
@@ -362,7 +363,7 @@ export async function executeRelayerJob(job: RelayerJobRecord) {
         ? findEvent(parseContractEvents(eventsForOp), 'auto_ok')
         : undefined
       const note = executed
-        ? `Executed child ${executed.child_sequence}: ${executed.amount.toString()} of ${executed.asset} to ${executed.destination}.`
+        ? `Executed child ${executed.child_sequence}: ${executed.amount.toString()} of ${truncateAddress(executed.asset)} to ${truncateAddress(executed.destination)}.`
         : 'Scheduled payment executed exactly once for the consumed child sequence.'
       return updateRelayerJob(job.smartAccountId, job.intentId, (current) => ({
         ...current,

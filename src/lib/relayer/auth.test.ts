@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { hasValidRelayerSession, requireRelayerAdmin } from '@/lib/relayer/auth'
 import {
+  OPERATOR_SUBJECT,
   RELAYER_SESSION_COOKIE,
   createSessionValue,
 } from '@/lib/relayer/session'
@@ -47,7 +48,11 @@ describe('requireRelayerAdmin', () => {
 
   it('throws with an expired session cookie', () => {
     const now = Math.floor(Date.now() / 1000)
-    const value = createSessionValue(adminToken, now - 60 * 60 * 24)
+    const value = createSessionValue(
+      adminToken,
+      OPERATOR_SUBJECT,
+      now - 60 * 60 * 24
+    )
     expect(() =>
       requireRelayerAdmin(
         request({ cookie: `${RELAYER_SESSION_COOKIE}=${value}` })
@@ -104,7 +109,11 @@ describe('hasValidRelayerSession', () => {
 
   it('reports no session for an expired cookie', () => {
     const now = Math.floor(Date.now() / 1000)
-    const value = createSessionValue(adminToken, now - 60 * 60 * 24)
+    const value = createSessionValue(
+      adminToken,
+      OPERATOR_SUBJECT,
+      now - 60 * 60 * 24
+    )
     expect(
       hasValidRelayerSession(
         request({ cookie: `${RELAYER_SESSION_COOKIE}=${value}` })

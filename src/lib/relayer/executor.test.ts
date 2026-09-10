@@ -389,7 +389,10 @@ describe('executeRelayerJob — submission outcomes', () => {
 
     expect(result.note).toContain('child 3')
     expect(result.note).toContain('5000000')
-    expect(result.note).toContain(
+    // The persisted note carries truncated addresses: it is rendered as-is in
+    // the relayer job card, where a full strkey blew out the grid column.
+    expect(result.note).toContain('GDEST00...000000')
+    expect(result.note).not.toContain(
       'GDEST000000000000000000000000000000000000000000000000'
     )
   })

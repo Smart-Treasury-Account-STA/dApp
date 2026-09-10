@@ -1,6 +1,7 @@
 import { Address, xdr } from '@stellar/stellar-sdk'
 import { describe, expect, it } from 'vitest'
 
+import { truncateAddress } from './format'
 import { describeReceipt } from './receipt'
 
 const LABELS = {
@@ -101,8 +102,13 @@ describe('describeReceipt', () => {
     )
 
     expect(result.detail).toContain('Paid 5000000')
-    expect(result.detail).toContain(ASSET)
-    expect(result.detail).toContain(DESTINATION)
+    // Truncated, not full: a 56-character strkey is unbreakable text, and two
+    // of them in one sentence overflowed every surface that shows this line
+    // -- the relayer job card and the toast. The explorer link carries the
+    // full value.
+    expect(result.detail).toContain(truncateAddress(ASSET))
+    expect(result.detail).toContain(truncateAddress(DESTINATION))
+    expect(result.detail).not.toContain(ASSET)
   })
 
   it('falls back to the plain status line when there are no events to summarize', () => {

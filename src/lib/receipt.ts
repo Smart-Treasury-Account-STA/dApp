@@ -1,5 +1,6 @@
 import { findEvent, parseContractEvents } from 'sta-sdk'
 
+import { truncateAddress } from '@/lib/format'
 import type { SimulationResult, TransactionReceipt } from '@/types'
 
 export type ReceiptLabels = {
@@ -23,17 +24,17 @@ function summarizeEvents(receipt: TransactionReceipt): string | null {
 
   const paid = findEvent(parsed, 'pay_ok')
   if (paid) {
-    return `Paid ${paid.amount.toString()} of ${paid.asset} to ${paid.destination}.`
+    return `Paid ${paid.amount.toString()} of ${truncateAddress(paid.asset)} to ${truncateAddress(paid.destination)}.`
   }
   const split = findEvent(parsed, 'splt_ok')
   if (split) {
     // `recipient_count` is `SplitExecuted`'s own field name; the sentence it
     // feeds uses this dApp's word for the same thing.
-    return `Split ${split.asset} across ${split.recipient_count} destination${split.recipient_count === 1 ? '' : 's'}.`
+    return `Split ${truncateAddress(split.asset)} across ${split.recipient_count} destination${split.recipient_count === 1 ? '' : 's'}.`
   }
   const scheduled = findEvent(parsed, 'auto_ok')
   if (scheduled) {
-    return `Executed child ${scheduled.child_sequence} of the scheduled payment: ${scheduled.amount.toString()} of ${scheduled.asset} to ${scheduled.destination}.`
+    return `Executed child ${scheduled.child_sequence} of the scheduled payment: ${scheduled.amount.toString()} of ${truncateAddress(scheduled.asset)} to ${truncateAddress(scheduled.destination)}.`
   }
   const created = findEvent(parsed, 'intent')
   if (created) {

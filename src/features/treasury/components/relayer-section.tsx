@@ -238,7 +238,7 @@ export function RelayerSection({
         <div className="grid grid-cols-3 gap-3 max-xl:grid-cols-1">
           {relayerJobsQuery.data.map((job) => (
             <div
-              className="bg-background grid min-h-44 content-start gap-3 rounded-lg border p-4"
+              className="bg-background grid min-h-44 min-w-0 content-start gap-3 rounded-lg border p-4"
               key={`${job.intentId}-${job.childSequence}`}
             >
               <div className="grid gap-1">
@@ -250,7 +250,7 @@ export function RelayerSection({
                 </span>
               </div>
               <StatusBadge label={job.status} />
-              <p className="text-muted-foreground m-0 text-sm leading-6">
+              <p className="text-muted-foreground m-0 text-sm leading-6 wrap-anywhere">
                 {job.note}
               </p>
               <small className="text-muted-foreground">

@@ -28,6 +28,13 @@ type WalletKit = {
     preimageXdr: string,
     options: { address: string; networkPassphrase: string }
   ) => Promise<string | { signedAuthEntry?: string; signerAddress?: string }>
+  /** SEP-43. Optional because a wallet may not implement it -- Freighter
+   * does, several others do not, and there is no fallback (see signMessage
+   * below). */
+  signMessage?: (
+    message: string,
+    options: { address: string; networkPassphrase: string }
+  ) => Promise<string | { signedMessage?: string; signerAddress?: string }>
   signTransaction?: (
     transactionXdr: string,
     options: { address: string; networkPassphrase: string }
@@ -201,6 +208,39 @@ export async function signAuthEntry(preimageXdr: string, address: string) {
     signature: result.signedAuthEntry,
     signerAddress: result.signerAddress,
   }
+}
+
+/**
+ * Signs an arbitrary string with the connected wallet (SEP-43 `signMessage`),
+ * used to prove control of an address without submitting anything on-chain.
+ *
+ * Not every wallet implements it, and there is no fallback: the operator
+ * token is a single shared secret that must not be handed to users, so a
+ * wallet that cannot sign a message cannot authenticate here. The error says
+ * so in the words the person needs, because it is shown to them.
+ */
+export async function signMessage(message: string, address: string) {
+  if (!kitHandle?.kit) {
+    throw new Error('No wallet is connected.')
+  }
+  if (typeof kitHandle.kit.signMessage !== 'function') {
+    throw new Error(
+      'This wallet cannot sign messages. Connect a wallet that supports message signing to continue.'
+    )
+  }
+
+  const result = await kitHandle.kit.signMessage(message, {
+    address,
+    networkPassphrase: STELLAR_CONFIG.networkPassphrase,
+  })
+  const signedMessage =
+    typeof result === 'string' ? result : result?.signedMessage
+  if (!signedMessage) {
+    throw new Error(
+      'This wallet cannot sign messages. Connect a wallet that supports message signing to continue.'
+    )
+  }
+  return signedMessage
 }
 
 export async function signTransaction(transactionXdr: string, address: string) {
