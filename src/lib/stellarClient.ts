@@ -514,13 +514,39 @@ function getSignerAddresses(value: SimulationValue) {
   return Array.from(new Set(serialized.match(/G[A-Z2-7]{55}/g) ?? []))
 }
 
+/**
+ * Names the reason the network refused a transaction.
+ *
+ * A sendTransaction status of ERROR means the transaction was rejected
+ * before it ever reached a ledger, and `errorResult` is the only thing that
+ * says why: a TransactionResult whose result code is the actual diagnosis --
+ * txBadAuth (signed for a different network, or by the wrong key),
+ * txInsufficientFee, txInsufficientBalance, txBadSeq, txSorobanInvalid, and
+ * so on. Reporting the bare status made every one of those read identically
+ * as "Submission failed: ERROR", which tells whoever has to act on it
+ * nothing at all.
+ *
+ * The RPC's own schema marks the field optional, so an absent one is
+ * reported as absent rather than papered over with a guess.
+ */
+export function describeSubmissionRejection(
+  errorResult?: xdr.TransactionResult
+): string {
+  if (!errorResult) {
+    return 'ERROR (the RPC gave no result code)'
+  }
+  return errorResult.result().switch().name
+}
+
 export async function submitSignedTransaction(
   signedTx: Transaction
 ): Promise<TransactionReceipt> {
   const server = getServer()
   const sendResponse = await server.sendTransaction(signedTx)
   if (sendResponse.status === 'ERROR') {
-    throw new Error(`Submission failed: ${sendResponse.status}`)
+    throw new Error(
+      `Submission failed: ${describeSubmissionRejection(sendResponse.errorResult)}`
+    )
   }
   if (sendResponse.status === 'TRY_AGAIN_LATER') {
     throw new Error('RPC asked the dApp to retry submission later.')
