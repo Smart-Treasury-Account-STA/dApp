@@ -180,8 +180,133 @@ export async function readQueueableScheduledIntent(
   }
 }
 
+/**
+ * How long a job may sit in `executing` before a later run is allowed to
+ * take it back.
+ *
+ * `executing` is written before the executor transaction is submitted and
+ * only replaced once its outcome is known, so a run that dies in between --
+ * a function timeout mid-poll, a crashed process -- leaves the job in that
+ * state with nobody coming back for it. The lease bounds that: after it
+ * expires the job is due again, and `executeRelayerJob` settles whatever the
+ * interrupted run left behind before doing anything new.
+ *
+ * Five minutes is longer than everything an in-flight run can legitimately
+ * take: the executor transaction carries `setTimeout(120)`, so two minutes
+ * after submission it can no longer be included; the poll lasts 20 x 1.5 s;
+ * the rest is margin for a slow RPC. A lease shorter than the transaction
+ * timeout would let a second run resubmit while the first transaction could
+ * still land -- harmless on chain (the contract refuses a consumed child
+ * sequence) but a wasted fee and a confusing job note.
+ */
+export const EXECUTING_LEASE_MS = 5 * 60 * 1000
+
+export function isExecutingLeaseExpired(
+  job: Pick<RelayerJobRecord, 'status' | 'updatedAt'>,
+  now = Date.now()
+): boolean {
+  if (job.status !== 'executing') return false
+  const since = Date.parse(job.updatedAt)
+  // An unparseable timestamp cannot prove the lease is live; treating it as
+  // expired errs on the side of retrying, which the on-chain checks make safe.
+  return !Number.isFinite(since) || now - since >= EXECUTING_LEASE_MS
+}
+
+function describeExecution(
+  result: rpc.Api.GetSuccessfulTransactionResponse
+): string {
+  const eventsForOp = result.events?.contractEventsXdr?.[0]
+  const executed = eventsForOp
+    ? findEvent(parseContractEvents(eventsForOp), 'auto_ok')
+    : undefined
+  return executed
+    ? `Executed child ${executed.child_sequence}: ${executed.amount.toString()} of ${truncateAddress(executed.asset)} to ${truncateAddress(executed.destination)}.`
+    : 'Scheduled payment executed exactly once for the consumed child sequence.'
+}
+
+/**
+ * Records one successful on-chain execution: the child sequence advances,
+ * and the job is `executed` once the execution count meets the lower of the
+ * local and (when known) on-chain limits, `ready` otherwise.
+ */
+function recordExecution(
+  job: RelayerJobRecord,
+  txHash: string,
+  note: string,
+  maxExecutionsOnChain?: number
+) {
+  return updateRelayerJob(job.smartAccountId, job.intentId, (current) => {
+    const executionCount = current.executionCount + 1
+    const limit = Math.min(
+      current.maxExecutions,
+      maxExecutionsOnChain ?? current.maxExecutions
+    )
+    return {
+      ...current,
+      status: executionCount >= limit ? 'executed' : 'ready',
+      executionCount,
+      childSequence: current.childSequence + 1,
+      note,
+      txHash,
+    }
+  })
+}
+
+function recordFailedExecution(
+  job: RelayerJobRecord,
+  txHash: string,
+  note: string
+) {
+  return updateRelayerJob(job.smartAccountId, job.intentId, (current) => ({
+    ...current,
+    status: 'failed',
+    note,
+    txHash,
+  }))
+}
+
+/**
+ * Settles a submission an earlier run made but never got to record.
+ *
+ * Returns the updated job when the RPC knows the outcome, and `null` when it
+ * does not: every executor transaction carries `setTimeout(120)`, so a hash
+ * the RPC no longer knows once the lease has expired cannot be included any
+ * more, and the caller proceeds with the normal path -- whose on-chain
+ * `is_child_executed` read is the final authority either way.
+ */
+async function settleInterruptedSubmission(
+  server: rpc.Server,
+  job: RelayerJobRecord,
+  txHash: string
+) {
+  const result = await server.getTransaction(txHash)
+  if (result.status === 'SUCCESS') {
+    return recordExecution(
+      job,
+      txHash,
+      `Settled after an interrupted run. ${describeExecution(result)}`
+    )
+  }
+  if (result.status === 'FAILED') {
+    return recordFailedExecution(
+      job,
+      txHash,
+      'Executor transaction failed on-chain (settled after an interrupted run). Child sequence was not advanced.'
+    )
+  }
+  return null
+}
+
 export async function executeRelayerJob(job: RelayerJobRecord) {
   const server = new rpc.Server(STELLAR_CONFIG.rpcUrl)
+
+  // A job still marked `executing` with a hash is a run that was interrupted
+  // between submission and outcome. Settle that first: nothing below may
+  // submit again while the earlier transaction could have landed.
+  if (job.status === 'executing' && job.txHash) {
+    const settled = await settleInterruptedSubmission(server, job, job.txHash)
+    if (settled) return settled
+  }
   const contracts = await resolveTreasuryContracts(job.smartAccountId)
   const latestLedger = await server.getLatestLedger()
 
@@ -329,37 +454,33 @@ export async function executeRelayerJob(job: RelayerJobRecord) {
     }))
   }
 
+  // Record the hash before polling. A run killed during the poll must leave
+  // enough behind for the next run to settle the outcome instead of
+  // guessing -- see `settleInterruptedSubmission`.
+  await updateRelayerJob(job.smartAccountId, job.intentId, (current) => ({
+    ...current,
+    status: 'executing',
+    note: 'Submitted, awaiting inclusion.',
+    txHash: sent.hash,
+  }))
+
   for (let attempt = 0; attempt < 20; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 1500))
     const result = await server.getTransaction(sent.hash)
     if (result.status === 'SUCCESS') {
-      const eventsForOp = result.events?.contractEventsXdr?.[0]
-      const executed = eventsForOp
-        ? findEvent(parseContractEvents(eventsForOp), 'auto_ok')
-        : undefined
-      const note = executed
-        ? `Executed child ${executed.child_sequence}: ${executed.amount.toString()} of ${truncateAddress(executed.asset)} to ${truncateAddress(executed.destination)}.`
-        : 'Scheduled payment executed exactly once for the consumed child sequence.'
-      return updateRelayerJob(job.smartAccountId, job.intentId, (current) => ({
-        ...current,
-        status:
-          current.executionCount + 1 >=
-          Math.min(current.maxExecutions, intentState.maxExecutions)
-            ? 'executed'
-            : 'ready',
-        executionCount: current.executionCount + 1,
-        childSequence: current.childSequence + 1,
-        note,
-        txHash: sent.hash,
-      }))
+      return recordExecution(
+        job,
+        sent.hash,
+        describeExecution(result),
+        intentState.maxExecutions
+      )
     }
     if (result.status === 'FAILED') {
-      return updateRelayerJob(job.smartAccountId, job.intentId, (current) => ({
-        ...current,
-        status: 'failed',
-        note: 'Executor transaction failed on-chain. Child sequence was not advanced.',
-        txHash: sent.hash,
-      }))
+      return recordFailedExecution(
+        job,
+        sent.hash,
+        'Executor transaction failed on-chain. Child sequence was not advanced.'
+      )
     }
   }
 
@@ -386,11 +507,12 @@ export async function runDueRelayerJobs(limit = 5): Promise<RelayerRunResult> {
   const server = new rpc.Server(STELLAR_CONFIG.rpcUrl)
   const latestLedger = await server.getLatestLedger()
   const jobs = await listRelayerJobs()
+  const now = Date.now()
   const dueJobs = jobs
     .filter(
       (job) =>
         !isTerminalRelayerJob(job) &&
-        job.status !== 'executing' &&
+        (job.status !== 'executing' || isExecutingLeaseExpired(job, now)) &&
         job.executionCount < job.maxExecutions &&
         latestLedger.sequence >= job.startLedger &&
         latestLedger.sequence <= job.endLedger

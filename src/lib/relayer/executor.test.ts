@@ -2,6 +2,7 @@ import { TransactionBuilder } from '@stellar/stellar-sdk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  EXECUTING_LEASE_MS,
   executeRelayerJob,
   executeRelayerJobById,
   readQueueableScheduledIntent,
@@ -450,6 +451,33 @@ describe('executeRelayerJob — submission outcomes', () => {
     )
   })
 
+  it('persists the transaction hash as soon as the RPC accepts the submission, before the first poll', async () => {
+    serverMethods.sendTransaction.mockResolvedValue({
+      status: 'PENDING',
+      hash: TX_HASH,
+    })
+    serverMethods.getTransaction.mockResolvedValue({ status: 'SUCCESS' })
+    vi.useFakeTimers()
+
+    const promise = executeRelayerJob(job())
+    await vi.advanceTimersByTimeAsync(1500)
+    await promise
+
+    const writes = updateRelayerJobMock.mock.calls.map(([, , update]) =>
+      update(job())
+    )
+    const submitted = writes.findIndex(
+      (write) => write.status === 'executing' && write.txHash === TX_HASH
+    )
+    expect(submitted).toBeGreaterThan(-1)
+    expect(writes[submitted].note).toMatch(/awaiting inclusion/i)
+    // A run killed during the poll must leave the hash behind, so the write
+    // has to land before the first getTransaction, not with its outcome.
+    expect(
+      updateRelayerJobMock.mock.invocationCallOrder[submitted]
+    ).toBeLessThan(serverMethods.getTransaction.mock.invocationCallOrder[0])
+  })
+
   it('does not advance the child sequence when the submitted transaction fails on-chain', async () => {
     serverMethods.sendTransaction.mockResolvedValue({
       status: 'PENDING',
@@ -483,6 +511,105 @@ describe('executeRelayerJob — submission outcomes', () => {
     expect(result.note).toMatch(/still pending/i)
     expect(result.childSequence).toBe(1)
     expect(serverMethods.getTransaction).toHaveBeenCalledTimes(20)
+  })
+})
+
+describe('executeRelayerJob — recovering a run interrupted after submission', () => {
+  beforeEach(() => {
+    serverMethods.getLatestLedger.mockResolvedValue({ sequence: 150 })
+    serverMethods.prepareTransaction.mockResolvedValue({ sign: vi.fn() })
+  })
+
+  it('settles an interrupted submission that succeeded on-chain without submitting again', async () => {
+    const interrupted = job({ status: 'executing', txHash: TX_HASH })
+    updateRelayerJobMock.mockImplementation(
+      async (_smartAccountId, _intentId, update) => update(interrupted)
+    )
+    serverMethods.getTransaction.mockResolvedValue({ status: 'SUCCESS' })
+
+    const result = await executeRelayerJob(interrupted)
+
+    expect(result.status).toBe('ready')
+    expect(result.childSequence).toBe(2)
+    expect(result.executionCount).toBe(1)
+    expect(result.txHash).toBe(TX_HASH)
+    expect(result.note).toMatch(/interrupted/i)
+    expect(serverMethods.sendTransaction).not.toHaveBeenCalled()
+    expect(serverMethods.simulateTransaction).not.toHaveBeenCalled()
+  })
+
+  it('marks the job executed when the interrupted submission was its last allowed execution', async () => {
+    const interrupted = job({
+      status: 'executing',
+      txHash: TX_HASH,
+      executionCount: 4,
+      maxExecutions: 5,
+    })
+    updateRelayerJobMock.mockImplementation(
+      async (_smartAccountId, _intentId, update) => update(interrupted)
+    )
+    serverMethods.getTransaction.mockResolvedValue({ status: 'SUCCESS' })
+
+    const result = await executeRelayerJob(interrupted)
+
+    expect(result.status).toBe('executed')
+    expect(result.executionCount).toBe(5)
+  })
+
+  it('marks the job failed, without advancing the child sequence, when the interrupted submission failed on-chain', async () => {
+    const interrupted = job({ status: 'executing', txHash: TX_HASH })
+    updateRelayerJobMock.mockImplementation(
+      async (_smartAccountId, _intentId, update) => update(interrupted)
+    )
+    serverMethods.getTransaction.mockResolvedValue({ status: 'FAILED' })
+
+    const result = await executeRelayerJob(interrupted)
+
+    expect(result.status).toBe('failed')
+    expect(result.childSequence).toBe(1)
+    expect(serverMethods.sendTransaction).not.toHaveBeenCalled()
+  })
+
+  it('falls through to the normal path when the interrupted submission is not found on-chain', async () => {
+    // A transaction the RPC no longer knows has expired (setTimeout(120)),
+    // so the on-chain child check decides and a fresh submission is safe.
+    const interrupted = job({ status: 'executing', txHash: TX_HASH })
+    serverMethods.getTransaction
+      .mockResolvedValueOnce({ status: 'NOT_FOUND' })
+      .mockResolvedValue({ status: 'SUCCESS' })
+    queueIntentReads(
+      { cancelled: false, execution_count: 0, max_executions: 5 },
+      false
+    )
+    serverMethods.sendTransaction.mockResolvedValue({
+      status: 'PENDING',
+      hash: 'e'.repeat(64),
+    })
+    vi.useFakeTimers()
+
+    const promise = executeRelayerJob(interrupted)
+    await vi.advanceTimersByTimeAsync(1500)
+    const result = await promise
+
+    expect(serverMethods.sendTransaction).toHaveBeenCalledTimes(1)
+    expect(result.status).toBe('ready')
+    expect(result.childSequence).toBe(2)
+    expect(result.txHash).toBe('e'.repeat(64))
+  })
+
+  it('goes straight to the normal path when the interrupted run never submitted', async () => {
+    const interrupted = job({ status: 'executing' })
+    queueIntentReads(
+      { cancelled: false, execution_count: 1, max_executions: 5 },
+      true
+    )
+
+    const result = await executeRelayerJob(interrupted)
+
+    expect(serverMethods.getTransaction).not.toHaveBeenCalled()
+    expect(serverMethods.sendTransaction).not.toHaveBeenCalled()
+    expect(result.childSequence).toBe(2)
+    expect(result.note).toMatch(/already consumed/i)
   })
 })
 
@@ -567,7 +694,11 @@ describe('runDueRelayerJobs', () => {
       job({ status: 'executed' }),
       due,
       job({ intentId: 'c'.repeat(64), startLedger: 500, endLedger: 600 }),
-      job({ intentId: 'd'.repeat(64), status: 'executing' }),
+      job({
+        intentId: 'd'.repeat(64),
+        status: 'executing',
+        updatedAt: new Date().toISOString(),
+      }),
     ])
     updateRelayerJobMock.mockImplementation(
       async (_smartAccountId, _intentId, update) => update(due)
@@ -581,6 +712,46 @@ describe('runDueRelayerJobs', () => {
     expect(result.checked).toBe(4)
     expect(serverMethods.getLatestLedger).toHaveBeenCalledTimes(2)
     expect(serverMethods.simulateTransaction).toHaveBeenCalledTimes(2)
+  })
+
+  it('leaves a job alone while its executing lease is live', async () => {
+    serverMethods.getLatestLedger.mockResolvedValue({ sequence: 150 })
+    listRelayerJobsMock.mockResolvedValue([
+      job({
+        status: 'executing',
+        txHash: TX_HASH,
+        updatedAt: new Date(Date.now() - 60_000).toISOString(),
+      }),
+    ])
+
+    const result = await runDueRelayerJobs(5)
+
+    expect(result.updated).toEqual([])
+    expect(serverMethods.getTransaction).not.toHaveBeenCalled()
+    expect(serverMethods.sendTransaction).not.toHaveBeenCalled()
+  })
+
+  it('reclaims a job whose executing lease has expired', async () => {
+    serverMethods.getLatestLedger.mockResolvedValue({ sequence: 150 })
+    const stale = job({
+      status: 'executing',
+      txHash: TX_HASH,
+      updatedAt: new Date(
+        Date.now() - EXECUTING_LEASE_MS - 1_000
+      ).toISOString(),
+    })
+    listRelayerJobsMock.mockResolvedValue([stale])
+    updateRelayerJobMock.mockImplementation(
+      async (_smartAccountId, _intentId, update) => update(stale)
+    )
+    serverMethods.getTransaction.mockResolvedValue({ status: 'SUCCESS' })
+
+    const result = await runDueRelayerJobs(5)
+
+    expect(result.updated).toHaveLength(1)
+    expect(result.updated[0].status).toBe('ready')
+    expect(result.updated[0].childSequence).toBe(2)
+    expect(serverMethods.sendTransaction).not.toHaveBeenCalled()
   })
 })
 

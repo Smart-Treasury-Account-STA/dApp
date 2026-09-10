@@ -5,6 +5,12 @@ import { requireRelayerTrigger } from '@/lib/relayer/qstash'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+// A run polls each submitted transaction for up to 30 s and handles up to
+// five jobs, after the simulations that precede every submission. The
+// platform default would cut that short and strand a job in `executing`
+// until its lease expires; 300 s is within every Vercel plan's ceiling under
+// Fluid compute.
+export const maxDuration = 300
 
 /**
  * Runs every queued job whose ledger window is open.
