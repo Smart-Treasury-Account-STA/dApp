@@ -1,3 +1,4 @@
+import { TransactionBuilder } from '@stellar/stellar-sdk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -25,6 +26,7 @@ const serverMethods = vi.hoisted(() => ({
   prepareTransaction: vi.fn(),
   sendTransaction: vi.fn(),
   getTransaction: vi.fn(),
+  getFeeStats: vi.fn(),
 }))
 
 const EXECUTOR_PUBLIC_KEY =
@@ -181,6 +183,9 @@ function queueIntentReads(
 beforeEach(() => {
   process.env.RELAYER_EXECUTOR_SECRET = 'SEXECUTORSECRET'
   vi.clearAllMocks()
+  serverMethods.getFeeStats.mockResolvedValue({
+    sorobanInclusionFee: { p99: '200' },
+  })
   updateRelayerJobMock.mockImplementation(
     async (_smartAccountId, _intentId, update) => update(job())
   )
@@ -286,6 +291,21 @@ describe('executeRelayerJob — submission outcomes', () => {
       false
     )
     serverMethods.prepareTransaction.mockResolvedValue({ sign: vi.fn() })
+  })
+
+  it('bids above the market rate on the transaction it submits', async () => {
+    // The relayer submits to the same congested mainnet as the dApp, so it
+    // needs the same bid. Only the second build is submitted; the first is
+    // the read-only simulation of intent_registry state.
+    serverMethods.sendTransaction.mockResolvedValue({
+      status: 'TRY_AGAIN_LATER',
+      hash: TX_HASH,
+    })
+
+    await executeRelayerJob(job())
+
+    const builds = vi.mocked(TransactionBuilder).mock.calls
+    expect(builds.at(-1)?.[1]?.fee).toBe('2000')
   })
 
   it('marks the job failed, without advancing the child sequence, when the RPC rejects the transaction', async () => {

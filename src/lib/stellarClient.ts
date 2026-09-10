@@ -24,6 +24,7 @@ import type { AssetHolding } from '@/lib/assetHolding'
 import { countAuthContexts, selectInvocationForAddress } from '@/lib/authTree'
 import type { ContractSet } from '@/lib/env'
 import { describeSimulationFailure } from '@/lib/format'
+import { inclusionFee } from '@/lib/inclusionFee'
 import type { LedgerClock } from '@/lib/ledgerClock'
 import { classifyProbeFailure, isWholePaymentReason } from '@/lib/policyProbe'
 import { collectIntentIds } from '@/lib/scheduledIntents'
@@ -653,7 +654,7 @@ export async function signAndSubmitContractInvocation({
   )
 
   const tx = new TransactionBuilder(source, {
-    fee: BASE_FEE,
+    fee: await inclusionFee(server),
     networkPassphrase: STELLAR_CONFIG.networkPassphrase,
   })
     .addOperation(
@@ -1000,7 +1001,7 @@ export async function submitAsSourceAccount({
   const server = getServer()
   const source = await server.getAccount(wallet.address)
   const tx = new TransactionBuilder(source, {
-    fee: BASE_FEE,
+    fee: await inclusionFee(server),
     networkPassphrase: STELLAR_CONFIG.networkPassphrase,
   })
     .addOperation(new Contract(contractId).call(functionName, ...args))

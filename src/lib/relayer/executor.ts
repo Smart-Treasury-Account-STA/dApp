@@ -15,6 +15,7 @@ import { findEvent, parseContractEvents } from 'sta-sdk'
 
 import { STELLAR_CONFIG } from '@/config'
 import type { ContractSet } from '@/lib/env'
+import { inclusionFee } from '@/lib/inclusionFee'
 import { isTerminalRelayerJob } from '@/lib/relayer/jobStatus'
 import {
   getRelayerJob,
@@ -310,7 +311,7 @@ export async function executeRelayerJob(job: RelayerJobRecord) {
   )
 
   const tx = new TransactionBuilder(source, {
-    fee: BASE_FEE,
+    fee: await inclusionFee(server),
     networkPassphrase: STELLAR_CONFIG.networkPassphrase,
   })
     .addOperation(

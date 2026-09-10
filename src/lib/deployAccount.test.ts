@@ -1,3 +1,4 @@
+import { TransactionBuilder } from '@stellar/stellar-sdk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { deployAccount } from '@/lib/deployAccount'
@@ -26,6 +27,7 @@ const serverMethods = vi.hoisted(() => ({
   simulateTransaction: vi.fn(),
   prepareTransaction: vi.fn(),
   getTransaction: vi.fn(),
+  getFeeStats: vi.fn(),
 }))
 
 vi.mock('@stellar/stellar-sdk', () => ({
@@ -116,6 +118,9 @@ beforeEach(() => {
   stellarConfig.accountFactoryId = ACCOUNT_FACTORY_ID
   stellarConfig.relayerExecutorAddress = RELAYER_EXECUTOR_ADDRESS
   serverMethods.getLatestLedger.mockResolvedValue({ sequence: 1000 })
+  serverMethods.getFeeStats.mockResolvedValue({
+    sorobanInclusionFee: { p99: '200' },
+  })
   serverMethods.getAccount.mockResolvedValue({
     accountId: () => WALLET_ADDRESS,
   })
@@ -167,6 +172,43 @@ describe('deployAccount — configuration guard', () => {
       /RELAYER_EXECUTOR_ADDRESS/
     )
     expect(serverMethods.getLatestLedger).not.toHaveBeenCalled()
+  })
+})
+
+describe('deployAccount — inclusion fee', () => {
+  // deployAccount builds twice: a throwaway transaction that is only ever
+  // simulated, then the one that gets signed and submitted. Only the second
+  // is bid on, and bidding the 100-stroop protocol minimum there is what
+  // made mainnet reject the deploy with txInsufficientFee.
+  const feeOf = (buildIndex: number) =>
+    vi.mocked(TransactionBuilder).mock.calls[buildIndex][1]?.fee
+
+  beforeEach(() => {
+    // Recording-mode simulation covers every require_auth() node through
+    // source-account credentials for this call, so no explicit entries.
+    selectAllInvocationsForAddressMock.mockReturnValue([])
+  })
+
+  it('bids above the market rate on the transaction it submits', async () => {
+    await deployAccount(wallet)
+
+    expect(vi.mocked(TransactionBuilder)).toHaveBeenCalledTimes(2)
+    expect(feeOf(1)).toBe('2000')
+    expect(feeOf(1)).not.toBe('100')
+  })
+
+  it('leaves the simulation-only build at the protocol minimum', async () => {
+    await deployAccount(wallet)
+
+    expect(feeOf(0)).toBe('100')
+  })
+
+  it('still submits at a viable bid when the RPC cannot report fee stats', async () => {
+    serverMethods.getFeeStats.mockRejectedValue(new Error('method not found'))
+
+    await deployAccount(wallet)
+
+    expect(feeOf(1)).toBe('2000')
   })
 })
 

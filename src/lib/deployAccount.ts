@@ -8,6 +8,7 @@ import {
 
 import { STELLAR_CONFIG } from '@/config'
 import { selectAllInvocationsForAddress } from '@/lib/authTree'
+import { inclusionFee } from '@/lib/inclusionFee'
 import {
   addressCredentialsEntry,
   addressScVal,
@@ -204,7 +205,7 @@ export async function deployAccount(
   // sequence number after however long the signing round trip above took.
   const source = await server.getAccount(wallet.address)
   const tx = new TransactionBuilder(source, {
-    fee: BASE_FEE,
+    fee: await inclusionFee(server),
     networkPassphrase: STELLAR_CONFIG.networkPassphrase,
   })
     .addOperation(
