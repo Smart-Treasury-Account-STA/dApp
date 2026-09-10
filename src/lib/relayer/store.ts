@@ -159,6 +159,26 @@ export async function updateRelayerJob(
   intentId: string,
   update: (job: RelayerJobRecord) => RelayerJobRecord
 ) {
+  const { job } = await tryUpdateRelayerJob(smartAccountId, intentId, update)
+  return job
+}
+
+/**
+ * `updateRelayerJob`, except that `update` may decline by returning `null`:
+ * nothing is written, and the job comes back as the store holds it.
+ *
+ * The decision is made on the state the write would replace, re-read on
+ * every lost version race, so a condition checked here holds at the moment
+ * of the write. That is what makes it a claim: of two runs that both read a
+ * job as `scheduled` and both try to mark it `executing`, the second re-reads
+ * the first one's `executing` and declines. A condition checked on a copy
+ * read earlier would let both through.
+ */
+export async function tryUpdateRelayerJob(
+  smartAccountId: string,
+  intentId: string,
+  update: (job: RelayerJobRecord) => RelayerJobRecord | null
+): Promise<{ job: RelayerJobRecord; applied: boolean }> {
   const normalizedIntentId = normalizeIntentId(intentId)
 
   for (let attempt = 0; attempt < UPDATE_RETRIES; attempt += 1) {
@@ -170,10 +190,13 @@ export async function updateRelayerJob(
       throw new Error('Relayer job not found.')
     }
 
-    const updated = update({
-      ...toRecord(current[0]),
-      updatedAt: new Date().toISOString(),
-    })
+    // The stored `updatedAt`, not a fresh one: a condition may be about how
+    // long the job has sat in its state (the executing lease). The write
+    // stamps its own `now()` regardless.
+    const updated = update(toRecord(current[0]))
+    if (updated === null) {
+      return { job: toRecord(current[0]), applied: false }
+    }
 
     const written = await getDb()
       .update(relayerJobs)
@@ -198,7 +221,7 @@ export async function updateRelayerJob(
       .returning()
 
     if (written.length > 0) {
-      return toRecord(written[0])
+      return { job: toRecord(written[0]), applied: true }
     }
   }
 

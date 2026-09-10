@@ -3,7 +3,7 @@
 import type { ComponentProps, Dispatch, SetStateAction } from 'react'
 import { useState } from 'react'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   CalendarClock,
@@ -27,10 +27,13 @@ import {
   SectionHeader,
 } from '@/features/treasury/components/primitives'
 import { computeLedgerWindow } from '@/features/treasury/drafts'
-import { treasuryKeys, useScheduledIntents } from '@/features/treasury/queries'
+import {
+  treasuryKeys,
+  useRelayerJobs,
+  useScheduledIntents,
+} from '@/features/treasury/queries'
 import {
   ensureRelayerSession,
-  fetchRelayerJobs,
   queueRelayerJob,
 } from '@/features/treasury/relayer-client'
 import { LEDGER_CLOSE_SECONDS } from '@/lib/constants'
@@ -116,12 +119,9 @@ export function ScheduleSection({
     contracts.intentRegistry
   )
   const intents = intentsQuery.data?.intents ?? []
-  // Same key as the Relayer panel, so both read one cache entry and a queue
-  // from either side refreshes the other.
-  const relayerJobsQuery = useQuery({
-    queryKey: ['relayer-jobs', contracts.smartAccount],
-    queryFn: () => fetchRelayerJobs(contracts.smartAccount),
-  })
+  // Shared with the Relayer panel: one cache entry, polled while a job can
+  // still change, so the Queued state follows the relayer too.
+  const relayerJobsQuery = useRelayerJobs(contracts.smartAccount)
   const queuedJobs = indexJobsByIntent(relayerJobsQuery.data ?? [])
   const createdJobQueued = createdScheduleJob
     ? queuedJobs.get(normalizeIntentId(createdScheduleJob.intentId))

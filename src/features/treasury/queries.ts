@@ -3,11 +3,13 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { STELLAR_CONFIG } from '@/config'
+import { fetchRelayerJobs } from '@/features/treasury/relayer-client'
 import {
   fetchMyTreasuries,
   fetchTreasury,
 } from '@/features/treasury/treasuryRegistryClient'
 import type { ContractSet } from '@/lib/env'
+import { relayerJobsPollInterval } from '@/lib/relayer/jobStatus'
 import {
   loadAssetHolding,
   loadContextRules,
@@ -149,5 +151,19 @@ export function useTreasuryAuthority(
     }),
     enabled: address !== null,
     staleTime: 30_000,
+  })
+}
+
+/**
+ * The relayer jobs queued for one treasury, shared by the Schedule and
+ * Relayer panels (one cache entry, so a queue from either side refreshes
+ * the other). Polls while a job can still change: the scheduled run
+ * executes jobs server-side, and this is how the console sees it.
+ */
+export function useRelayerJobs(smartAccountId: string) {
+  return useQuery({
+    queryKey: ['relayer-jobs', smartAccountId],
+    queryFn: () => fetchRelayerJobs(smartAccountId),
+    refetchInterval: (query) => relayerJobsPollInterval(query.state.data),
   })
 }

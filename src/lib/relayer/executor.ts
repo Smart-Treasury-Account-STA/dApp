@@ -17,10 +17,14 @@ import { STELLAR_CONFIG } from '@/config'
 import type { ContractSet } from '@/lib/env'
 import { truncateAddress } from '@/lib/format'
 import { inclusionFee } from '@/lib/inclusionFee'
-import { isTerminalRelayerJob } from '@/lib/relayer/jobStatus'
+import {
+  isRelayerJobInFlight,
+  isTerminalRelayerJob,
+} from '@/lib/relayer/jobStatus'
 import {
   getRelayerJob,
   listRelayerJobs,
+  tryUpdateRelayerJob,
   updateRelayerJob,
 } from '@/lib/relayer/store'
 import type {
@@ -180,38 +184,6 @@ export async function readQueueableScheduledIntent(
   }
 }
 
-/**
- * How long a job may sit in `executing` before a later run is allowed to
- * take it back.
- *
- * `executing` is written before the executor transaction is submitted and
- * only replaced once its outcome is known, so a run that dies in between --
- * a function timeout mid-poll, a crashed process -- leaves the job in that
- * state with nobody coming back for it. The lease bounds that: after it
- * expires the job is due again, and `executeRelayerJob` settles whatever the
- * interrupted run left behind before doing anything new.
- *
- * Five minutes is longer than everything an in-flight run can legitimately
- * take: the executor transaction carries `setTimeout(120)`, so two minutes
- * after submission it can no longer be included; the poll lasts 20 x 1.5 s;
- * the rest is margin for a slow RPC. A lease shorter than the transaction
- * timeout would let a second run resubmit while the first transaction could
- * still land -- harmless on chain (the contract refuses a consumed child
- * sequence) but a wasted fee and a confusing job note.
- */
-export const EXECUTING_LEASE_MS = 5 * 60 * 1000
-
-export function isExecutingLeaseExpired(
-  job: Pick<RelayerJobRecord, 'status' | 'updatedAt'>,
-  now = Date.now()
-): boolean {
-  if (job.status !== 'executing') return false
-  const since = Date.parse(job.updatedAt)
-  // An unparseable timestamp cannot prove the lease is live; treating it as
-  // expired errs on the side of retrying, which the on-chain checks make safe.
-  return !Number.isFinite(since) || now - since >= EXECUTING_LEASE_MS
-}
-
 function describeExecution(
   result: rpc.Api.GetSuccessfulTransactionResponse
 ): string {
@@ -225,6 +197,28 @@ function describeExecution(
 }
 
 /**
+ * Writes `update` only while the store still holds the child sequence this
+ * run acted on, and returns the job as the store then holds it.
+ *
+ * Once another run has recorded that child -- executed it, or found it
+ * consumed -- what this run learned about it is stale, and writing it would
+ * undo the other run's record: a refused duplicate turning `executed` into
+ * `failed`, or the child sequence advancing twice.
+ */
+async function updateForChild(
+  job: RelayerJobRecord,
+  update: (current: RelayerJobRecord) => RelayerJobRecord
+) {
+  const { job: current } = await tryUpdateRelayerJob(
+    job.smartAccountId,
+    job.intentId,
+    (current) =>
+      current.childSequence === job.childSequence ? update(current) : null
+  )
+  return current
+}
+
+/**
  * Records one successful on-chain execution: the child sequence advances,
  * and the job is `executed` once the execution count meets the lower of the
  * local and (when known) on-chain limits, `ready` otherwise.
@@ -235,7 +229,7 @@ function recordExecution(
   note: string,
   maxExecutionsOnChain?: number
 ) {
-  return updateRelayerJob(job.smartAccountId, job.intentId, (current) => {
+  return updateForChild(job, (current) => {
     const executionCount = current.executionCount + 1
     const limit = Math.min(
       current.maxExecutions,
@@ -257,7 +251,7 @@ function recordFailedExecution(
   txHash: string,
   note: string
 ) {
-  return updateRelayerJob(job.smartAccountId, job.intentId, (current) => ({
+  return updateForChild(job, (current) => ({
     ...current,
     status: 'failed',
     note,
@@ -298,11 +292,18 @@ async function settleInterruptedSubmission(
 }
 
 export async function executeRelayerJob(job: RelayerJobRecord) {
+  // Another run -- the scheduled one, or a console Execute -- is executing
+  // this job right now. Leave it be: its transaction may still be pending,
+  // so the RPC would not know the hash yet and the child would read as not
+  // consumed, which is exactly how a second submission used to get through.
+  if (isRelayerJobInFlight(job)) return job
+
   const server = new rpc.Server(STELLAR_CONFIG.rpcUrl)
 
-  // A job still marked `executing` with a hash is a run that was interrupted
-  // between submission and outcome. Settle that first: nothing below may
-  // submit again while the earlier transaction could have landed.
+  // A job still marked `executing` with a hash, past its lease, is a run
+  // that was interrupted between submission and outcome. Settle that first:
+  // nothing below may submit again while the earlier transaction could have
+  // landed.
   if (job.status === 'executing' && job.txHash) {
     const settled = await settleInterruptedSubmission(server, job, job.txHash)
     if (settled) return settled
@@ -350,7 +351,7 @@ export async function executeRelayerJob(job: RelayerJobRecord) {
     }))
   }
   if (intentState.childExecuted) {
-    return updateRelayerJob(job.smartAccountId, job.intentId, (current) => ({
+    return updateForChild(job, (current) => ({
       ...current,
       childSequence: current.childSequence + 1,
       executionCount: Math.max(
@@ -366,11 +367,26 @@ export async function executeRelayerJob(job: RelayerJobRecord) {
     }))
   }
 
-  await updateRelayerJob(job.smartAccountId, job.intentId, (current) => ({
-    ...current,
-    status: 'executing',
-    note: 'Submitting executor-signed scheduled payment.',
-  }))
+  // The claim. Everything above worked from the job as this run read it;
+  // another run may have claimed it since. The condition is decided on the
+  // store's current state at the moment of the write, so of two runs that
+  // got this far, exactly one goes on to submit -- the other returns the
+  // job as the winner left it.
+  const claim = await tryUpdateRelayerJob(
+    job.smartAccountId,
+    job.intentId,
+    (current) =>
+      isTerminalRelayerJob(current) ||
+      isRelayerJobInFlight(current) ||
+      current.childSequence !== job.childSequence
+        ? null
+        : {
+            ...current,
+            status: 'executing',
+            note: 'Submitting executor-signed scheduled payment.',
+          }
+  )
+  if (!claim.applied) return claim.job
 
   const source = await server.getAccount(sourceAddress)
   const signatureExpirationLedger = latestLedger.sequence + 100
@@ -431,7 +447,7 @@ export async function executeRelayerJob(job: RelayerJobRecord) {
   const sent = await server.sendTransaction(prepared)
 
   if (sent.status === 'ERROR') {
-    return updateRelayerJob(job.smartAccountId, job.intentId, (current) => ({
+    return updateForChild(job, (current) => ({
       ...current,
       status: 'failed',
       note: 'RPC rejected the executor transaction.',
@@ -439,14 +455,14 @@ export async function executeRelayerJob(job: RelayerJobRecord) {
     }))
   }
   if (sent.status === 'TRY_AGAIN_LATER') {
-    return updateRelayerJob(job.smartAccountId, job.intentId, (current) => ({
+    return updateForChild(job, (current) => ({
       ...current,
       status: 'ready',
       note: 'RPC asked the relayer to retry later. Child sequence was not advanced.',
     }))
   }
   if (sent.status === 'DUPLICATE') {
-    return updateRelayerJob(job.smartAccountId, job.intentId, (current) => ({
+    return updateForChild(job, (current) => ({
       ...current,
       status: 'ready',
       note: 'RPC reported a duplicate submission. Child sequence will be rechecked before retry.',
@@ -457,7 +473,7 @@ export async function executeRelayerJob(job: RelayerJobRecord) {
   // Record the hash before polling. A run killed during the poll must leave
   // enough behind for the next run to settle the outcome instead of
   // guessing -- see `settleInterruptedSubmission`.
-  await updateRelayerJob(job.smartAccountId, job.intentId, (current) => ({
+  await updateForChild(job, (current) => ({
     ...current,
     status: 'executing',
     note: 'Submitted, awaiting inclusion.',
@@ -484,7 +500,7 @@ export async function executeRelayerJob(job: RelayerJobRecord) {
     }
   }
 
-  return updateRelayerJob(job.smartAccountId, job.intentId, (current) => ({
+  return updateForChild(job, (current) => ({
     ...current,
     status: 'ready',
     note: 'Transaction submitted and still pending. Child sequence was not advanced.',
@@ -512,7 +528,7 @@ export async function runDueRelayerJobs(limit = 5): Promise<RelayerRunResult> {
     .filter(
       (job) =>
         !isTerminalRelayerJob(job) &&
-        (job.status !== 'executing' || isExecutingLeaseExpired(job, now)) &&
+        !isRelayerJobInFlight(job, now) &&
         job.executionCount < job.maxExecutions &&
         latestLedger.sequence >= job.startLedger &&
         latestLedger.sequence <= job.endLedger

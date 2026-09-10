@@ -2,15 +2,16 @@ import { TransactionBuilder } from '@stellar/stellar-sdk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  EXECUTING_LEASE_MS,
   executeRelayerJob,
   executeRelayerJobById,
   readQueueableScheduledIntent,
   runDueRelayerJobs,
 } from '@/lib/relayer/executor'
+import { EXECUTING_LEASE_MS } from '@/lib/relayer/jobStatus'
 import {
   getRelayerJob,
   listRelayerJobs,
+  tryUpdateRelayerJob,
   updateRelayerJob,
 } from '@/lib/relayer/store'
 import type { RelayerJobRecord } from '@/lib/relayer/types'
@@ -94,6 +95,7 @@ vi.mock('@stellar/stellar-sdk', async (importOriginal) => {
 vi.mock('@/lib/relayer/store', () => ({
   getRelayerJob: vi.fn(),
   listRelayerJobs: vi.fn(),
+  tryUpdateRelayerJob: vi.fn(),
   updateRelayerJob: vi.fn(),
 }))
 
@@ -135,6 +137,7 @@ vi.mock('@/lib/treasuryRegistry/store', () => ({
 }))
 
 const updateRelayerJobMock = vi.mocked(updateRelayerJob)
+const tryUpdateRelayerJobMock = vi.mocked(tryUpdateRelayerJob)
 const getRelayerJobMock = vi.mocked(getRelayerJob)
 const getTreasuryMock = vi.mocked(getTreasury)
 const listRelayerJobsMock = vi.mocked(listRelayerJobs)
@@ -168,6 +171,17 @@ function job(overrides: Partial<RelayerJobRecord> = {}): RelayerJobRecord {
   }
 }
 
+/**
+ * Makes the store double hold `record` rather than the default `job()`. The
+ * executor only writes for the child it acted on, so a test that passes a job
+ * on another child sequence needs the store to agree with it.
+ */
+function storeHolds(record: RelayerJobRecord) {
+  updateRelayerJobMock.mockImplementation(
+    async (_smartAccountId, _intentId, update) => update(record)
+  )
+}
+
 /** get_intent then is_child_executed, decoded via the mocked scValToNative. */
 function queueIntentReads(
   intent: Record<string, unknown> | null,
@@ -189,6 +203,26 @@ beforeEach(() => {
   })
   updateRelayerJobMock.mockImplementation(
     async (_smartAccountId, _intentId, update) => update(job())
+  )
+  // Routed through the updateRelayerJob double, so a conditional write sees
+  // whatever current state a test gave that double.
+  tryUpdateRelayerJobMock.mockImplementation(
+    async (smartAccountId, intentId, update) => {
+      let declined = false
+      const written = await updateRelayerJobMock(
+        smartAccountId,
+        intentId,
+        (current) => {
+          const next = update(current)
+          if (next === null) {
+            declined = true
+            return current
+          }
+          return next
+        }
+      )
+      return { job: written, applied: !declined }
+    }
   )
 })
 
@@ -275,9 +309,10 @@ describe('executeRelayerJob — canonical on-chain state overrides local job sta
       true
     )
 
-    const result = await executeRelayerJob(
-      job({ childSequence: 5, maxExecutions: 5 })
-    )
+    const last = job({ childSequence: 5, maxExecutions: 5 })
+    storeHolds(last)
+
+    const result = await executeRelayerJob(last)
 
     expect(result.status).toBe('executed')
     expect(serverMethods.sendTransaction).not.toHaveBeenCalled()
@@ -384,7 +419,10 @@ describe('executeRelayerJob — submission outcomes', () => {
     })
     vi.useFakeTimers()
 
-    const promise = executeRelayerJob(job({ childSequence: 3 }))
+    const third = job({ childSequence: 3 })
+    storeHolds(third)
+
+    const promise = executeRelayerJob(third)
     await vi.advanceTimersByTimeAsync(1500)
     const result = await promise
 
@@ -421,7 +459,10 @@ describe('executeRelayerJob — submission outcomes', () => {
     serverMethods.getTransaction.mockResolvedValue({ status: 'SUCCESS' })
     vi.useFakeTimers()
 
-    const promise = executeRelayerJob(job({ childSequence: 3 }))
+    const third = job({ childSequence: 3 })
+    storeHolds(third)
+
+    const promise = executeRelayerJob(third)
     await vi.advanceTimersByTimeAsync(1500)
     await promise
 
@@ -610,6 +651,182 @@ describe('executeRelayerJob — recovering a run interrupted after submission', 
     expect(serverMethods.sendTransaction).not.toHaveBeenCalled()
     expect(result.childSequence).toBe(2)
     expect(result.note).toMatch(/already consumed/i)
+  })
+})
+
+describe('executeRelayerJob — one run per job at a time', () => {
+  // The scheduled (QStash) run and the console's Execute reach the same
+  // executor, on different instances. Found on mainnet (2026-09-11): Execute
+  // clicked while a scheduled run was polling its transaction submitted a
+  // second one; the contract refused it, and its failure then overwrote the
+  // job's `executed` with `failed`.
+  beforeEach(() => {
+    serverMethods.getLatestLedger.mockResolvedValue({ sequence: 150 })
+    serverMethods.prepareTransaction.mockResolvedValue({ sign: vi.fn() })
+  })
+
+  function inFlight(overrides: Partial<RelayerJobRecord> = {}) {
+    return job({
+      status: 'executing',
+      note: 'Submitted, awaiting inclusion.',
+      txHash: TX_HASH,
+      updatedAt: new Date(Date.now() - 30_000).toISOString(),
+      ...overrides,
+    })
+  }
+
+  it('leaves a job alone while another run holds its executing lease', async () => {
+    const running = inFlight()
+
+    const result = await executeRelayerJob(running)
+
+    expect(result).toEqual(running)
+    expect(serverMethods.getTransaction).not.toHaveBeenCalled()
+    expect(serverMethods.getLatestLedger).not.toHaveBeenCalled()
+    expect(serverMethods.sendTransaction).not.toHaveBeenCalled()
+    expect(updateRelayerJobMock).not.toHaveBeenCalled()
+  })
+
+  it('leaves it alone before the other run has a transaction hash, too', async () => {
+    const claimed = inFlight({
+      txHash: undefined,
+      note: 'Submitting executor-signed scheduled payment.',
+    })
+
+    const result = await executeRelayerJob(claimed)
+
+    expect(result).toEqual(claimed)
+    expect(serverMethods.sendTransaction).not.toHaveBeenCalled()
+    expect(updateRelayerJobMock).not.toHaveBeenCalled()
+  })
+
+  it('does not submit from the console while a scheduled run is submitting the same job', async () => {
+    getRelayerJobMock.mockResolvedValue(inFlight())
+
+    const result = await executeRelayerJobById(SMART_ACCOUNT_ID, INTENT_ID)
+
+    expect(result.status).toBe('executing')
+    expect(serverMethods.sendTransaction).not.toHaveBeenCalled()
+  })
+
+  it('backs off without submitting when another run claims the job first', async () => {
+    // Both runs read `scheduled` and pass every on-chain check; the claim is
+    // re-evaluated against the store's current state, where the other run's
+    // `executing` already is.
+    queueIntentReads(
+      { cancelled: false, execution_count: 0, max_executions: 5 },
+      false
+    )
+    const claimedElsewhere = inFlight({
+      txHash: undefined,
+      note: 'Submitting executor-signed scheduled payment.',
+    })
+    updateRelayerJobMock.mockImplementation(
+      async (_smartAccountId, _intentId, update) => update(claimedElsewhere)
+    )
+
+    const result = await executeRelayerJob(job())
+
+    expect(result).toEqual(claimedElsewhere)
+    expect(serverMethods.prepareTransaction).not.toHaveBeenCalled()
+    expect(serverMethods.sendTransaction).not.toHaveBeenCalled()
+  })
+
+  it('backs off without submitting when another run has already moved past this child', async () => {
+    queueIntentReads(
+      { cancelled: false, execution_count: 0, max_executions: 5 },
+      false
+    )
+    updateRelayerJobMock.mockImplementation(
+      async (_smartAccountId, _intentId, update) =>
+        update(job({ childSequence: 2, executionCount: 1, status: 'ready' }))
+    )
+
+    const result = await executeRelayerJob(job())
+
+    expect(result.childSequence).toBe(2)
+    expect(serverMethods.sendTransaction).not.toHaveBeenCalled()
+  })
+
+  it('does not let a refused duplicate overwrite a child another run executed', async () => {
+    queueIntentReads(
+      { cancelled: false, execution_count: 0, max_executions: 1 },
+      false
+    )
+    let current = job({ maxExecutions: 1 })
+    updateRelayerJobMock.mockImplementation(
+      async (_smartAccountId, _intentId, update) => {
+        current = update(current)
+        return current
+      }
+    )
+    const OTHER_HASH = 'b'.repeat(64)
+    serverMethods.sendTransaction.mockResolvedValue({
+      status: 'PENDING',
+      hash: TX_HASH,
+    })
+    // By the time this run's transaction comes back refused, the other run
+    // has recorded the child as executed.
+    serverMethods.getTransaction.mockImplementation(async () => {
+      current = job({
+        maxExecutions: 1,
+        childSequence: 2,
+        executionCount: 1,
+        status: 'executed',
+        note: 'Executed child 1.',
+        txHash: OTHER_HASH,
+      })
+      return { status: 'FAILED' }
+    })
+    vi.useFakeTimers()
+
+    const promise = executeRelayerJob(job({ maxExecutions: 1 }))
+    await vi.advanceTimersByTimeAsync(1500)
+    const result = await promise
+
+    expect(result.status).toBe('executed')
+    expect(result.childSequence).toBe(2)
+    expect(result.txHash).toBe(OTHER_HASH)
+  })
+
+  it('does not advance the child sequence twice when two runs settle the same submission', async () => {
+    // Lease long expired (default updatedAt), so both runs may settle; the
+    // second finds the child already recorded.
+    const stale = job({ status: 'executing', txHash: TX_HASH })
+    updateRelayerJobMock.mockImplementation(
+      async (_smartAccountId, _intentId, update) =>
+        update(
+          job({
+            childSequence: 2,
+            executionCount: 1,
+            status: 'ready',
+            txHash: TX_HASH,
+          })
+        )
+    )
+    serverMethods.getTransaction.mockResolvedValue({ status: 'SUCCESS' })
+
+    const result = await executeRelayerJob(stale)
+
+    expect(result.childSequence).toBe(2)
+    expect(result.executionCount).toBe(1)
+    expect(serverMethods.sendTransaction).not.toHaveBeenCalled()
+  })
+
+  it('does not advance past a consumed child twice', async () => {
+    queueIntentReads(
+      { cancelled: false, execution_count: 1, max_executions: 5 },
+      true
+    )
+    updateRelayerJobMock.mockImplementation(
+      async (_smartAccountId, _intentId, update) =>
+        update(job({ childSequence: 2, executionCount: 1, status: 'ready' }))
+    )
+
+    const result = await executeRelayerJob(job())
+
+    expect(result.childSequence).toBe(2)
+    expect(serverMethods.sendTransaction).not.toHaveBeenCalled()
   })
 })
 

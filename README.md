@@ -68,7 +68,7 @@ curl -X POST "https://qstash.upstash.io/v2/schedules/https://sta-dapp.vercel.app
 ```
 
 3. Every run answers `{"trigger":"qstash","checked":n,"executed":n,"updated":[...]}`, visible in the QStash logs. A `401` means the signature did not verify (wrong keys or a destination other than the pinned one), a `503` a missing variable, a `500` an RPC or database failure. Each non-2xx status triggers QStash's retries and then the failure callback, which is the place to hook an alert.
-4. Retries and overlapping runs are safe by construction: the executor re-reads every intent and `intent_registry.is_child_executed` on chain before submitting, and the job store's optimistic versioning stops two runs from claiming the same job.
+4. Retries and overlapping runs are safe by construction: the executor re-reads every intent and `intent_registry.is_child_executed` on chain before submitting, and a job is claimed with a conditional write on the store's current state, so of two runs -- the schedule and a console Execute included -- exactly one submits. A job stays with its run while `executing` is inside its five-minute lease; the console's Execute is disabled meanwhile.
 
 A run polls each submitted transaction for up to about three minutes. Leave `Upstash-Timeout` at the plan default and keep the Vercel function's maximum duration above that window, otherwise a run cut off mid-poll leaves its job in `executing`.
 

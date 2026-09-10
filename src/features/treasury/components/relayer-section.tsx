@@ -1,6 +1,6 @@
 'use client'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { RadioTower } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -9,14 +9,17 @@ import {
   SectionHeader,
   StatusBadge,
 } from '@/features/treasury/components/primitives'
+import { useRelayerJobs } from '@/features/treasury/queries'
 import {
   ensureRelayerSession,
   executeRelayerJob,
-  fetchRelayerJobs,
 } from '@/features/treasury/relayer-client'
 import type { ContractSet } from '@/lib/env'
 import { truncateAddress } from '@/lib/format'
-import { isTerminalRelayerJob } from '@/lib/relayer/jobStatus'
+import {
+  isRelayerJobInFlight,
+  isTerminalRelayerJob,
+} from '@/lib/relayer/jobStatus'
 import { signMessage } from '@/lib/wallet'
 import type { SimulationResult, WalletState } from '@/types'
 
@@ -32,10 +35,7 @@ export function RelayerSection({
   const queryClient = useQueryClient()
   const relayerJobsQueryKey = ['relayer-jobs', contracts.smartAccount]
 
-  const relayerJobsQuery = useQuery({
-    queryKey: relayerJobsQueryKey,
-    queryFn: () => fetchRelayerJobs(contracts.smartAccount),
-  })
+  const relayerJobsQuery = useRelayerJobs(contracts.smartAccount)
 
   /**
    * Same on-demand authentication as the Schedule panel's queue buttons: the
@@ -63,6 +63,18 @@ export function RelayerSection({
     },
     onSuccess: (job) => {
       queryClient.invalidateQueries({ queryKey: relayerJobsQueryKey })
+      // The server hands the job back untouched when another run holds it:
+      // say so, rather than a generic update that reads like this click did
+      // something.
+      if (isRelayerJobInFlight(job)) {
+        onNotice({
+          ok: false,
+          title: 'Relayer is already executing this job',
+          detail:
+            'Another relayer run is submitting it. Reload in a few seconds to see the outcome.',
+        })
+        return
+      }
       onNotice({
         ok: job.status === 'executed',
         title:
@@ -126,6 +138,7 @@ export function RelayerSection({
                 disabled={
                   !wallet.address ||
                   isTerminalRelayerJob(job) ||
+                  isRelayerJobInFlight(job) ||
                   executeRelayerMutation.isPending
                 }
                 onClick={() => executeRelayerMutation.mutate(job.intentId)}
@@ -133,9 +146,11 @@ export function RelayerSection({
                 title={
                   isTerminalRelayerJob(job)
                     ? `This job is ${job.status} and will not run again.`
-                    : !wallet.address
-                      ? 'Connect a wallet to execute.'
-                      : undefined
+                    : isRelayerJobInFlight(job)
+                      ? 'A relayer run is submitting this job right now. Reload in a few seconds.'
+                      : !wallet.address
+                        ? 'Connect a wallet to execute.'
+                        : undefined
                 }
                 variant="secondary"
               >

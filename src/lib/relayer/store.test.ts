@@ -16,6 +16,7 @@ import {
   createRelayerJob,
   getRelayerJob,
   listRelayerJobsForTreasury,
+  tryUpdateRelayerJob,
   updateRelayerJob,
   validateRelayerJobInput,
 } from '@/lib/relayer/store'
@@ -286,5 +287,85 @@ describe('updateRelayerJob — optimistic concurrency', () => {
     const [row] = await harness.db.select().from(relayerJobs)
     expect(row.version).toBe(1)
     expect(row.status).toBe('ready')
+  })
+})
+
+describe('tryUpdateRelayerJob — conditional write', () => {
+  it('writes nothing, and reports it, when the update declines', async () => {
+    await createRelayerJob(validInput)
+
+    const result = await tryUpdateRelayerJob(
+      SMART_ACCOUNT_ID,
+      validInput.intentId,
+      () => null
+    )
+
+    expect(result.applied).toBe(false)
+    expect(result.job.status).toBe('scheduled')
+    const [row] = await harness.db.select().from(relayerJobs)
+    expect(row.version).toBe(0)
+  })
+
+  it('writes and reports it when the update accepts', async () => {
+    await createRelayerJob(validInput)
+
+    const result = await tryUpdateRelayerJob(
+      SMART_ACCOUNT_ID,
+      validInput.intentId,
+      (current) => ({ ...current, status: 'executing' })
+    )
+
+    expect(result.applied).toBe(true)
+    expect(result.job.status).toBe('executing')
+    const [row] = await harness.db.select().from(relayerJobs)
+    expect(row.version).toBe(1)
+  })
+
+  it('lets exactly one of two concurrent claimers win', async () => {
+    // The race behind a double submission: the scheduled run and a console
+    // Execute both read the job as `scheduled` and both mark it `executing`.
+    // The condition is re-evaluated against the winner's write, so the loser
+    // sees `executing` and declines.
+    await createRelayerJob(validInput)
+
+    const claim = () =>
+      tryUpdateRelayerJob(SMART_ACCOUNT_ID, validInput.intentId, (current) =>
+        current.status === 'executing'
+          ? null
+          : { ...current, status: 'executing' }
+      )
+
+    const results = await Promise.all([claim(), claim()])
+
+    expect(results.filter((result) => result.applied)).toHaveLength(1)
+    const [row] = await harness.db.select().from(relayerJobs)
+    expect(row.status).toBe('executing')
+    expect(row.version).toBe(1)
+  })
+
+  it('hands the update the stored updatedAt, so it can judge a lease', async () => {
+    const created = await createRelayerJob(validInput)
+    let seen: string | undefined
+
+    await tryUpdateRelayerJob(
+      SMART_ACCOUNT_ID,
+      validInput.intentId,
+      (current) => {
+        seen = current.updatedAt
+        return null
+      }
+    )
+
+    expect(seen).toBe(created.updatedAt)
+  })
+
+  it('throws when the job does not exist', async () => {
+    await expect(
+      tryUpdateRelayerJob(
+        SMART_ACCOUNT_ID,
+        validInput.intentId,
+        (current) => current
+      )
+    ).rejects.toThrow('Relayer job not found.')
   })
 })
