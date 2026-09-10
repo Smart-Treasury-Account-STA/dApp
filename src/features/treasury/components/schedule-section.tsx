@@ -3,7 +3,7 @@
 import type { ComponentProps, Dispatch, SetStateAction } from 'react'
 import { useState } from 'react'
 
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   CalendarClock,
@@ -30,6 +30,7 @@ import { computeLedgerWindow } from '@/features/treasury/drafts'
 import { treasuryKeys, useScheduledIntents } from '@/features/treasury/queries'
 import {
   ensureRelayerSession,
+  fetchRelayerJobs,
   queueRelayerJob,
 } from '@/features/treasury/relayer-client'
 import { LEDGER_CLOSE_SECONDS } from '@/lib/constants'
@@ -45,6 +46,10 @@ import {
 } from '@/lib/ledgerClock'
 import type { LedgerClock } from '@/lib/ledgerClock'
 import { describeReceipt } from '@/lib/receipt'
+import {
+  indexJobsByIntent,
+  normalizeIntentId,
+} from '@/lib/relayer/queuedIntents'
 import type { CreateRelayerJobInput } from '@/lib/relayer/types'
 import { inspectScheduleWindow } from '@/lib/scheduleWindow'
 import { describeIntentStatus } from '@/lib/scheduledIntents'
@@ -111,6 +116,16 @@ export function ScheduleSection({
     contracts.intentRegistry
   )
   const intents = intentsQuery.data?.intents ?? []
+  // Same key as the Relayer panel, so both read one cache entry and a queue
+  // from either side refreshes the other.
+  const relayerJobsQuery = useQuery({
+    queryKey: ['relayer-jobs', contracts.smartAccount],
+    queryFn: () => fetchRelayerJobs(contracts.smartAccount),
+  })
+  const queuedJobs = indexJobsByIntent(relayerJobsQuery.data ?? [])
+  const createdJobQueued = createdScheduleJob
+    ? queuedJobs.get(normalizeIntentId(createdScheduleJob.intentId))
+    : undefined
   // The ledger the listing was read at, not a fresher one: every status below
   // is a comparison against the window the same response reported.
   const latestIntentLedger = intentsQuery.data?.latestLedger ?? 0
@@ -591,13 +606,19 @@ export function ScheduleSection({
           disabled={
             !createdScheduleJob ||
             !wallet.address ||
+            createdJobQueued !== undefined ||
             queueRelayerJobMutation.isPending
           }
           onClick={() => queueRelayerJobMutation.mutate()}
+          title={
+            createdJobQueued
+              ? `Already queued with the relayer (${createdJobQueued.status}).`
+              : undefined
+          }
           variant="secondary"
         >
           <RadioTower size={18} />
-          Queue relayer
+          {createdJobQueued ? 'Queued' : 'Queue relayer'}
         </Button>
       </div>
 
@@ -645,6 +666,7 @@ export function ScheduleSection({
           <div className="grid grid-cols-2 gap-3 max-xl:grid-cols-1">
             {intents.map((intent) => {
               const status = describeIntentStatus(intent, latestIntentLedger)
+              const queued = queuedJobs.get(normalizeIntentId(intent.intentId))
               return (
                 <div
                   className="bg-background grid content-start gap-2 rounded-lg border p-4"
@@ -690,6 +712,7 @@ export function ScheduleSection({
                     <Button
                       disabled={
                         !wallet.address ||
+                        queued !== undefined ||
                         intent.unreadable ||
                         intent.startLedger === null ||
                         intent.endLedger === null ||
@@ -701,14 +724,16 @@ export function ScheduleSection({
                       onClick={() => queueIntentMutation.mutate(intent)}
                       size="sm"
                       title={
-                        wallet.address
-                          ? undefined
-                          : 'Connect the wallet that signs for this treasury.'
+                        queued
+                          ? `Already queued with the relayer (${queued.status}).`
+                          : wallet.address
+                            ? undefined
+                            : 'Connect the wallet that signs for this treasury.'
                       }
                       variant="secondary"
                     >
                       <RadioTower size={16} />
-                      Queue relayer
+                      {queued ? 'Queued' : 'Queue relayer'}
                     </Button>
                     <Button
                       disabled={status === 'cancelled' || intent.unreadable}
