@@ -68,10 +68,10 @@ export function useAssetHolding(
     queryKey: treasuryKeys.assetHolding(
       address ?? 'disconnected',
       target,
-      contracts.staAsset
+      contracts.defaultAsset
     ),
     queryFn: () =>
-      loadAssetHolding(address as string, target, contracts.staAsset),
+      loadAssetHolding(address as string, target, contracts.defaultAsset),
     enabled: address !== null,
     staleTime: 15_000,
   })

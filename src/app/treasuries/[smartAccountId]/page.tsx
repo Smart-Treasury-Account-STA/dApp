@@ -37,7 +37,7 @@ export default function TreasuryConsolePage() {
 
   const contracts = toContractSet(
     treasuryQuery.data,
-    STELLAR_CONFIG.contracts.staAsset
+    STELLAR_CONFIG.contracts.defaultAsset
   )
   return <TreasuryConsole contracts={contracts} />
 }

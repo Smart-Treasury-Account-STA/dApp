@@ -126,7 +126,7 @@ export function TreasurySection({
       {assetReadiness && !assetReadiness.ready ? (
         <div className="border-warning/40 bg-warning/10 text-warning rounded-md border p-3 text-sm">
           <strong>
-            Asset {truncateAddress(contracts.staAsset)}:{' '}
+            Asset {truncateAddress(contracts.defaultAsset)}:{' '}
             {assetReadiness.reason === 'missing'
               ? 'no trustline'
               : assetReadiness.reason === 'deauthorized'

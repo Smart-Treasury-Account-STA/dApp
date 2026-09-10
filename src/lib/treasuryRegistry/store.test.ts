@@ -205,7 +205,7 @@ describe('listTreasuriesByOwner', () => {
 })
 
 describe('toContractSet', () => {
-  it("maps a record's *Id fields to ContractSet's field names, and takes staAsset separately", async () => {
+  it("maps a record's *Id fields to ContractSet's field names, and takes defaultAsset separately", async () => {
     const record = await createTreasury(input())
     const contracts = toContractSet(record, CONTRACTS.STA)
 
@@ -216,7 +216,7 @@ describe('toContractSet', () => {
       recoveryManager: record.recoveryManagerId,
       transferAdapter: record.transferAdapterId,
       splitAdapter: record.splitAdapterId,
-      staAsset: CONTRACTS.STA,
+      defaultAsset: CONTRACTS.STA,
     })
   })
 })

@@ -29,14 +29,14 @@ export type CreateTreasuryInput = {
  * Maps a stored record to the `ContractSet` shape the read/write layer
  * (`stellarClient.ts`, `treasuryWrites.ts`) expects. Pure and dependency-free
  * (no `node:fs/promises`, unlike `treasuryRegistry/store.ts`) specifically so
- * client components can import it directly. `staAsset` isn't part of
+ * client components can import it directly. `defaultAsset` isn't part of
  * `account_factory.deploy_account`'s `DeployedAccount` return value -- this
- * dApp only ever deals with one test asset, so every treasury shares the
+ * dApp drives one configured asset at a time, so every treasury shares the
  * globally configured one. A deliberate scope assumption, not a bug.
  */
 export function toContractSet(
   record: TreasuryRecord,
-  staAsset: string
+  defaultAsset: string
 ): ContractSet {
   return {
     smartAccount: record.smartAccountId,
@@ -45,6 +45,6 @@ export function toContractSet(
     recoveryManager: record.recoveryManagerId,
     transferAdapter: record.transferAdapterId,
     splitAdapter: record.splitAdapterId,
-    staAsset,
+    defaultAsset,
   }
 }

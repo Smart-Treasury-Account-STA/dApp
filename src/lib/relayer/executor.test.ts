@@ -128,7 +128,7 @@ vi.mock('@/lib/treasuryRegistry/store', () => ({
       recoveryManager: 'mock-recovery-manager',
       transferAdapter: 'mock-transfer-adapter',
       splitAdapter: 'mock-split-adapter',
-      staAsset: 'mock-sta-asset',
+      defaultAsset: 'mock-default-asset',
     })
   ),
 }))

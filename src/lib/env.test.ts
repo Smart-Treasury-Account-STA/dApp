@@ -16,7 +16,7 @@ function source(overrides: Record<string, string | undefined> = {}) {
     NEXT_PUBLIC_RECOVERY_MANAGER_ID: contract,
     NEXT_PUBLIC_TRANSFER_ADAPTER_ID: contract,
     NEXT_PUBLIC_SPLIT_ADAPTER_ID: contract,
-    NEXT_PUBLIC_STA_ASSET_CONTRACT_ID: contract,
+    NEXT_PUBLIC_DEFAULT_ASSET_CONTRACT_ID: contract,
     NEXT_PUBLIC_TEST_RECIPIENT: account,
     ...overrides,
   }

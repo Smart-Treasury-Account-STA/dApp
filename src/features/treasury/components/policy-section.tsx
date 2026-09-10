@@ -80,7 +80,7 @@ export function PolicySection({
   const currentVersion = snapshotQuery.data?.policyVersion ?? 1
 
   const [assetDraft, setAssetDraft] = useState({
-    asset: contracts.staAsset,
+    asset: contracts.defaultAsset,
     maxSingleTransfer: '10000000',
   })
   const [destinationDraft, setDestinationDraft] = useState(

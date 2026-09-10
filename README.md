@@ -66,7 +66,7 @@ All variables currently used by the browser are public Stellar testnet values:
 - `NEXT_PUBLIC_RECOVERY_MANAGER_ID`
 - `NEXT_PUBLIC_TRANSFER_ADAPTER_ID`
 - `NEXT_PUBLIC_SPLIT_ADAPTER_ID`
-- `NEXT_PUBLIC_STA_ASSET_CONTRACT_ID`
+- `NEXT_PUBLIC_DEFAULT_ASSET_CONTRACT_ID`
 - `NEXT_PUBLIC_TEST_RECIPIENT`
 
 Do not add relayer executor keys, wallet seeds, or RPC secrets to `NEXT_PUBLIC_*` variables.

@@ -56,7 +56,7 @@ async function resolveTreasuryContracts(
       `No registered treasury found for smart_account ${smartAccountId}.`
     )
   }
-  return toContractSet(treasury, STELLAR_CONFIG.contracts.staAsset)
+  return toContractSet(treasury, STELLAR_CONFIG.contracts.defaultAsset)
 }
 
 type IntentRegistryState = {

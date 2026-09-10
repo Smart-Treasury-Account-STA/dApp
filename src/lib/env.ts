@@ -7,7 +7,7 @@ export type ContractSet = {
   recoveryManager: string
   transferAdapter: string
   splitAdapter: string
-  staAsset: string
+  defaultAsset: string
 }
 
 export type StellarConfig = {
@@ -46,7 +46,7 @@ const CONTRACT_KEYS = {
   recoveryManager: 'NEXT_PUBLIC_RECOVERY_MANAGER_ID',
   transferAdapter: 'NEXT_PUBLIC_TRANSFER_ADAPTER_ID',
   splitAdapter: 'NEXT_PUBLIC_SPLIT_ADAPTER_ID',
-  staAsset: 'NEXT_PUBLIC_STA_ASSET_CONTRACT_ID',
+  defaultAsset: 'NEXT_PUBLIC_DEFAULT_ASSET_CONTRACT_ID',
 } as const satisfies Record<keyof ContractSet, string>
 
 export function readStellarConfig(source: Source): StellarConfig {

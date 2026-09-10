@@ -17,8 +17,8 @@ export const STELLAR_CONFIG = {
     NEXT_PUBLIC_TRANSFER_ADAPTER_ID:
       process.env.NEXT_PUBLIC_TRANSFER_ADAPTER_ID,
     NEXT_PUBLIC_SPLIT_ADAPTER_ID: process.env.NEXT_PUBLIC_SPLIT_ADAPTER_ID,
-    NEXT_PUBLIC_STA_ASSET_CONTRACT_ID:
-      process.env.NEXT_PUBLIC_STA_ASSET_CONTRACT_ID,
+    NEXT_PUBLIC_DEFAULT_ASSET_CONTRACT_ID:
+      process.env.NEXT_PUBLIC_DEFAULT_ASSET_CONTRACT_ID,
     NEXT_PUBLIC_TEST_RECIPIENT: process.env.NEXT_PUBLIC_TEST_RECIPIENT,
     NEXT_PUBLIC_ACCOUNT_FACTORY_ID: process.env.NEXT_PUBLIC_ACCOUNT_FACTORY_ID,
     NEXT_PUBLIC_RELAYER_EXECUTOR_ADDRESS:
@@ -45,7 +45,7 @@ export function buildContractList(contracts: ContractSet) {
     ['Recovery Manager', contracts.recoveryManager],
     ['Transfer Adapter', contracts.transferAdapter],
     ['Split Adapter', contracts.splitAdapter],
-    ['STA Asset', contracts.staAsset],
+    ['Default Asset', contracts.defaultAsset],
   ] as const
 }
 
