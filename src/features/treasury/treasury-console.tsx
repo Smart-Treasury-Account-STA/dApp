@@ -384,7 +384,6 @@ export function TreasuryConsole({
           draft={scheduleDraft}
           onDraftChange={setScheduleDraft}
           onNotice={setNotice}
-          relayerSessionActive={relayerSessionActive}
           wallet={wallet}
         />
 

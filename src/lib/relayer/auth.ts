@@ -1,7 +1,10 @@
 import { timingSafeEqual } from 'node:crypto'
 
+import { mayQueueForTreasury } from '@/lib/auth/treasuryAccess'
 import {
+  OPERATOR_SUBJECT,
   RELAYER_SESSION_COOKIE,
+  readSessionSubject,
   verifySessionValue,
 } from '@/lib/relayer/session'
 
@@ -46,6 +49,15 @@ function readCookie(request: Request, name: string): string | undefined {
  * cannot read is still valid — without it, a page refresh shows a locked
  * session while the server would still accept the call.
  */
+export function readRelayerSessionSubject(request: Request): string | null {
+  const adminToken = process.env.RELAYER_ADMIN_TOKEN
+  if (!adminToken) return null
+  return readSessionSubject(
+    adminToken,
+    readCookie(request, RELAYER_SESSION_COOKIE)
+  )
+}
+
 export function hasValidRelayerSession(request: Request): boolean {
   const adminToken = process.env.RELAYER_ADMIN_TOKEN
   if (!adminToken) return false
@@ -84,4 +96,52 @@ export function requireRelayerAdmin(request: Request) {
   }
 
   throw new Error('Unauthorized relayer request.')
+}
+
+/**
+ * Authorizes a request to act on one specific treasury's relayer queue.
+ *
+ * Two callers pass. The operator -- `x-relayer-token`, or an operator session
+ * -- keeps blanket access, because that is what runs the batch and the CLI. A
+ * wallet session passes only for a treasury whose signers include the address
+ * it proved, which is the check that makes the queue usable without handing
+ * every user the operator's shared secret.
+ *
+ * `requireRelayerAdmin` stays the gate for anything not scoped to one
+ * treasury: running the whole batch is an operator action, and no single
+ * treasury's signer should be able to reach into it.
+ */
+export async function requireTreasuryAccess(
+  request: Request,
+  smartAccountId: string
+) {
+  const adminToken = process.env.RELAYER_ADMIN_TOKEN
+  if (!adminToken) {
+    throw new Error(
+      'RELAYER_ADMIN_TOKEN must be configured before mutating relayer jobs.'
+    )
+  }
+
+  const headerToken = request.headers.get('x-relayer-token')
+  if (headerToken && tokensMatch(headerToken, adminToken)) {
+    return
+  }
+
+  const subject = readSessionSubject(
+    adminToken,
+    readCookie(request, RELAYER_SESSION_COOKIE)
+  )
+  if (!subject) {
+    throw new Error('Unauthorized relayer request.')
+  }
+  if (subject === OPERATOR_SUBJECT) {
+    return
+  }
+  if (await mayQueueForTreasury(subject, smartAccountId)) {
+    return
+  }
+
+  throw new Error(
+    `Unauthorized relayer request: ${subject} is not a signer of ${smartAccountId}.`
+  )
 }

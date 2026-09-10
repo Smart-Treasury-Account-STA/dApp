@@ -1,13 +1,24 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { hasValidRelayerSession, requireRelayerAdmin } from '@/lib/relayer/auth'
+import { mayQueueForTreasury } from '@/lib/auth/treasuryAccess'
+import {
+  hasValidRelayerSession,
+  requireRelayerAdmin,
+  requireTreasuryAccess,
+} from '@/lib/relayer/auth'
 import {
   OPERATOR_SUBJECT,
   RELAYER_SESSION_COOKIE,
   createSessionValue,
 } from '@/lib/relayer/session'
 
+vi.mock('@/lib/auth/treasuryAccess', () => ({
+  mayQueueForTreasury: vi.fn(),
+}))
+
 const adminToken = 'correct-horse-battery-staple'
+const SMART = 'CD6GY4UUTNPW4TUV7LDL5SELN4BBHJG4KDDT3W6G23DY6XCGM75MULMQ'
+const SIGNER = 'GCWFJKLE45TMVZS42TMIYKAORKGBWE74753YPOSCC5ESJR2G2UMBXBDB'
 
 function request(init: { cookie?: string; token?: string } = {}) {
   const headers = new Headers()
@@ -136,5 +147,69 @@ describe('hasValidRelayerSession', () => {
         request({ cookie: `${RELAYER_SESSION_COOKIE}=${value}` })
       )
     ).toBe(false)
+  })
+})
+
+describe('requireTreasuryAccess', () => {
+  beforeEach(() => {
+    process.env.RELAYER_ADMIN_TOKEN = adminToken
+    vi.mocked(mayQueueForTreasury).mockReset()
+  })
+
+  afterEach(() => {
+    delete process.env.RELAYER_ADMIN_TOKEN
+  })
+
+  it('lets the operator through without consulting the chain', async () => {
+    // Running the batch and the CLI are operator actions; they are not scoped
+    // to one treasury and must not depend on a signer lookup.
+    await expect(
+      requireTreasuryAccess(request({ token: adminToken }), SMART)
+    ).resolves.toBeUndefined()
+    expect(mayQueueForTreasury).not.toHaveBeenCalled()
+  })
+
+  it('lets an operator session through', async () => {
+    const value = createSessionValue(adminToken)
+    await expect(
+      requireTreasuryAccess(
+        request({ cookie: `${RELAYER_SESSION_COOKIE}=${value}` }),
+        SMART
+      )
+    ).resolves.toBeUndefined()
+    expect(mayQueueForTreasury).not.toHaveBeenCalled()
+  })
+
+  it('lets a wallet session through for a treasury it signs for', async () => {
+    vi.mocked(mayQueueForTreasury).mockResolvedValue(true)
+    const value = createSessionValue(adminToken, SIGNER)
+
+    await expect(
+      requireTreasuryAccess(
+        request({ cookie: `${RELAYER_SESSION_COOKIE}=${value}` }),
+        SMART
+      )
+    ).resolves.toBeUndefined()
+    expect(mayQueueForTreasury).toHaveBeenCalledWith(SIGNER, SMART)
+  })
+
+  it('refuses a wallet session for a treasury it does not sign for', async () => {
+    // The hole this closes: before, any holder of the shared token could act
+    // on any treasury.
+    vi.mocked(mayQueueForTreasury).mockResolvedValue(false)
+    const value = createSessionValue(adminToken, SIGNER)
+
+    await expect(
+      requireTreasuryAccess(
+        request({ cookie: `${RELAYER_SESSION_COOKIE}=${value}` }),
+        SMART
+      )
+    ).rejects.toThrow(/Unauthorized/)
+  })
+
+  it('refuses a request with no credentials at all', async () => {
+    await expect(requireTreasuryAccess(request(), SMART)).rejects.toThrow(
+      /Unauthorized/
+    )
   })
 })

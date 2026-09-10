@@ -28,7 +28,10 @@ import {
 } from '@/features/treasury/components/primitives'
 import { computeLedgerWindow } from '@/features/treasury/drafts'
 import { treasuryKeys, useScheduledIntents } from '@/features/treasury/queries'
-import { queueRelayerJob } from '@/features/treasury/relayer-client'
+import {
+  ensureRelayerSession,
+  queueRelayerJob,
+} from '@/features/treasury/relayer-client'
 import { LEDGER_CLOSE_SECONDS } from '@/lib/constants'
 import type { ContractSet } from '@/lib/env'
 import { makeIntentId, truncateAddress } from '@/lib/format'
@@ -57,6 +60,7 @@ import {
   getLatestLedger,
   simulateSchedule,
 } from '@/lib/stellarClient'
+import { signMessage } from '@/lib/wallet'
 import { signAuthEntry, signTransaction } from '@/lib/wallet'
 import type { ScheduleDraft, SimulationResult, WalletState } from '@/types'
 
@@ -88,14 +92,12 @@ export function ScheduleSection({
   draft,
   onDraftChange,
   onNotice,
-  relayerSessionActive,
   wallet,
 }: {
   contracts?: ContractSet
   draft: ScheduleDraft
   onDraftChange: Dispatch<SetStateAction<ScheduleDraft>>
   onNotice: (notice: SimulationResult | null) => void
-  relayerSessionActive: boolean
   wallet: WalletState
 }) {
   const queryClient = useQueryClient()
@@ -217,13 +219,37 @@ export function ScheduleSection({
     },
   })
 
+  /**
+   * Opens a relayer session for the connected wallet, unless one is already
+   * live.
+   *
+   * Queueing used to require the operator token, which meant handing every
+   * user a single shared secret that also let them act on treasuries they do
+   * not sign for. The wallet proves who it is instead, and the server decides
+   * per treasury.
+   *
+   * `ensureRelayerSession` skips the signature when a session is already
+   * open, so an operator who unlocked the panel is not prompted, and a wallet
+   * is asked once rather than on every queue.
+   */
+  async function authenticateForQueueing() {
+    if (!wallet.address) {
+      throw new Error('Connect a wallet before queueing relayer work.')
+    }
+    await ensureRelayerSession(wallet.address, (message) =>
+      signMessage(message, wallet.address as string)
+    )
+    queryClient.invalidateQueries({ queryKey: ['relayer-session'] })
+  }
+
   const queueRelayerJobMutation = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (!createdScheduleJob) {
         throw new Error(
           'Create the scheduled payment on-chain before queueing it.'
         )
       }
+      await authenticateForQueueing()
       return queueRelayerJob(createdScheduleJob)
     },
     onSuccess: (job) => {
@@ -253,14 +279,16 @@ export function ScheduleSection({
    * payload.
    */
   const queueIntentMutation = useMutation({
-    mutationFn: (intent: ScheduledIntentRecord) =>
-      queueRelayerJob({
+    mutationFn: async (intent: ScheduledIntentRecord) => {
+      await authenticateForQueueing()
+      return queueRelayerJob({
         smartAccountId: contracts.smartAccount,
         intentId: intent.intentId,
         startLedger: intent.startLedger ?? 0,
         endLedger: intent.endLedger ?? 0,
         maxExecutions: intent.maxExecutions ?? 1,
-      }),
+      })
+    },
     onSuccess: (job) => {
       queryClient.invalidateQueries({ queryKey: ['relayer-jobs'] })
       onNotice({
@@ -564,7 +592,7 @@ export function ScheduleSection({
         <Button
           disabled={
             !createdScheduleJob ||
-            !relayerSessionActive ||
+            !wallet.address ||
             queueRelayerJobMutation.isPending
           }
           onClick={() => queueRelayerJobMutation.mutate()}
@@ -663,7 +691,7 @@ export function ScheduleSection({
                   <div className="flex flex-wrap gap-2">
                     <Button
                       disabled={
-                        !relayerSessionActive ||
+                        !wallet.address ||
                         intent.unreadable ||
                         intent.startLedger === null ||
                         intent.endLedger === null ||
@@ -675,9 +703,9 @@ export function ScheduleSection({
                       onClick={() => queueIntentMutation.mutate(intent)}
                       size="sm"
                       title={
-                        relayerSessionActive
+                        wallet.address
                           ? undefined
-                          : 'Unlock the relayer session first, in the Relayer panel.'
+                          : 'Connect the wallet that signs for this treasury.'
                       }
                       variant="secondary"
                     >

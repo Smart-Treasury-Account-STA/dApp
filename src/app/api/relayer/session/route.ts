@@ -4,7 +4,7 @@ import { timingSafeEqual } from 'node:crypto'
 
 import { verifyChallenge } from '@/lib/auth/challenge'
 import { verifyWalletSignature } from '@/lib/auth/walletProof'
-import { hasValidRelayerSession } from '@/lib/relayer/auth'
+import { readRelayerSessionSubject } from '@/lib/relayer/auth'
 import {
   OPERATOR_SUBJECT,
   RELAYER_SESSION_COOKIE,
@@ -22,16 +22,22 @@ function tokensMatch(a: string, b: string) {
 }
 
 /**
- * Reports whether the caller's session cookie is still live.
+ * Reports whether the caller's session cookie is still live, and what it is.
  *
  * Unauthenticated on purpose: it *is* the authentication check, and it
  * reveals nothing a caller does not already hold — only whether the cookie
  * they already sent is valid. Without it the console cannot know, because the
  * cookie is httpOnly and every relayer-gated button would sit disabled after
  * a refresh while the server kept accepting the calls behind them.
+ *
+ * The subject comes back too, because the two kinds are not interchangeable
+ * in the UI: the operator panel is for the operator, while queueing work is
+ * for whoever signs for that treasury. Neither is a claim of authorization —
+ * the routes decide that per treasury.
  */
 export async function GET(request: Request) {
-  return NextResponse.json({ active: hasValidRelayerSession(request) })
+  const subject = readRelayerSessionSubject(request)
+  return NextResponse.json({ active: subject !== null, subject })
 }
 
 /**

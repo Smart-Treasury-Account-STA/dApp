@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-import { requireRelayerAdmin } from '@/lib/relayer/auth'
+import { requireRelayerAdmin, requireTreasuryAccess } from '@/lib/relayer/auth'
 import { readQueueableScheduledIntent } from '@/lib/relayer/executor'
 import {
   createRelayerJob,
@@ -26,17 +26,37 @@ function isCreateRelayerJobInput(
   )
 }
 
+/**
+ * Lists relayer jobs.
+ *
+ * Filtered by `smartAccountId`, this stays open: a job record restates what
+ * the ledger already published for that treasury -- intent id, window, how
+ * many executions it has had -- and the console reads it on every treasury
+ * page. The unfiltered listing is different: it *enumerates* every treasury
+ * this deployment has ever queued work for, which no visitor should be able
+ * to walk. That one is the operator's.
+ */
 export async function GET(request: Request) {
   const smartAccountId = new URL(request.url).searchParams.get('smartAccountId')
-  const jobs = smartAccountId
-    ? await listRelayerJobsForTreasury(smartAccountId)
-    : await listRelayerJobs()
-  return NextResponse.json({ jobs })
+  if (smartAccountId) {
+    return NextResponse.json({
+      jobs: await listRelayerJobsForTreasury(smartAccountId),
+    })
+  }
+
+  try {
+    requireRelayerAdmin(request)
+  } catch {
+    return NextResponse.json(
+      { error: "Listing every treasury's jobs requires an operator session." },
+      { status: 401 }
+    )
+  }
+  return NextResponse.json({ jobs: await listRelayerJobs() })
 }
 
 export async function POST(request: Request) {
   try {
-    requireRelayerAdmin(request)
     const body = (await request.json()) as unknown
     if (!isCreateRelayerJobInput(body)) {
       return NextResponse.json(
@@ -44,6 +64,10 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
+    // Authorized against the treasury named in the payload, so a caller can
+    // only queue work for a treasury they sign for -- validated first, since
+    // the check needs a smartAccountId to mean anything.
+    await requireTreasuryAccess(request, body.smartAccountId)
 
     const canonicalIntent = await readQueueableScheduledIntent(
       body.smartAccountId,

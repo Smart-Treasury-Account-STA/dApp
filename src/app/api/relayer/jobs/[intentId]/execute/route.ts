@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 
-import { requireRelayerAdmin } from '@/lib/relayer/auth'
+import { requireTreasuryAccess } from '@/lib/relayer/auth'
 import { executeRelayerJobById } from '@/lib/relayer/executor'
 
 export const runtime = 'nodejs'
@@ -11,7 +11,6 @@ export async function POST(
   { params }: { params: Promise<{ intentId: string }> }
 ) {
   try {
-    requireRelayerAdmin(request)
     const { intentId } = await params
     const smartAccountId = new URL(request.url).searchParams.get(
       'smartAccountId'
@@ -22,6 +21,10 @@ export async function POST(
         { status: 400 }
       )
     }
+    // Authorized against this treasury specifically, not the deployment as a
+    // whole -- the parameter has to be read before the check can mean
+    // anything.
+    await requireTreasuryAccess(request, smartAccountId)
     const updated = await executeRelayerJobById(smartAccountId, intentId)
     return NextResponse.json({ job: updated })
   } catch (error) {

@@ -24,6 +24,7 @@ import {
 import type { ContractSet } from '@/lib/env'
 import { truncateAddress } from '@/lib/format'
 import { isTerminalRelayerJob } from '@/lib/relayer/jobStatus'
+import { OPERATOR_SUBJECT } from '@/lib/relayer/session'
 import type { SimulationResult } from '@/types'
 
 export function RelayerSection({
@@ -65,7 +66,7 @@ export function RelayerSection({
 
   useEffect(() => {
     if (sessionProbe.data === undefined) return
-    onSessionActiveChange(sessionProbe.data)
+    onSessionActiveChange(sessionProbe.data.active)
     // Only when the probed answer itself changes. `onSessionActiveChange` is a
     // fresh closure on every parent render, and depending on it would push
     // state upward in a loop.
@@ -77,7 +78,10 @@ export function RelayerSection({
     onSuccess: () => {
       // Keep the probe's cache in step with what just happened, so a later
       // refetch or remount cannot re-assert the previous answer.
-      queryClient.setQueryData(sessionProbeQueryKey, true)
+      queryClient.setQueryData(sessionProbeQueryKey, {
+        active: true,
+        subject: OPERATOR_SUBJECT,
+      })
       onSessionActiveChange(true)
       onNotice({
         ok: true,
@@ -87,7 +91,10 @@ export function RelayerSection({
       })
     },
     onError: (error) => {
-      queryClient.setQueryData(sessionProbeQueryKey, false)
+      queryClient.setQueryData(sessionProbeQueryKey, {
+        active: false,
+        subject: null,
+      })
       onSessionActiveChange(false)
       onNotice({
         ok: false,
@@ -106,7 +113,10 @@ export function RelayerSection({
   const closeRelayerSessionMutation = useMutation({
     mutationFn: closeRelayerSession,
     onSuccess: () => {
-      queryClient.setQueryData(sessionProbeQueryKey, false)
+      queryClient.setQueryData(sessionProbeQueryKey, {
+        active: false,
+        subject: null,
+      })
       onSessionActiveChange(false)
       onNotice({
         ok: true,
