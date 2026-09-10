@@ -132,18 +132,20 @@ summary (`TransferPaid`/`SplitPaid`) in the resulting toast, via
 - **Cancel** (Schedule section, "Cancel an existing scheduled payment") →
   `approveAndSubmitCancelSchedule` → `smart_account.cancel_scheduled_payment`.
 - **Queue with the relayer** — a separate, explicit action after a
-  successful create (`queueRelayerJob`, `POST /api/relayer/jobs`,
-  admin-token gated) — on-chain creation and relayer registration are two
-  distinct steps, not one atomic action.
+  successful create (`queueRelayerJob`, `POST /api/relayer/jobs`, gated by
+  a wallet session: the connected wallet signs a SEP-53 challenge once, and
+  the server checks it is a signer of that treasury) — on-chain creation and
+  relayer registration are two distinct steps, not one atomic action.
 
 ### 2.7 Relayer execution
 
 The Relayer section lists jobs for the _active_ treasury only (scoped by
-`smartAccountId`) and lets an unlocked operator session either execute one
-job on demand or trigger a scan of every due job across **every**
-registered treasury (`runDueRelayerJobs`, §5). `scripts/run-relayer.mjs`
-drives the same scan from an external scheduler (cron, systemd timer)
-hitting `POST /api/relayer/run`.
+`smartAccountId`) and lets the connected wallet execute one job on demand,
+under the same per-treasury wallet session as queueing. The scan of every
+due job across **every** registered treasury (`runDueRelayerJobs`, §5) is
+an operator action with no console control: a QStash schedule or
+`scripts/run-relayer.mjs` (cron, systemd timer) hits `POST /api/relayer/run`
+with the signed delivery or `x-relayer-token`.
 
 ### 2.8 Monitoring
 

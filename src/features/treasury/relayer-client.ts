@@ -56,7 +56,7 @@ export async function executeRelayerJob(
 
 export type RelayerSessionState = {
   active: boolean
-  /** `operator`, a Stellar address, or null when there is no session. */
+  /** The Stellar address the session belongs to, or null when there is none. */
   subject: string | null
 }
 

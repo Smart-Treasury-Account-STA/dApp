@@ -4,25 +4,20 @@ export const RELAYER_SESSION_COOKIE = 'sta_relayer_session'
 export const RELAYER_SESSION_TTL_SECONDS = 60 * 60 * 8
 
 /**
- * The subject of an operator session: whoever proved they hold
- * `RELAYER_ADMIN_TOKEN`. Not an address, and deliberately not shaped like
- * one -- a strkey is base32, so no account id can ever collide with it.
- */
-export const OPERATOR_SUBJECT = 'operator'
-
-/**
- * One cookie, two kinds of caller.
+ * The relayer session cookie: `<subject>.<expiresAt>.<mac>`, where the
+ * subject is the Stellar address that proved itself by signing a challenge
+ * (`POST /api/relayer/session`).
  *
- * The session used to say only "someone knew the admin token", which is all
- * there was to say while the relayer had a single operator. A treasury
- * deployed from the dApp has its own signers, so a session now also has to be
- * able to say *which address* proved itself -- otherwise every route that
- * wants to scope work to one treasury has nothing to scope by.
+ * The session used to carry a second kind of subject, `operator`, minted
+ * from the shared admin token for the console's unlock panel. That panel is
+ * gone: everything a user does from the console is authorized per treasury
+ * by the address in this cookie, and the two remaining operator actions --
+ * running the batch, listing every treasury's jobs -- take the token as a
+ * header (`x-relayer-token`, from the CLI) or a signed delivery (QStash).
+ * So the only subject a session can have is an address.
  *
- * Both live in the same cookie, discriminated by their subject, so the routes
- * have one place to look rather than two cookies to reconcile. The subject is
- * inside the MAC'd payload: rewriting it invalidates the session rather than
- * escalating it.
+ * The subject is inside the MAC'd payload: rewriting it invalidates the
+ * session rather than turning one address into another.
  */
 function sign(secret: string, subject: string, expiresAt: number) {
   return createHmac('sha256', secret)
@@ -32,7 +27,7 @@ function sign(secret: string, subject: string, expiresAt: number) {
 
 export function createSessionValue(
   secret: string,
-  subject: string = OPERATOR_SUBJECT,
+  subject: string,
   now = Math.floor(Date.now() / 1000)
 ) {
   if (subject.includes('.')) {
@@ -68,13 +63,4 @@ export function readSessionSubject(
     return null
   }
   return subject
-}
-
-/** Whether the cookie carries a live *operator* session specifically. */
-export function verifySessionValue(
-  secret: string,
-  value: string | undefined,
-  now = Math.floor(Date.now() / 1000)
-) {
-  return readSessionSubject(secret, value, now) === OPERATOR_SUBJECT
 }

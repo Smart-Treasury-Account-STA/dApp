@@ -94,7 +94,7 @@ Do not add relayer executor keys, wallet seeds, or RPC secrets to `NEXT_PUBLIC_*
 Server-only relayer variables:
 
 - `RELAYER_EXECUTOR_SECRET`: Stellar secret key for the plain executor account configured in `intent_registry`.
-- `RELAYER_ADMIN_TOKEN`: required token for relayer queue, execute, and run endpoints through `x-relayer-token`.
+- `RELAYER_ADMIN_TOKEN`: the operator credential, sent as `x-relayer-token` by `pnpm relayer:run` and accepted on every relayer endpoint; also the server secret that signs wallet challenges and session cookies. Users never hold it: queue and execute are authorized by a wallet session instead.
 - `RELAYER_APP_URL`: app base URL used by `pnpm relayer:run`, including the `/app` base path (`https://smarttreasury.io/app` in production).
 - `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY`: optional, QStash signing keys that let a schedule call the run endpoint (see above).
 - `QSTASH_RELAYER_RUN_URL`: optional, the exact destination the QStash schedule was registered with; signatures for any other URL are refused.
