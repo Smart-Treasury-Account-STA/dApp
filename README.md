@@ -52,6 +52,26 @@ RELAYER_APP_URL=http://localhost:3000/app pnpm relayer:run
 
 The runner calls `POST <RELAYER_APP_URL>/api/relayer/run` with `x-relayer-token`. It submits only jobs whose ledger window is open, checks `intent_registry.get_intent` and `intent_registry.is_child_executed` before submission, and advances the local `childSequence` only after a terminal successful transaction.
 
+## Scheduled Trigger (QStash)
+
+`POST /api/relayer/run` also accepts deliveries signed by [Upstash QStash](https://upstash.com/docs/qstash), so a cron schedule can run due jobs without ever holding the admin token.
+
+1. In the QStash console, copy the current and next signing keys into `QSTASH_CURRENT_SIGNING_KEY` and `QSTASH_NEXT_SIGNING_KEY` (Vercel, Production). Set `QSTASH_RELAYER_RUN_URL` to the exact destination registered in the next step, so a signature for any other URL is refused.
+2. Register the schedule against the exact URL you pinned in `QSTASH_RELAYER_RUN_URL`. The deployment's own domain (`https://sta-dapp.vercel.app/app/...`, publicly reachable) avoids the marketing proxy hop; `https://smarttreasury.io/app/...` works too, as long as the registered URL and the pinned one are the same string. The route pins from the environment rather than from `request.url` because behind the proxy the two differ.
+
+```bash
+curl -X POST "https://qstash.upstash.io/v2/schedules/https://sta-dapp.vercel.app/app/api/relayer/run" \
+  -H "Authorization: Bearer $QSTASH_TOKEN" \
+  -H "Upstash-Cron: * * * * *" \
+  -H "Upstash-Retries: 2" \
+  -H "Upstash-Failure-Callback: https://<alert webhook>"
+```
+
+3. Every run answers `{"trigger":"qstash","checked":n,"executed":n,"updated":[...]}`, visible in the QStash logs. A `401` means the signature did not verify (wrong keys or a destination other than the pinned one), a `503` a missing variable, a `500` an RPC or database failure. Each non-2xx status triggers QStash's retries and then the failure callback, which is the place to hook an alert.
+4. Retries and overlapping runs are safe by construction: the executor re-reads every intent and `intent_registry.is_child_executed` on chain before submitting, and the job store's optimistic versioning stops two runs from claiming the same job.
+
+A run polls each submitted transaction for up to about three minutes. Leave `Upstash-Timeout` at the plan default and keep the Vercel function's maximum duration above that window, otherwise a run cut off mid-poll leaves its job in `executing`.
+
 ## Environment Variables
 
 Copy `.env.example` to `.env.local` when overriding deployment defaults.
@@ -76,6 +96,8 @@ Server-only relayer variables:
 - `RELAYER_EXECUTOR_SECRET`: Stellar secret key for the plain executor account configured in `intent_registry`.
 - `RELAYER_ADMIN_TOKEN`: required token for relayer queue, execute, and run endpoints through `x-relayer-token`.
 - `RELAYER_APP_URL`: app base URL used by `pnpm relayer:run`, including the `/app` base path (`https://smarttreasury.io/app` in production).
+- `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY`: optional, QStash signing keys that let a schedule call the run endpoint (see above).
+- `QSTASH_RELAYER_RUN_URL`: optional, the exact destination the QStash schedule was registered with; signatures for any other URL are refused.
 
 ## Architecture
 

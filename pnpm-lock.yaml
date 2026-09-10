@@ -26,6 +26,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.62.12
         version: 5.101.4(react@19.2.8)
+      '@upstash/qstash':
+        specifier: ^2.11.3
+        version: 2.11.3
       buffer:
         specifier: ^6.0.3
         version: 6.0.3
@@ -2356,6 +2359,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@upstash/qstash@2.11.3':
+    resolution: {integrity: sha512-d5saGTDlkbKDFSANENtyf+zqkJen9ho17S24x9lXo+DwWjZ9IDM5WKUzUsshUv8ufZsSpxJWyrZ8jZ6r8dBuhg==}
+
   '@vitest/expect@3.2.7':
     resolution: {integrity: sha512-E8eBXaKibuvH2pSZErOjdVb5vF4PbKYcrnluBTYxEk1l/VhhwZg1kZQsdtjq+CsF5CFydf2Rdkz7jDHKSisi3w==}
 
@@ -2855,6 +2861,10 @@ packages:
 
   crypt@0.0.2:
     resolution: {integrity: sha512-mCxBlsHFYh9C+HVpiEacem8FEBnMXgU9gy4zmNC+SXAZNB/1idgp/aulFJ4FgCi7GPEVbfyng092GqL2k2rmow==}
+
+  crypto-js@4.2.0:
+    resolution: {integrity: sha512-KALDyEYgpY+Rlob/iriUtjV6d5Eq+Y191A5g4UqLAi8CyGP9N1+FdVbkc1SxKc2r4YAYqG8JzO2KGL+AizD70Q==}
+    deprecated: Active development of CryptoJS has been discontinued. This library is no longer maintained.
 
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
@@ -3735,6 +3745,9 @@ packages:
     resolution: {integrity: sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==}
     hasBin: true
 
+  jose@5.10.0:
+    resolution: {integrity: sha512-s+3Al/p9g32Iq+oqXxkW//7jk2Vig6FF1CFqzVXoTUXt2qz89YWbL+OwS17NFYEvxC35n0FKeGO2LGYSxeM2Gg==}
+
   js-sha256@0.11.1:
     resolution: {integrity: sha512-o6WSo/LUvY2uC4j7mO50a2ms7E/EAdbP0swigLV+nzHKTTaYnaLIWJ02VdXrsJX0vGedDESQnLsOekr94ryfjg==}
 
@@ -4029,6 +4042,10 @@ packages:
 
   near-api-js@5.1.1:
     resolution: {integrity: sha512-h23BGSKxNv8ph+zU6snicstsVK1/CTXsQz4LuGGwoRE24Hj424nSe4+/1tzoiC285Ljf60kPAqRCmsfv9etF2g==}
+
+  neverthrow@7.2.0:
+    resolution: {integrity: sha512-iGBUfFB7yPczHHtA8dksKTJ9E8TESNTAx1UQWW6TzMF280vo9jdPYpLUXrMN1BCkPdHFdNG3fxOt2CUad8KhAw==}
+    engines: {node: '>=18'}
 
   next-themes@0.4.6:
     resolution: {integrity: sha512-pZvgD5L0IEvX5/9GWyHMf3m8BKiVQwsCMHfoFosXtXBMnaS0ZnIJ9ST4b4NqLVKDEm8QBxoNNGNaBv2JNF6XNA==}
@@ -7561,6 +7578,12 @@ snapshots:
   '@unrs/resolver-binding-win32-x64-msvc@1.12.2':
     optional: true
 
+  '@upstash/qstash@2.11.3':
+    dependencies:
+      crypto-js: 4.2.0
+      jose: 5.10.0
+      neverthrow: 7.2.0
+
   '@vitest/expect@3.2.7':
     dependencies:
       '@types/chai': 5.2.3
@@ -8317,6 +8340,8 @@ snapshots:
       uncrypto: 0.1.3
 
   crypt@0.0.2: {}
+
+  crypto-js@4.2.0: {}
 
   csstype@3.2.3: {}
 
@@ -9342,6 +9367,8 @@ snapshots:
 
   jiti@2.7.0: {}
 
+  jose@5.10.0: {}
+
   js-sha256@0.11.1: {}
 
   js-sha256@0.9.0: {}
@@ -9621,6 +9648,8 @@ snapshots:
       node-fetch: 2.6.7
     transitivePeerDependencies:
       - encoding
+
+  neverthrow@7.2.0: {}
 
   next-themes@0.4.6(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
     dependencies:
