@@ -8,6 +8,7 @@ import {
 vi.mock('@/lib/basePath', () => ({ apiUrl: (path: string) => path }))
 
 const ADDRESS = 'GCWFJKLE45TMVZS42TMIYKAORKGBWE74753YPOSCC5ESJR2G2UMBXBDB'
+const OTHER_ADDRESS = 'GDU3LDGZOCJIB6MIKQWK5AICFFEWVC2FJ2BDEVXG37XXSKWIZ7OXVCAS'
 
 function json(body: unknown, ok = true) {
   return { ok, json: async () => body } as Response
@@ -78,16 +79,34 @@ describe('openWalletRelayerSession', () => {
 })
 
 describe('ensureRelayerSession', () => {
-  it('does not prompt the wallet when a session is already open', async () => {
-    // The operator who unlocked the panel, or a wallet returning inside its
-    // session, must not be asked to sign again on every queue.
-    fetchMock.mockResolvedValueOnce(json({ active: true, subject: 'operator' }))
+  it('does not prompt the wallet when its own session is already open', async () => {
+    // A wallet returning inside its session must not be asked to sign again
+    // on every queue.
+    fetchMock.mockResolvedValueOnce(json({ active: true, subject: ADDRESS }))
     const sign = vi.fn()
 
     const state = await ensureRelayerSession(ADDRESS, sign)
 
     expect(sign).not.toHaveBeenCalled()
-    expect(state.subject).toBe('operator')
+    expect(state.subject).toBe(ADDRESS)
+  })
+
+  it('prompts the wallet when the open session belongs to another address', async () => {
+    // Seen on mainnet: the previous wallet's cookie was still live after the
+    // connected wallet changed, and a queue went through under it without a
+    // signature. A session is proof for one address only.
+    fetchMock
+      .mockResolvedValueOnce(json({ active: true, subject: OTHER_ADDRESS }))
+      .mockResolvedValueOnce(json({ challenge: 'ch' }))
+      .mockResolvedValueOnce(json({ ok: true }))
+      .mockResolvedValueOnce(json({ active: true, subject: ADDRESS }))
+    const sign = vi.fn(async () => 'sig')
+
+    const state = await ensureRelayerSession(ADDRESS, sign)
+
+    expect(sign).toHaveBeenCalledTimes(1)
+    expect(sign).toHaveBeenCalledWith('ch')
+    expect(state.subject).toBe(ADDRESS)
   })
 
   it('opens one, once, when there is no session', async () => {

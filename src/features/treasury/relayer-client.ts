@@ -129,19 +129,28 @@ export async function openWalletRelayerSession(
 }
 
 /**
- * Makes sure some session exists before a call that needs one, opening a
- * wallet session if none does.
+ * Makes sure the session belongs to `address` before a call that needs one,
+ * opening a wallet session when there is none -- or when the one there is
+ * belongs to someone else.
  *
- * Any live session is enough to *reach* the server; whether it may act on a
- * given treasury is the server's decision, per treasury. So a returning
- * wallet is not asked to sign twice within its session.
+ * The second case is the one that bit on mainnet (2026-09-10): the cookie
+ * outlives the wallet connection by up to eight hours, so switching the
+ * connected wallet left the previous address's session in place and the
+ * next queue went through under it, with no signature asked of the wallet
+ * actually connected. The server had scoped it correctly to the *cookie's*
+ * address; it was the console that let the two drift apart. A session is
+ * proof for one address, so it is only reused for that address.
+ *
+ * Whether the address may act on a given treasury stays the server's
+ * decision, per treasury. A returning wallet is still not asked to sign
+ * twice within its session.
  */
 export async function ensureRelayerSession(
   address: string,
   sign: (message: string) => Promise<string>
 ) {
   const state = await probeRelayerSession()
-  if (state.active) return state
+  if (state.active && state.subject === address) return state
   await openWalletRelayerSession(address, sign)
   return probeRelayerSession()
 }
