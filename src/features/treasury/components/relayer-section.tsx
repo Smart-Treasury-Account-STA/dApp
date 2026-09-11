@@ -134,6 +134,17 @@ export function RelayerSection({
               <small className="text-muted-foreground">
                 ledgers {job.startLedger} - {job.endLedger}
               </small>
+              {job.txHash ? (
+                <a
+                  className="text-sm font-semibold underline underline-offset-4"
+                  href={`${STELLAR_CONFIG.explorerBaseUrl}/tx/${job.txHash}`}
+                  rel="noreferrer"
+                  target="_blank"
+                  title={job.txHash}
+                >
+                  View transaction
+                </a>
+              ) : null}
               <Button
                 disabled={
                   !wallet.address ||
