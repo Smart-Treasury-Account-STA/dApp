@@ -5,22 +5,23 @@ import {
   scValToNative,
   xdr,
 } from '@stellar/stellar-sdk'
+import {
+  addressScVal,
+  buildClassicAuthEntry,
+  bytesN32ScVal,
+  inclusionFee,
+  selectAllInvocationsForAddress,
+  signerDelegatedScVal,
+  u32ScVal,
+} from 'sta-sdk'
 
 import { STELLAR_CONFIG } from '@/config'
-import { selectAllInvocationsForAddress } from '@/lib/authTree'
-import { inclusionFee } from '@/lib/inclusionFee'
 import {
-  addressCredentialsEntry,
-  addressScVal,
-  bytesN32ScVal,
   getServer,
   invokeContractOperation,
-  randomAuthNonce,
-  signDelegatedAuthEntry,
   signEnvelope,
-  signerDelegatedScVal,
   submitSignedTransaction,
-  u32ScVal,
+  walletSigningCallback,
 } from '@/lib/stellarClient'
 import type { TransactionReceipt, WalletSigning } from '@/types'
 
@@ -119,12 +120,11 @@ function decodeDeployedAccount(value: unknown): DeployedAccountResult {
  * `initialize` — not just at the root. A plain envelope (source-account)
  * signature only covers root-level require_auth(), so this discovers every
  * node via simulate-in-recording-mode and signs each one as its own
- * standard (non-custom-account) Address credential entry — the exact same
- * `authorizeEntry`/`wallet.signAuthEntry` mechanism stellarClient.ts already
- * uses for smart_account's Entry B, just repeated per node instead of once.
- * This is unrelated to smart_account's custom AuthPayload machinery: it
- * doesn't exist yet at deploy time, and `caller` here is an ordinary
- * wallet key the whole way through.
+ * standard (non-custom-account) Address credential entry — the SDK's
+ * `buildClassicAuthEntry`, the same primitive its Entry B uses, repeated per
+ * node instead of once. This is unrelated to smart_account's custom
+ * AuthPayload machinery: it doesn't exist yet at deploy time, and `caller`
+ * here is an ordinary wallet key the whole way through.
  */
 export async function deployAccount(
   wallet: WalletSigning
@@ -150,8 +150,7 @@ export async function deployAccount(
   // both this discovery build and the final tx build below would leave the
   // final tx's sequence number one higher than the network actually expects
   // (this discovery tx is only ever simulated, never submitted), failing
-  // every submission with tx_bad_seq -- matching how discoverTreasuryInvocation
-  // in stellarClient.ts already avoids this, with its own separate fetch.
+  // every submission with tx_bad_seq.
   const discoverySource = await server.getAccount(wallet.address)
   const discoveryTx = new TransactionBuilder(discoverySource, {
     fee: BASE_FEE,
@@ -181,22 +180,22 @@ export async function deployAccount(
   // simulation satisfies every caller.require_auth() node via
   // source-account credentials rather than explicit Address-credential
   // entries -- selectAllInvocationsForAddress correctly returns none of
-  // those (see its own doc comment), and `invocations` being empty here is
-  // expected, not an error: the envelope signature below already covers
-  // it. Verified directly against a live testnet simulation of this exact
-  // call (2026-09-07) -- the recorded auth entry's credentials discriminant
-  // is SOROBAN_CREDENTIALS_SOURCE_ACCOUNT (0), not _ADDRESS (1).
+  // those, and `invocations` being empty here is expected, not an error:
+  // the envelope signature below already covers it. Verified directly
+  // against a live testnet simulation of this exact call (2026-09-07) --
+  // the recorded auth entry's credentials discriminant is
+  // SOROBAN_CREDENTIALS_SOURCE_ACCOUNT (0), not _ADDRESS (1).
+  const sign = walletSigningCallback(wallet)
   const signedEntries: xdr.SorobanAuthorizationEntry[] = []
   for (const invocation of invocations) {
-    const unsigned = addressCredentialsEntry({
-      address: wallet.address,
-      invocation,
-      nonce: randomAuthNonce(),
-      signature: xdr.ScVal.scvVoid(),
-      signatureExpirationLedger,
-    })
     signedEntries.push(
-      await signDelegatedAuthEntry(unsigned, wallet, signatureExpirationLedger)
+      await buildClassicAuthEntry(
+        wallet.address,
+        invocation,
+        sign,
+        signatureExpirationLedger,
+        STELLAR_CONFIG.networkPassphrase
+      )
     )
   }
 

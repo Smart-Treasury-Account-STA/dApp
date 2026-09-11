@@ -1,17 +1,17 @@
 import { xdr } from '@stellar/stellar-sdk'
-
-import { STELLAR_CONFIG } from '@/config'
-import type { ContractSet } from '@/lib/env'
-import { structScVal } from '@/lib/scval'
 import {
   addressScVal,
   boolScVal,
   contextTypeDefaultScVal,
   i128ScVal,
   signerDelegatedScVal,
+  structScVal,
   symbolScVal,
   u32ScVal,
-} from '@/lib/stellarClient'
+} from 'sta-sdk'
+
+import { STELLAR_CONFIG } from '@/config'
+import type { ContractSet } from '@/lib/env'
 
 export type WriteStrategy = 'custom-account' | 'source-account'
 
@@ -123,7 +123,7 @@ export function setAssetRuleOperation({
       addressScVal(asset),
       structScVal({
         enabled: boolScVal(enabled),
-        max_single_transfer: i128ScVal(maxSingleTransfer),
+        max_single_transfer: i128ScVal(BigInt(maxSingleTransfer)),
       }),
     ],
     strategy: 'source-account',

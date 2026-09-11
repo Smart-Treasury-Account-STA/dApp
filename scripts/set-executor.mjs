@@ -10,13 +10,10 @@
  * env.current_contract_address())`). So a bare `stellar contract invoke`
  * can't sign it -- there is no Ed25519 key for a `C...` address. It needs
  * the same Entry A + Entry B custom-auth construction the dApp uses for
- * payments, which is rebuilt here rather than imported: `src/lib/
- * stellarClient.ts` is a Next.js module whose `@/config` import validates
- * the whole `NEXT_PUBLIC_*` set at load time, and the published `sta-sdk`
- * is a different, older lineage than the construction that is actually
- * proven on mainnet. Everything below mirrors `stellarClient.ts`'s
- * `buildUnsignedCustomAuthEntries` / `signAndSubmitContractInvocation`
- * exactly; change them together.
+ * payments, which `sta-sdk` builds (`buildSmartAccountAuthEntries`; its
+ * bytes are pinned by test to what the dApp submitted on mainnet). The
+ * root invocation is discovered by simulation rather than hand-built, and
+ * the inclusion fee follows the market -- BASE_FEE is refused on mainnet.
  *
  * The signer must be a `Signer::Delegated` on one of the smart account's
  * context rules (true of the deploying wallet for any Tier 1 guided
@@ -39,13 +36,19 @@ import {
   Keypair,
   Operation,
   TransactionBuilder,
-  authorizeEntry,
-  hash,
-  nativeToScVal,
   rpc,
   scValToNative,
   xdr,
 } from '@stellar/stellar-sdk'
+import {
+  buildSmartAccountAuthEntries,
+  countAuthContexts,
+  inclusionFee,
+  resolveContextRuleIds,
+  selectInvocationForAddress,
+  submitTransaction,
+  u32ScVal,
+} from 'sta-sdk'
 
 const NETWORKS = {
   mainnet: {
@@ -57,14 +60,6 @@ const NETWORKS = {
     rpcUrl: 'https://soroban-testnet.stellar.org',
   },
 }
-
-/** Same bid policy as `src/lib/inclusionFee.ts`: `prepareTransaction` sets
- * the resource fee but leaves the inclusion bid at whatever the builder was
- * given, and BASE_FEE (100) is below what mainnet accepts -- that is exactly
- * the `txInsufficientFee` this repo already fixed once, in the dApp. */
-const FEE_FLOOR_STROOPS = 2_000
-const FEE_CAP_STROOPS = 100_000
-const FEE_HEADROOM = 10
 
 function requireEnv(name) {
   const value = process.env[name]
@@ -78,168 +73,6 @@ function addressScVal(id) {
 
 function addressScAddress(id) {
   return new Address(id).toScAddress()
-}
-
-function u32ScVal(value) {
-  return nativeToScVal(Number(value), { type: 'u32' })
-}
-
-function bytesScVal(bytes) {
-  return xdr.ScVal.scvBytes(bytes)
-}
-
-/** Soroban rejects an unsorted ScMap before the contract runs, so struct
- * fields are sorted by key -- mirrors `src/lib/scval.ts`. */
-function structScVal(fields) {
-  return xdr.ScVal.scvMap(
-    Object.entries(fields)
-      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-      .map(
-        ([key, val]) =>
-          new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol(key), val })
-      )
-  )
-}
-
-function signerDelegatedScVal(address) {
-  return xdr.ScVal.scvVec([
-    xdr.ScVal.scvSymbol('Delegated'),
-    addressScVal(address),
-  ])
-}
-
-function contractInvocation(contractId, functionName, args) {
-  return new xdr.SorobanAuthorizedInvocation({
-    function:
-      xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(
-        new xdr.InvokeContractArgs({
-          contractAddress: addressScAddress(contractId),
-          functionName,
-          args,
-        })
-      ),
-    subInvocations: [],
-  })
-}
-
-function addressCredentialsEntry({
-  address,
-  invocation,
-  nonce,
-  signature,
-  signatureExpirationLedger,
-}) {
-  return new xdr.SorobanAuthorizationEntry({
-    credentials: xdr.SorobanCredentials.sorobanCredentialsAddress(
-      new xdr.SorobanAddressCredentials({
-        address: addressScAddress(address),
-        nonce: xdr.Int64.fromString(nonce),
-        signatureExpirationLedger,
-        signature,
-      })
-    ),
-    rootInvocation: invocation,
-  })
-}
-
-function randomAuthNonce() {
-  const high = BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER))
-  const nonce =
-    (high ^ BigInt(Date.now())) & ((BigInt(1) << BigInt(62)) - BigInt(1))
-  return nonce.toString()
-}
-
-function signaturePayload(
-  invocation,
-  nonce,
-  signatureExpirationLedger,
-  networkPassphrase
-) {
-  const preimage = xdr.HashIdPreimage.envelopeTypeSorobanAuthorization(
-    new xdr.HashIdPreimageSorobanAuthorization({
-      networkId: hash(Buffer.from(networkPassphrase)),
-      nonce: xdr.Int64.fromString(nonce),
-      signatureExpirationLedger,
-      invocation,
-    })
-  )
-  return hash(preimage.toXDR())
-}
-
-function countAuthContexts(invocation) {
-  return invocation
-    .subInvocations()
-    .reduce((total, sub) => total + countAuthContexts(sub), 1)
-}
-
-function selectInvocationForAddress(entries, address) {
-  for (const entry of entries) {
-    const credentials = entry.credentials()
-    if (
-      credentials.switch().value !==
-      xdr.SorobanCredentialsType.sorobanCredentialsAddress().value
-    ) {
-      continue
-    }
-    if (
-      Address.fromScAddress(credentials.address().address()).toString() ===
-      address
-    ) {
-      return entry.rootInvocation()
-    }
-  }
-  return null
-}
-
-function buildUnsignedCustomAuthEntries({
-  contextRuleIds,
-  rootInvocation,
-  signerAddress,
-  smartAccountId,
-  signatureExpirationLedger,
-  networkPassphrase,
-}) {
-  const entryANonce = randomAuthNonce()
-  const rootPayload = signaturePayload(
-    rootInvocation,
-    entryANonce,
-    signatureExpirationLedger,
-    networkPassphrase
-  )
-  const contextRuleIdsScVal = xdr.ScVal.scvVec(
-    contextRuleIds.map((id) => u32ScVal(id))
-  )
-  const authDigest = hash(
-    Buffer.concat([rootPayload, contextRuleIdsScVal.toXDR()])
-  )
-
-  const entryA = addressCredentialsEntry({
-    address: smartAccountId,
-    invocation: rootInvocation,
-    nonce: entryANonce,
-    signatureExpirationLedger,
-    signature: structScVal({
-      context_rule_ids: contextRuleIdsScVal,
-      signers: xdr.ScVal.scvMap([
-        new xdr.ScMapEntry({
-          key: signerDelegatedScVal(signerAddress),
-          val: bytesScVal(Buffer.alloc(0)),
-        }),
-      ]),
-    }),
-  })
-
-  const entryB = addressCredentialsEntry({
-    address: signerAddress,
-    invocation: contractInvocation(smartAccountId, '__check_auth', [
-      bytesScVal(authDigest),
-    ]),
-    nonce: randomAuthNonce(),
-    signatureExpirationLedger,
-    signature: xdr.ScVal.scvVoid(),
-  })
-
-  return { entryA, entryB }
 }
 
 /** Reads a contract's instance storage as a plain object, so the script can
@@ -276,7 +109,7 @@ async function simulateRead(
   args = []
 ) {
   const tx = new TransactionBuilder(source, {
-    fee: String(FEE_FLOOR_STROOPS),
+    fee: '100',
     networkPassphrase: network.passphrase,
   })
     .addOperation(
@@ -344,23 +177,6 @@ async function findContextRuleId(
 
   throw new Error(
     `${signerAddress} is not a delegated signer on any context rule of ${smartAccountId}. Rules on-chain: ${seen.join(', ') || 'none'}.`
-  )
-}
-
-async function inclusionFee(server) {
-  let observed = 0
-  try {
-    const stats = await server.getFeeStats()
-    const p99 = Number.parseInt(stats.sorobanInclusionFee.p99, 10)
-    observed = Number.isFinite(p99) ? p99 : 0
-  } catch {
-    observed = 0
-  }
-  return String(
-    Math.min(
-      FEE_CAP_STROOPS,
-      Math.max(FEE_FLOOR_STROOPS, observed * FEE_HEADROOM)
-    )
   )
 }
 
@@ -449,23 +265,18 @@ async function main() {
 
   const latestLedger = await server.getLatestLedger()
   const signatureExpirationLedger = latestLedger.sequence + 100
-  const { entryA, entryB } = buildUnsignedCustomAuthEntries({
-    contextRuleIds: Array.from(
-      { length: countAuthContexts(rootInvocation) },
-      () => contextRuleId
-    ),
+  const [entryA, signedEntryB] = await buildSmartAccountAuthEntries({
+    smartAccountId,
     rootInvocation,
     signerAddress: signer.publicKey(),
-    smartAccountId,
-    signatureExpirationLedger,
+    sign: signer,
     networkPassphrase: network.passphrase,
-  })
-  const signedEntryB = await authorizeEntry(
-    entryB,
-    signer,
+    contextRuleIds: resolveContextRuleIds(
+      [contextRuleId],
+      countAuthContexts(rootInvocation)
+    ),
     signatureExpirationLedger,
-    network.passphrase
-  )
+  })
 
   // Fetched again: TransactionBuilder.build() increments the sequence number
   // of whatever Account object it is given, and the simulations above each
@@ -494,31 +305,21 @@ async function main() {
   }
 
   prepared.sign(signer)
-  const sent = await server.sendTransaction(prepared)
-  if (sent.status === 'ERROR') {
-    const code = sent.errorResult
-      ? sent.errorResult.result().switch().name
-      : 'ERROR (the RPC gave no result code)'
-    throw new Error(`Submission failed: ${code}`)
+  const net = {
+    network: networkName,
+    rpcUrl,
+    networkPassphrase: network.passphrase,
+    contracts: {},
   }
-
-  let result = await server.getTransaction(sent.hash)
-  const deadline = Date.now() + 60_000
-  while (result.status === 'NOT_FOUND' && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 1_000))
-    result = await server.getTransaction(sent.hash)
-  }
-  if (result.status !== 'SUCCESS') {
-    throw new Error(`set_executor did not succeed (status: ${result.status}).`)
-  }
+  const result = await submitTransaction(net, prepared)
 
   const after = await readInstanceStorage(server, intentRegistryId)
   if (after.Executor !== newExecutor) {
     throw new Error(
-      `Transaction ${sent.hash} succeeded but the executor reads back as ${after.Executor}.`
+      `Transaction ${result.txHash} succeeded but the executor reads back as ${after.Executor}.`
     )
   }
-  console.log(`\nset_executor succeeded, tx ${sent.hash}`)
+  console.log(`\nset_executor succeeded, tx ${result.txHash}`)
   console.log(`executor now:    ${after.Executor}`)
 }
 

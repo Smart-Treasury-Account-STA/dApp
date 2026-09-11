@@ -60,8 +60,8 @@ importers:
         specifier: ^2.0.8
         version: 2.0.8(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       sta-sdk:
-        specifier: ^0.1.0
-        version: 0.1.0(@stellar/stellar-sdk@16.2.0(debug@4.4.3(supports-color@7.2.0))(supports-color@7.2.0))
+        specifier: 0.2.1
+        version: 0.2.1(@stellar/stellar-sdk@16.2.0(debug@4.4.3(supports-color@7.2.0))(supports-color@7.2.0))
       tailwind-merge:
         specifier: ^2.5.5
         version: 2.6.1
@@ -4656,9 +4656,9 @@ packages:
     resolution: {integrity: sha512-UcjcJOWknrNkF6PLX83qcHM6KHgVKNkV62Y8a5uYDVv9ydGQVwAHMKqHdJje1VTWpljG0WYpCDhrCdAOYH4TWg==}
     engines: {node: '>= 10.x'}
 
-  sta-sdk@0.1.0:
-    resolution: {integrity: sha512-O2sPjWM5r94RxR7UYh/x46Wa9bwEjQDMGHdzanoc4D8L+jft8/LSxfFBv6iw4l4FgRp8w2Y0AzPADo44E3ATJQ==}
-    engines: {node: '>=18'}
+  sta-sdk@0.2.1:
+    resolution: {integrity: sha512-71Jm3ztByRNB1hLBZEEvmSTBYcx8BovLbUVBe22azv5rvxPMejtmh+od4LhJcYawuUdouqBdGlseRMdhtjJa/A==}
+    engines: {node: '>=20'}
     peerDependencies:
       '@stellar/stellar-sdk': '>=16.0.0'
 
@@ -10314,7 +10314,7 @@ snapshots:
 
   split2@4.2.0: {}
 
-  sta-sdk@0.1.0(@stellar/stellar-sdk@16.2.0(debug@4.4.3(supports-color@7.2.0))(supports-color@7.2.0)):
+  sta-sdk@0.2.1(@stellar/stellar-sdk@16.2.0(debug@4.4.3(supports-color@7.2.0))(supports-color@7.2.0)):
     dependencies:
       '@stellar/stellar-sdk': 16.2.0(debug@4.4.3(supports-color@7.2.0))(supports-color@7.2.0)
 

@@ -1,22 +1,16 @@
-import {
-  BASE_FEE,
-  Contract,
-  Keypair,
-  Operation,
-  TransactionBuilder,
-  authorizeEntry,
-  nativeToScVal,
-  rpc,
-  scValToNative,
-  xdr,
-} from '@stellar/stellar-sdk'
+import { Keypair, rpc } from '@stellar/stellar-sdk'
 import { Buffer } from 'buffer'
-import { findEvent, parseContractEvents } from 'sta-sdk'
+import {
+  findEvent,
+  isChildExecuted,
+  parseContractEvents,
+  prepareRelayerExecution,
+  readScheduledIntent,
+} from 'sta-sdk'
+import type { NetworkConfig } from 'sta-sdk'
 
-import { STELLAR_CONFIG } from '@/config'
-import type { ContractSet } from '@/lib/env'
+import { STELLAR_CONFIG, toNetworkConfig } from '@/config'
 import { truncateAddress } from '@/lib/format'
-import { inclusionFee } from '@/lib/inclusionFee'
 import {
   isRelayerJobInFlight,
   isTerminalRelayerJob,
@@ -32,11 +26,6 @@ import type {
   RelayerJobRecord,
   RelayerRunResult,
 } from '@/lib/relayer/types'
-import {
-  addressCredentialsEntry,
-  contractInvocation,
-  randomAuthNonce,
-} from '@/lib/stellarClient'
 import { resolveTreasuryContracts } from '@/lib/treasuryRegistry/resolveContracts'
 
 type IntentRegistryState = {
@@ -53,18 +42,12 @@ type IntentRegistryState = {
   startLedger?: number
 }
 
-function bytesN32ScVal(hex: string) {
-  const normalized = hex.replace(/^0x/, '')
-  const parts = normalized.match(/.{1,2}/g) ?? []
-  const bytes = Buffer.from(parts.map((byte) => parseInt(byte, 16)))
+function intentIdBytes(hex: string): Buffer {
+  const bytes = Buffer.from(hex.replace(/^0x/i, ''), 'hex')
   if (bytes.length !== 32) {
     throw new Error('Intent ID must be 32 bytes encoded as 64 hex characters.')
   }
-  return xdr.ScVal.scvBytes(bytes)
-}
-
-function u32ScVal(value: number) {
-  return nativeToScVal(value, { type: 'u32' })
+  return bytes
 }
 
 function getExecutorKeypair() {
@@ -75,38 +58,6 @@ function getExecutorKeypair() {
   return Keypair.fromSecret(secret)
 }
 
-function isSimulationError(
-  simulation: rpc.Api.SimulateTransactionResponse
-): simulation is rpc.Api.SimulateTransactionErrorResponse {
-  return 'error' in simulation
-}
-
-async function simulateContractCall(
-  server: rpc.Server,
-  sourceAddress: string,
-  contractId: string,
-  method: string,
-  args: xdr.ScVal[] = []
-) {
-  const source = await server.getAccount(sourceAddress)
-  const contract = new Contract(contractId)
-  const tx = new TransactionBuilder(source, {
-    fee: BASE_FEE,
-    networkPassphrase: STELLAR_CONFIG.networkPassphrase,
-  })
-    .addOperation(contract.call(method, ...args))
-    .setTimeout(60)
-    .build()
-
-  const simulation = await server.simulateTransaction(tx)
-  if (isSimulationError(simulation)) {
-    throw new Error(simulation.error)
-  }
-  return simulation.result?.retval
-    ? scValToNative(simulation.result.retval)
-    : null
-}
-
 function numeric(value: unknown, fallback: number) {
   if (typeof value === 'number') return value
   if (typeof value === 'bigint') return Number(value)
@@ -115,27 +66,21 @@ function numeric(value: unknown, fallback: number) {
 }
 
 async function readIntentState(
-  server: rpc.Server,
+  net: NetworkConfig,
   sourceAddress: string,
-  job: RelayerJobRecord,
-  contracts: ContractSet
+  job: RelayerJobRecord
 ) {
-  const intentId = bytesN32ScVal(job.intentId)
-  const intent = (await simulateContractCall(
-    server,
+  const intentId = intentIdBytes(job.intentId)
+  const intent = (await readScheduledIntent(
+    net,
     sourceAddress,
-    contracts.intentRegistry,
-    'get_intent',
-    [intentId]
+    intentId
   )) as IntentRegistryState | null
-  const childExecuted = Boolean(
-    await simulateContractCall(
-      server,
-      sourceAddress,
-      contracts.intentRegistry,
-      'is_child_executed',
-      [intentId, u32ScVal(job.childSequence)]
-    )
+  const childExecuted = await isChildExecuted(
+    net,
+    sourceAddress,
+    intentId,
+    job.childSequence
   )
 
   return {
@@ -156,16 +101,12 @@ export async function readQueueableScheduledIntent(
   smartAccountId: string,
   intentId: string
 ): Promise<CreateRelayerJobInput> {
-  const server = new rpc.Server(STELLAR_CONFIG.rpcUrl)
   const contracts = await resolveTreasuryContracts(smartAccountId)
   const executor = getExecutorKeypair()
-  const sourceAddress = executor.publicKey()
-  const intent = (await simulateContractCall(
-    server,
-    sourceAddress,
-    contracts.intentRegistry,
-    'get_intent',
-    [bytesN32ScVal(intentId)]
+  const intent = (await readScheduledIntent(
+    toNetworkConfig(contracts),
+    executor.publicKey(),
+    intentIdBytes(intentId)
   )) as IntentRegistryState | null
 
   if (!intent) {
@@ -335,12 +276,8 @@ export async function executeRelayerJob(job: RelayerJobRecord) {
 
   const executor = getExecutorKeypair()
   const sourceAddress = executor.publicKey()
-  const intentState = await readIntentState(
-    server,
-    sourceAddress,
-    job,
-    contracts
-  )
+  const net = toNetworkConfig(contracts)
+  const intentState = await readIntentState(net, sourceAddress, job)
 
   if (intentState.cancelled) {
     return updateRelayerJob(job.smartAccountId, job.intentId, (current) => ({
@@ -388,61 +325,21 @@ export async function executeRelayerJob(job: RelayerJobRecord) {
   )
   if (!claim.applied) return claim.job
 
-  const source = await server.getAccount(sourceAddress)
-  const signatureExpirationLedger = latestLedger.sequence + 100
-
   // execute_scheduled_payment has no require_auth() of its own -- it is
   // deliberately permissionless. The only real authorization check in the
   // whole call graph is intent_registry.mark_child_executed's
-  // executor.require_auth(), two levels deep (execute_scheduled_payment ->
-  // intent_registry.mark_child_executed -> ensure_executor). Soroban's
-  // SourceAccount envelope signature (what `prepared.sign(executor)` alone
-  // produces) only covers a require_auth() at the ROOT of the invocation
-  // tree, so this non-root check needs its own explicit, signed
-  // SorobanAuthorizationEntry -- confirmed against live testnet in the
-  // contracts repo (docs/TESTNET_FACTORY_DEPLOYMENT.md §8,
-  // docs/DAPP_INTEGRATION_SPEC.md §8): without it, every submission fails
-  // with Error(Auth, InvalidAction). This is a plain classic-account
-  // credential (the executor is an ordinary keypair, not smart_account's
-  // custom account), so no AuthPayload/context-rule construction is
-  // involved -- just authorizeEntry, the same primitive
-  // stellarClient.ts's signDelegatedAuthEntry already uses for wallet-signed
-  // entries, here signed directly with the executor's own Keypair.
-  const executorInvocation = contractInvocation(
-    contracts.intentRegistry,
-    'mark_child_executed',
-    [bytesN32ScVal(job.intentId), u32ScVal(job.childSequence)]
-  )
-  const unsignedExecutorEntry = addressCredentialsEntry({
-    address: sourceAddress,
-    invocation: executorInvocation,
-    nonce: randomAuthNonce(),
-    signature: xdr.ScVal.scvVoid(),
-    signatureExpirationLedger,
+  // executor.require_auth(), two levels deep, which the SDK's
+  // prepareRelayerExecution signs as its own explicit classic-account entry
+  // (see buildExecutorAuthEntry there) -- an envelope signature alone covers
+  // only a root-level require_auth(). It also bids the market inclusion fee;
+  // BASE_FEE is what mainnet refused with txInsufficientFee.
+  const prepared = await prepareRelayerExecution({
+    net,
+    intentId: intentIdBytes(job.intentId),
+    childSequence: job.childSequence,
+    executorAddress: sourceAddress,
+    sign: executor,
   })
-  const executorEntry = await authorizeEntry(
-    unsignedExecutorEntry,
-    executor,
-    signatureExpirationLedger,
-    STELLAR_CONFIG.networkPassphrase
-  )
-
-  const tx = new TransactionBuilder(source, {
-    fee: await inclusionFee(server),
-    networkPassphrase: STELLAR_CONFIG.networkPassphrase,
-  })
-    .addOperation(
-      Operation.invokeContractFunction({
-        contract: contracts.smartAccount,
-        function: 'execute_scheduled_payment',
-        args: [bytesN32ScVal(job.intentId), u32ScVal(job.childSequence)],
-        auth: [executorEntry],
-      })
-    )
-    .setTimeout(120)
-    .build()
-
-  const prepared = await server.prepareTransaction(tx)
   prepared.sign(executor)
   const sent = await server.sendTransaction(prepared)
 

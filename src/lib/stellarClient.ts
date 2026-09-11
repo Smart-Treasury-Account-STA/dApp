@@ -5,31 +5,60 @@ import {
   Operation,
   Transaction,
   TransactionBuilder,
-  authorizeEntry,
-  hash,
-  nativeToScVal,
   rpc,
   scValToNative,
   xdr,
 } from '@stellar/stellar-sdk'
+import type { SigningCallback } from '@stellar/stellar-sdk'
 import { Buffer } from 'buffer'
+import {
+  addressScVal,
+  buildSmartAccountAuthEntries,
+  countAuthContexts,
+  discoverSmartAccountInvocation,
+  encodeScheduledIntent,
+  encodeSplitArgs,
+  encodeTransferArgs,
+  inclusionFee,
+  isGuardian,
+  isNonceUsed,
+  prepareCancelScheduledPayment,
+  prepareScheduledPayment,
+  prepareSplitPayment,
+  prepareTransferPayment,
+  readAccountStatus,
+  readContextRule as readContextRuleOnChain,
+  readContextRulesCount,
+  readOwner,
+  readPolicyVersion,
+  readScheduledIntent as readScheduledIntentOnChain,
+  readSignerId,
+  resolveContextRuleIds,
+  serverFor,
+  validatePolicy,
+} from 'sta-sdk'
+import type {
+  AccountStatus,
+  PolicyCheck,
+  PrepareOptions,
+  ScheduledIntentArgs,
+  SplitPaymentArgs,
+  TransferPaymentArgs,
+} from 'sta-sdk'
 
-import { NETWORK, STELLAR_CONFIG } from '@/config'
+import { NETWORK, STELLAR_CONFIG, toNetworkConfig } from '@/config'
 import {
   validatePaymentDraft,
   validateScheduleDraft,
   validateSplitDraft,
 } from '@/features/treasury/drafts'
 import type { AssetHolding } from '@/lib/assetHolding'
-import { countAuthContexts, selectInvocationForAddress } from '@/lib/authTree'
 import type { ContractSet } from '@/lib/env'
 import { describeSimulationFailure } from '@/lib/format'
-import { inclusionFee } from '@/lib/inclusionFee'
 import type { LedgerClock } from '@/lib/ledgerClock'
 import { classifyProbeFailure, isWholePaymentReason } from '@/lib/policyProbe'
 import { collectIntentIds } from '@/lib/scheduledIntents'
 import type { IntentEvent, ScheduledIntentRecord } from '@/lib/scheduledIntents'
-import { structScVal } from '@/lib/scval'
 import { validationFailure } from '@/lib/simulationResult'
 import { selectRuleForSigner } from '@/lib/smartAccountAuth'
 import { decodeWalletSignature } from '@/lib/walletSignature'
@@ -62,63 +91,10 @@ type ContractRuleRecord = {
   valid_until?: unknown
 }
 
-type CustomAuthInput = {
-  rootInvocation: xdr.SorobanAuthorizedInvocation
-  contextRuleIds: number[]
-  signerAddress: string
-  signatureExpirationLedger: number
-  contracts: ContractSet
-}
-
-/**
- * Asks the host which invocation tree the treasury has to authorize.
- *
- * Building the tree from the entrypoint alone only works when the call moves
- * no tokens. `execute_transfer_payment` reaches the SAC's `transfer` through
- * the adapter, and because the adapter — not the treasury — is the SAC's
- * direct caller, that `transfer` needs its own declared node; without it the
- * SAC rejects the payment with `Error(Auth, InvalidAction)` /
- * "Unauthorized function call for address". Simulating with no auth entries
- * puts the host in recording mode, so it reports that tree itself rather than
- * the dApp restating each contract's internal call graph.
- */
-async function discoverTreasuryInvocation(
-  sourceAddress: string,
-  functionName: string,
-  args: xdr.ScVal[],
-  contracts: ContractSet
-): Promise<xdr.SorobanAuthorizedInvocation> {
-  const server = getServer()
-  const source = await server.getAccount(sourceAddress)
-  const contract = new Contract(contracts.smartAccount)
-  const tx = new TransactionBuilder(source, {
-    fee: BASE_FEE,
-    networkPassphrase: STELLAR_CONFIG.networkPassphrase,
-  })
-    .addOperation(contract.call(functionName, ...args))
-    .setTimeout(60)
-    .build()
-
-  const simulation = await server.simulateTransaction(tx)
-  if (isSimulationError(simulation)) {
-    throw new Error(simulation.error)
-  }
-
-  const recorded = selectInvocationForAddress(
-    simulation.result?.auth ?? [],
-    contracts.smartAccount
-  )
-  if (!recorded) {
-    throw new Error(
-      'Simulation recorded no authorization requirement for the treasury account.'
-    )
-  }
-
-  return recorded
-}
-
+/** The one `rpc.Server` this dApp talks to -- the SDK's factory, so the
+ * two agree about URL and headers. */
 export function getServer() {
-  return new rpc.Server(STELLAR_CONFIG.rpcUrl)
+  return serverFor(toNetworkConfig())
 }
 
 function isSimulationError(
@@ -161,232 +137,110 @@ async function simulateContractCall(
   return { value: readSimulationValue(simulation) }
 }
 
-export function addressScVal(address: string) {
-  return new Address(address).toScVal()
-}
-
-function addressScAddress(address: string) {
-  return new Address(address).toScAddress()
-}
-
-export function symbolScVal(value: string) {
-  return xdr.ScVal.scvSymbol(value)
-}
-
-export function i128ScVal(value: string) {
-  return nativeToScVal(BigInt(value), { type: 'i128' })
-}
-
-export function u32ScVal(value: number | string) {
-  return nativeToScVal(Number(value), { type: 'u32' })
-}
-
-function u64ScVal(value: number | string) {
-  return nativeToScVal(BigInt(value), { type: 'u64' })
-}
-
-export function boolScVal(value: boolean) {
-  return nativeToScVal(value)
-}
-
-export function bytesN32ScVal(hex: string) {
-  const normalized = hex.replace(/^0x/, '')
-  const parts = normalized.match(/.{1,2}/g) ?? []
-  const bytes = Buffer.from(parts.map((byte) => parseInt(byte, 16)))
-
+/** A draft's intent id as the 32 bytes the contracts take. */
+function intentIdBytes(hex: string): Buffer {
+  const bytes = Buffer.from(hex.replace(/^0x/i, ''), 'hex')
   if (bytes.length !== 32) {
     throw new Error('Intent ID must be 32 bytes encoded as 64 hex characters.')
   }
-
-  return xdr.ScVal.scvBytes(bytes)
+  return bytes
 }
 
-function bytesScVal(bytes: Buffer) {
-  return xdr.ScVal.scvBytes(bytes)
+// The forms keep everything as strings; the SDK takes the contracts' own
+// types. These are the only places that conversion happens.
+
+function transferPaymentArgs(draft: PaymentDraft): TransferPaymentArgs {
+  return {
+    asset: draft.asset,
+    destination: draft.destination,
+    amount: BigInt(draft.amount),
+    nonce: BigInt(draft.nonce),
+    expectedPolicyVersion: draft.expectedPolicyVersion,
+  }
 }
 
-function policyCheckScVal(
+function splitPaymentArgs(draft: SplitDraft): SplitPaymentArgs {
+  return {
+    asset: draft.asset,
+    // `split_adapter::execute_split` names this argument `recipients`; the
+    // value it carries is this dApp's `destinations` list. The contract's
+    // spelling stops at the call boundary.
+    recipients: draft.destinations.map((entry) => entry.destination),
+    amounts: draft.destinations.map((entry) => BigInt(entry.amount)),
+    nonce: BigInt(draft.nonce),
+    expectedPolicyVersion: draft.expectedPolicyVersion,
+  }
+}
+
+function scheduledIntentArgs(
+  draft: ScheduleDraft,
+  contracts: ContractSet
+): ScheduledIntentArgs {
+  return {
+    intent_id: intentIdBytes(draft.intentId),
+    asset: draft.asset,
+    destination: draft.destination,
+    amount: BigInt(draft.amount),
+    start_ledger: Number(draft.startLedger),
+    end_ledger: Number(draft.endLedger),
+    interval_ledgers: Number(draft.intervalLedgers ?? 0),
+    max_executions: Number(draft.maxExecutions),
+    execution_count: 0,
+    policy_version: draft.expectedPolicyVersion,
+    adapter: contracts.transferAdapter,
+    cancelled: false,
+  }
+}
+
+function policyCheck(
   draft: PaymentDraft | ScheduleDraft,
   operation = 'transfer'
-) {
-  return structScVal({
-    operation: symbolScVal(operation),
-    asset: addressScVal(draft.asset),
-    destination: addressScVal(draft.destination),
-    amount: i128ScVal(draft.amount),
-    expected_version: u32ScVal(draft.expectedPolicyVersion),
-  })
-}
-
-function scheduledIntentScVal(draft: ScheduleDraft, contracts: ContractSet) {
-  return structScVal({
-    intent_id: bytesN32ScVal(draft.intentId),
-    asset: addressScVal(draft.asset),
-    destination: addressScVal(draft.destination),
-    amount: i128ScVal(draft.amount),
-    start_ledger: u32ScVal(draft.startLedger),
-    end_ledger: u32ScVal(draft.endLedger),
-    interval_ledgers: u32ScVal(draft.intervalLedgers ?? 0),
-    max_executions: u32ScVal(draft.maxExecutions),
-    execution_count: u32ScVal(0),
-    policy_version: u32ScVal(draft.expectedPolicyVersion),
-    adapter: addressScVal(contracts.transferAdapter),
-    cancelled: boolScVal(false),
-  })
-}
-
-export function contractInvocation(
-  contractId: string,
-  functionName: string,
-  args: xdr.ScVal[]
-) {
-  return new xdr.SorobanAuthorizedInvocation({
-    function:
-      xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(
-        new xdr.InvokeContractArgs({
-          contractAddress: addressScAddress(contractId),
-          functionName,
-          args,
-        })
-      ),
-    subInvocations: [],
-  })
-}
-
-export function addressCredentialsEntry({
-  address,
-  invocation,
-  nonce,
-  signature,
-  signatureExpirationLedger,
-}: {
-  address: string
-  invocation: xdr.SorobanAuthorizedInvocation
-  nonce: string
-  signature: xdr.ScVal
-  signatureExpirationLedger: number
-}) {
-  return new xdr.SorobanAuthorizationEntry({
-    credentials: xdr.SorobanCredentials.sorobanCredentialsAddress(
-      new xdr.SorobanAddressCredentials({
-        address: addressScAddress(address),
-        nonce: xdr.Int64.fromString(nonce),
-        signatureExpirationLedger,
-        signature,
-      })
-    ),
-    rootInvocation: invocation,
-  })
-}
-
-function signaturePayload(
-  invocation: xdr.SorobanAuthorizedInvocation,
-  nonce: string,
-  signatureExpirationLedger: number
-) {
-  const preimage = xdr.HashIdPreimage.envelopeTypeSorobanAuthorization(
-    new xdr.HashIdPreimageSorobanAuthorization({
-      networkId: hash(Buffer.from(STELLAR_CONFIG.networkPassphrase)),
-      nonce: xdr.Int64.fromString(nonce),
-      signatureExpirationLedger,
-      invocation,
-    })
-  )
-  return hash(preimage.toXDR())
-}
-
-export function randomAuthNonce() {
-  const high = BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER))
-  const nonce =
-    (high ^ BigInt(Date.now())) & ((BigInt(1) << BigInt(62)) - BigInt(1))
-  return nonce.toString()
-}
-
-export function signerDelegatedScVal(address: string) {
-  return xdr.ScVal.scvVec([symbolScVal('Delegated'), addressScVal(address)])
-}
-
-/** `ContextRuleType::Default` -- the unit-variant encoding, same shape as
- * signerDelegatedScVal's `Signer::Delegated`. The other variant,
- * `CallContract(Address)`, isn't needed here: every context rule this
- * dApp creates is `Default` (DAPP_DEVELOPER_QA.md Part 4 -- rules can't
- * discriminate by function, only by which contract required auth, and
- * every smart_account-gated call in this dApp is a call to smart_account
- * itself). */
-export function contextTypeDefaultScVal() {
-  return xdr.ScVal.scvVec([symbolScVal('Default')])
-}
-
-function smartAccountAuthPayload(
-  signerAddress: string,
-  contextRuleIdsScVal: xdr.ScVal
-) {
-  const signersMap = xdr.ScVal.scvMap([
-    new xdr.ScMapEntry({
-      key: signerDelegatedScVal(signerAddress),
-      val: bytesScVal(Buffer.alloc(0)),
-    }),
-  ])
-
-  // Routed through structScVal like every other contract struct: these two
-  // keys happen to be in sorted order already, and nothing should depend on
-  // that holding if a field is ever added.
-  return structScVal({
-    context_rule_ids: contextRuleIdsScVal,
-    signers: signersMap,
-  })
+): PolicyCheck {
+  return {
+    operation,
+    asset: draft.asset,
+    destination: draft.destination,
+    amount: BigInt(draft.amount),
+    expectedVersion: draft.expectedPolicyVersion,
+  }
 }
 
 /**
- * Signs entry B — the delegated signer's standard `Address` credentials entry,
- * which authorizes the nested `require_auth_for_args((auth_digest,))` call that
- * `smart_account`'s `authenticate()` makes on its own behalf.
+ * The connected wallet as the `SigningCallback` the SDK's auth builders
+ * take: it is handed the `HashIdPreimage` and returns raw signature bytes.
  *
- * Only entry B goes through here. Entry A carries the contract's own
- * `AuthPayload` and is hand-built, because no SDK helper models a custom
- * account's signature shape.
+ * Passing the wallet the entry itself makes it fail to parse; expecting an
+ * entry back makes the reply fail to decode. The SDK drives `authorizeEntry`
+ * with this callback, which is the one shape Freighter accepts.
+ *
+ * Freighter reports which account it actually signed with. That can diverge
+ * from the account asked for (its active account didn't match) -- plugging
+ * `wallet.address` in as the verification key regardless produces a valid
+ * signature that the SDK's own crypto check rejects, surfacing only a
+ * generic "signature doesn't match payload". Trust what the wallet reports,
+ * and fail with the actual mismatch when it isn't the signer this treasury
+ * action needs.
  */
-export async function signDelegatedAuthEntry(
-  entry: xdr.SorobanAuthorizationEntry,
-  wallet: WalletSigning,
-  signatureExpirationLedger: number
-): Promise<xdr.SorobanAuthorizationEntry> {
-  // The wallet is handed the HashIdPreimage and returns raw signature bytes.
-  // Passing it the entry itself makes it fail to parse; expecting an entry back
-  // makes the reply fail to decode. authorizeEntry drives both sides correctly
-  // and writes the signature into a copy of the entry.
-  return authorizeEntry(
-    entry,
-    async (preimage) => {
-      const result = await wallet.signAuthEntry(
-        preimage.toXDR('base64'),
-        wallet.address
+export function walletSigningCallback(wallet: WalletSigning): SigningCallback {
+  return async (preimage) => {
+    const result = await wallet.signAuthEntry(
+      preimage.toXDR('base64'),
+      wallet.address
+    )
+    if (!result) {
+      throw new Error('Wallet did not return a signed authorization entry.')
+    }
+    const signerAddress = result.signerAddress ?? wallet.address
+    if (signerAddress !== wallet.address) {
+      throw new Error(
+        `Wallet signed with ${signerAddress} instead of the expected signer ${wallet.address}. Switch to that account in your wallet and try again.`
       )
-      if (!result) {
-        throw new Error('Wallet did not return a signed authorization entry.')
-      }
-      // Freighter reports which account it actually signed with. That can
-      // diverge from the account we asked for (e.g. its active account
-      // didn't match the requested one) — plugging `wallet.address` in as
-      // the verification key regardless produces a valid signature that the
-      // SDK's own crypto check rejects, surfacing only a generic "signature
-      // doesn't match payload". Trust what the wallet reports instead, and
-      // fail with the actual mismatch when it doesn't match the signer this
-      // treasury action needs.
-      const signerAddress = result.signerAddress ?? wallet.address
-      if (signerAddress !== wallet.address) {
-        throw new Error(
-          `Wallet signed with ${signerAddress} instead of the expected signer ${wallet.address}. Switch to that account in your wallet and try again.`
-        )
-      }
-      return {
-        signature: decodeWalletSignature(result.signature),
-        publicKey: signerAddress,
-      }
-    },
-    signatureExpirationLedger,
-    STELLAR_CONFIG.networkPassphrase
-  )
+    }
+    return {
+      signature: decodeWalletSignature(result.signature),
+      publicKey: signerAddress,
+    }
+  }
 }
 
 /**
@@ -418,51 +272,6 @@ export async function signEnvelope(
   return result.xdr
 }
 
-function buildUnsignedCustomAuthEntries({
-  contextRuleIds,
-  rootInvocation,
-  signerAddress,
-  signatureExpirationLedger,
-  contracts,
-}: CustomAuthInput) {
-  if (contextRuleIds.length === 0) {
-    throw new Error('No SmartAccount context rule is selected.')
-  }
-
-  const entryANonce = randomAuthNonce()
-  const rootPayload = signaturePayload(
-    rootInvocation,
-    entryANonce,
-    signatureExpirationLedger
-  )
-  const contextRuleIdsScVal = xdr.ScVal.scvVec(
-    contextRuleIds.map((id) => u32ScVal(id))
-  )
-  const authDigest = hash(
-    Buffer.concat([rootPayload, contextRuleIdsScVal.toXDR()])
-  )
-
-  const entryA = addressCredentialsEntry({
-    address: contracts.smartAccount,
-    invocation: rootInvocation,
-    nonce: entryANonce,
-    signatureExpirationLedger,
-    signature: smartAccountAuthPayload(signerAddress, contextRuleIdsScVal),
-  })
-
-  const entryB = addressCredentialsEntry({
-    address: signerAddress,
-    invocation: contractInvocation(contracts.smartAccount, '__check_auth', [
-      bytesScVal(authDigest),
-    ]),
-    nonce: randomAuthNonce(),
-    signatureExpirationLedger,
-    signature: xdr.ScVal.scvVoid(),
-  })
-
-  return { entryA, entryB }
-}
-
 export function invokeContractOperation(
   contractId: string,
   functionName: string,
@@ -477,38 +286,7 @@ export function invokeContractOperation(
   })
 }
 
-function transferArgs(draft: PaymentDraft) {
-  return [
-    addressScVal(draft.asset),
-    addressScVal(draft.destination),
-    i128ScVal(draft.amount),
-    u64ScVal(draft.nonce),
-    u32ScVal(draft.expectedPolicyVersion),
-  ]
-}
-
-function splitArgs(draft: SplitDraft) {
-  return [
-    addressScVal(draft.asset),
-    // `split_adapter::execute_split` names this argument `recipients`; the
-    // value it carries is this dApp's `destinations` list. The contract's
-    // spelling stops at the call boundary.
-    xdr.ScVal.scvVec(
-      draft.destinations.map((entry) => addressScVal(entry.destination))
-    ),
-    xdr.ScVal.scvVec(
-      draft.destinations.map((entry) => i128ScVal(entry.amount))
-    ),
-    u64ScVal(draft.nonce),
-    u32ScVal(draft.expectedPolicyVersion),
-  ]
-}
-
-function cancelScheduleArgs(intentId: string) {
-  return [bytesN32ScVal(intentId)]
-}
-
-function getSignerAddresses(value: SimulationValue) {
+function getSignerAddresses(value: unknown) {
   const serialized = JSON.stringify(value, (_key, nestedValue) =>
     typeof nestedValue === 'bigint' ? nestedValue.toString() : nestedValue
   )
@@ -587,23 +365,16 @@ export async function submitSignedTransaction(
   }
 }
 
-export async function signAndSubmitContractInvocation({
-  args,
-  functionName,
-  sourceAddress,
-  wallet,
-  contracts = STELLAR_CONFIG.contracts,
-}: {
-  args: xdr.ScVal[]
-  functionName: string
-  sourceAddress: string
-  wallet: WalletSigning
-  contracts?: ContractSet
-}): Promise<TransactionReceipt> {
-  const server = getServer()
-  const latestLedger = await server.getLatestLedger()
-  const signatureExpirationLedger = latestLedger.sequence + 100
-  const source = await server.getAccount(sourceAddress)
+/**
+ * The context rule the connected wallet authorizes under, with the checks
+ * that turn a refused signature into a sentence: no rule at all, a rule
+ * whose signers could not be read, or a wallet that is on none of them.
+ */
+async function selectRuleForWallet(
+  sourceAddress: string,
+  wallet: WalletSigning,
+  contracts: ContractSet
+): Promise<ContextRule> {
   const rules = await loadContextRules(sourceAddress, contracts)
   const matchedRule = selectRuleForSigner(rules, wallet.address)
 
@@ -625,34 +396,59 @@ export async function signAndSubmitContractInvocation({
         .join(', ')}.`
     )
   }
+  return matchedRule
+}
 
-  const rootInvocation = await discoverTreasuryInvocation(
+/**
+ * Signs and submits any `smart_account` entrypoint the wallet authorizes
+ * as a delegated signer -- the generic path for signer, rule and guardian
+ * writes, which the SDK has no dedicated `prepare*` for. Built from the
+ * SDK's primitives: recording-mode discovery of the tree the treasury has
+ * to authorize, one context rule id per node, Entry A + Entry B.
+ */
+export async function signAndSubmitContractInvocation({
+  args,
+  functionName,
+  sourceAddress,
+  wallet,
+  contracts = STELLAR_CONFIG.contracts,
+}: {
+  args: xdr.ScVal[]
+  functionName: string
+  sourceAddress: string
+  wallet: WalletSigning
+  contracts?: ContractSet
+}): Promise<TransactionReceipt> {
+  const net = toNetworkConfig(contracts)
+  const server = getServer()
+  const latestLedger = await server.getLatestLedger()
+  const signatureExpirationLedger = latestLedger.sequence + 100
+  const matchedRule = await selectRuleForWallet(
     sourceAddress,
-    functionName,
-    args,
+    wallet,
     contracts
   )
-  // One context_rule_id per authorization context the tree produces. The
-  // treasury validates every context against the same rule, so this repeats
-  // the matched rule rather than selecting a different one per node.
-  const contextRuleIds = Array.from(
-    { length: countAuthContexts(rootInvocation) },
-    () => matchedRule.id
+
+  const rootInvocation = await discoverSmartAccountInvocation(
+    net,
+    sourceAddress,
+    functionName,
+    args
   )
-  const { entryA, entryB } = buildUnsignedCustomAuthEntries({
-    contextRuleIds,
+  const [entryA, entryB] = await buildSmartAccountAuthEntries({
+    smartAccountId: contracts.smartAccount,
     rootInvocation,
     signerAddress: wallet.address,
+    sign: walletSigningCallback(wallet),
+    networkPassphrase: STELLAR_CONFIG.networkPassphrase,
+    contextRuleIds: resolveContextRuleIds(
+      [matchedRule.id],
+      countAuthContexts(rootInvocation)
+    ),
     signatureExpirationLedger,
-    contracts,
   })
 
-  const signedEntryB = await signDelegatedAuthEntry(
-    entryB,
-    wallet,
-    signatureExpirationLedger
-  )
-
+  const source = await server.getAccount(sourceAddress)
   const tx = new TransactionBuilder(source, {
     fee: await inclusionFee(server),
     networkPassphrase: STELLAR_CONFIG.networkPassphrase,
@@ -660,7 +456,7 @@ export async function signAndSubmitContractInvocation({
     .addOperation(
       invokeContractOperation(contracts.smartAccount, functionName, args, [
         entryA,
-        signedEntryB,
+        entryB,
       ])
     )
     .setTimeout(120)
@@ -674,9 +470,39 @@ export async function signAndSubmitContractInvocation({
   )
 }
 
-function getRecord(value: SimulationValue): Record<string, unknown> {
+/**
+ * Runs one of the SDK's `prepare*` payment helpers as the connected wallet
+ * and submits what it prepared: the wallet is the fee payer, the delegated
+ * signer, and -- through `walletSigningCallback` -- Entry B's signer. The
+ * SDK does discovery, the AuthPayload and the market fee; the wallet then
+ * signs the envelope, which the SDK's own `signAndSubmit` cannot do.
+ */
+async function submitPreparedByWallet(
+  wallet: WalletSigning,
+  contracts: ContractSet,
+  prepare: (opts: PrepareOptions) => Promise<Transaction>
+): Promise<TransactionReceipt> {
+  const matchedRule = await selectRuleForWallet(
+    wallet.address,
+    wallet,
+    contracts
+  )
+  const prepared = await prepare({
+    net: toNetworkConfig(contracts),
+    feeSourceAddress: wallet.address,
+    signerAddress: wallet.address,
+    sign: walletSigningCallback(wallet),
+    contextRuleIds: [matchedRule.id],
+  })
+  const signedTxXdr = await signEnvelope(wallet, prepared.toXDR())
+  return submitSignedTransaction(
+    new Transaction(signedTxXdr, STELLAR_CONFIG.networkPassphrase)
+  )
+}
+
+function getRecord(value: unknown): Record<string, unknown> {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return value
+    return value as Record<string, unknown>
   }
   return {}
 }
@@ -687,20 +513,16 @@ function countCollection(value: unknown, fallback: number) {
   return fallback
 }
 
-function readTreasuryStatus(value: SimulationValue): TreasuryStatus {
-  const record = getRecord(value)
-
+function toTreasuryStatus(status: AccountStatus): TreasuryStatus {
   return {
-    initialized: Boolean(record.initialized ?? true),
-    paused: Boolean(record.paused ?? false),
-    frozen: Boolean(record.frozen ?? false),
-    policyVersionHint: Number(
-      record.policy_version_hint ?? record.policyVersionHint ?? 0
-    ),
+    initialized: Boolean(status?.initialized),
+    paused: Boolean(status?.paused),
+    frozen: Boolean(status?.frozen),
+    policyVersionHint: Number(status?.policy_version_hint ?? 1),
   }
 }
 
-function readContextRule(id: number, value: SimulationValue): ContextRule {
+function readContextRule(id: number, value: unknown): ContextRule {
   const raw = getRecord(value) as ContractRuleRecord
 
   return {
@@ -720,21 +542,16 @@ export async function loadTreasurySnapshot(
   sourceAddress: string,
   contracts: ContractSet = STELLAR_CONFIG.contracts
 ) {
-  const status = await simulateContractCall(
-    sourceAddress,
-    contracts.smartAccount,
-    'status'
-  )
-  const version = await simulateContractCall(
-    sourceAddress,
-    contracts.policyEngine,
-    'version'
-  )
-  const latestLedger = await getLatestLedger()
+  const net = toNetworkConfig(contracts)
+  const [status, policyVersion, latestLedger] = await Promise.all([
+    readAccountStatus(net, sourceAddress),
+    readPolicyVersion(net, sourceAddress),
+    getLatestLedger(),
+  ])
 
   return {
-    status: readTreasuryStatus(status.value),
-    policyVersion: Number(version.value ?? 1),
+    status: toTreasuryStatus(status),
+    policyVersion,
     latestLedger,
   }
 }
@@ -749,24 +566,15 @@ export async function loadContextRules(
   sourceAddress: string,
   contracts: ContractSet = STELLAR_CONFIG.contracts
 ): Promise<ContextRule[]> {
-  const countResult = await simulateContractCall(
-    sourceAddress,
-    contracts.smartAccount,
-    'get_context_rules_count'
-  )
-  const count = Number(countResult.value ?? 0)
+  const net = toNetworkConfig(contracts)
+  const count = await readContextRulesCount(net, sourceAddress)
   const rules: ContextRule[] = []
   const maxId = count + 32
 
   for (let id = 0; rules.length < count && id < maxId; id += 1) {
     try {
-      const result = await simulateContractCall(
-        sourceAddress,
-        contracts.smartAccount,
-        'get_context_rule',
-        [u32ScVal(id)]
-      )
-      rules.push(readContextRule(id, result.value))
+      const rule = await readContextRuleOnChain(net, sourceAddress, id)
+      rules.push(readContextRule(id, rule))
     } catch {
       // No rule at this id — removed or never allocated. Keep scanning.
     }
@@ -779,12 +587,7 @@ export async function loadOwner(
   sourceAddress: string,
   contracts: ContractSet = STELLAR_CONFIG.contracts
 ): Promise<string | null> {
-  const result = await simulateContractCall(
-    sourceAddress,
-    contracts.smartAccount,
-    'get_owner'
-  )
-  return typeof result.value === 'string' ? result.value : null
+  return readOwner(toNetworkConfig(contracts), sourceAddress)
 }
 
 /**
@@ -926,13 +729,7 @@ export async function loadSignerId(
   signerAddress: string,
   contracts: ContractSet = STELLAR_CONFIG.contracts
 ) {
-  const result = await simulateContractCall(
-    sourceAddress,
-    contracts.smartAccount,
-    'get_signer_id',
-    [signerDelegatedScVal(signerAddress)]
-  )
-  return Number(result.value ?? 0)
+  return readSignerId(toNetworkConfig(contracts), sourceAddress, signerAddress)
 }
 
 export async function checkIsGuardian(
@@ -940,13 +737,7 @@ export async function checkIsGuardian(
   guardianAddress: string,
   contracts: ContractSet = STELLAR_CONFIG.contracts
 ) {
-  const result = await simulateContractCall(
-    sourceAddress,
-    contracts.recoveryManager,
-    'is_guardian',
-    [addressScVal(guardianAddress)]
-  )
-  return Boolean(result.value)
+  return isGuardian(toNetworkConfig(contracts), sourceAddress, guardianAddress)
 }
 
 /**
@@ -957,6 +748,7 @@ export function simulatePolicyProbe(
   sourceAddress: string,
   contracts: ContractSet = STELLAR_CONFIG.contracts
 ) {
+  const net = toNetworkConfig(contracts)
   return async (input: {
     asset: string
     destination: string
@@ -964,20 +756,13 @@ export function simulatePolicyProbe(
     amount: string
     expectedVersion: number
   }) => {
-    await simulateContractCall(
-      sourceAddress,
-      contracts.policyEngine,
-      'validate_policy',
-      [
-        structScVal({
-          operation: symbolScVal(input.operation),
-          asset: addressScVal(input.asset),
-          destination: addressScVal(input.destination),
-          amount: i128ScVal(input.amount),
-          expected_version: u32ScVal(input.expectedVersion),
-        }),
-      ]
-    )
+    await validatePolicy(net, sourceAddress, {
+      operation: input.operation,
+      asset: input.asset,
+      destination: input.destination,
+      amount: BigInt(input.amount),
+      expectedVersion: input.expectedVersion,
+    })
   }
 }
 
@@ -1031,13 +816,9 @@ export async function approveAndSubmitTransfer(
     throw new Error('Nonce has already been used.')
   }
 
-  return signAndSubmitContractInvocation({
-    args: transferArgs(draft),
-    functionName: 'execute_transfer_payment',
-    sourceAddress: wallet.address,
-    wallet,
-    contracts,
-  })
+  return submitPreparedByWallet(wallet, contracts, (opts) =>
+    prepareTransferPayment(opts, transferPaymentArgs(draft))
+  )
 }
 
 /**
@@ -1077,13 +858,9 @@ export async function approveAndSubmitSchedule(
     throw new ScheduledIntentExistsError(draft.intentId)
   }
 
-  return signAndSubmitContractInvocation({
-    args: [scheduledIntentScVal(draft, contracts)],
-    functionName: 'create_scheduled_payment',
-    sourceAddress: wallet.address,
-    wallet,
-    contracts,
-  })
+  return submitPreparedByWallet(wallet, contracts, (opts) =>
+    prepareScheduledPayment(opts, scheduledIntentArgs(draft, contracts))
+  )
 }
 
 export async function approveAndSubmitSplit(
@@ -1105,13 +882,9 @@ export async function approveAndSubmitSplit(
     throw new Error('Nonce has already been used.')
   }
 
-  return signAndSubmitContractInvocation({
-    args: splitArgs(draft),
-    functionName: 'execute_split_payment',
-    sourceAddress: wallet.address,
-    wallet,
-    contracts,
-  })
+  return submitPreparedByWallet(wallet, contracts, (opts) =>
+    prepareSplitPayment(opts, splitPaymentArgs(draft))
+  )
 }
 
 export async function approveAndSubmitCancelSchedule(
@@ -1131,13 +904,9 @@ export async function approveAndSubmitCancelSchedule(
     throw new Error('No scheduled intent exists on-chain for this ID.')
   }
 
-  return signAndSubmitContractInvocation({
-    args: cancelScheduleArgs(intentId),
-    functionName: 'cancel_scheduled_payment',
-    sourceAddress: wallet.address,
-    wallet,
-    contracts,
-  })
+  return submitPreparedByWallet(wallet, contracts, (opts) =>
+    prepareCancelScheduledPayment(opts, intentIdBytes(intentId))
+  )
 }
 
 export async function getLatestLedger() {
@@ -1150,13 +919,7 @@ export async function checkNonce(
   nonce: string,
   contracts: ContractSet = STELLAR_CONFIG.contracts
 ) {
-  const result = await simulateContractCall(
-    sourceAddress,
-    contracts.smartAccount,
-    'is_nonce_used',
-    [u64ScVal(nonce)]
-  )
-  return Boolean(result.value)
+  return isNonceUsed(toNetworkConfig(contracts), sourceAddress, BigInt(nonce))
 }
 
 export async function checkScheduledIntentExists(
@@ -1165,11 +928,10 @@ export async function checkScheduledIntentExists(
   contracts: ContractSet = STELLAR_CONFIG.contracts
 ) {
   try {
-    await simulateContractCall(
+    await readScheduledIntentOnChain(
+      toNetworkConfig(contracts),
       sourceAddress,
-      contracts.intentRegistry,
-      'get_intent',
-      [bytesN32ScVal(intentId)]
+      intentIdBytes(intentId)
     )
     return true
   } catch {
@@ -1187,14 +949,12 @@ export async function loadIntentPolicyVersion(
   contracts: ContractSet = STELLAR_CONFIG.contracts
 ): Promise<number | null> {
   try {
-    const result = await simulateContractCall(
+    const intent = await readScheduledIntentOnChain(
+      toNetworkConfig(contracts),
       sourceAddress,
-      contracts.intentRegistry,
-      'get_intent',
-      [bytesN32ScVal(intentId)]
+      intentIdBytes(intentId)
     )
-    const record = getRecord(result.value)
-    const version = record.policy_version
+    const version = getRecord(intent).policy_version
     return typeof version === 'number' ? version : null
   } catch {
     return null
@@ -1215,9 +975,9 @@ function readOptionalString(value: unknown): string | null {
  * declare (`interval_ledgers`), so anything absent has to read as "unknown"
  * instead of failing the whole row.
  */
-function readScheduledIntent(
+function toScheduledIntentRecord(
   intentId: string,
-  value: SimulationValue
+  value: unknown
 ): ScheduledIntentRecord {
   const raw = getRecord(value)
 
@@ -1289,6 +1049,7 @@ export async function loadScheduledIntents(
   retentionLedgers: number | undefined
   truncated: boolean
 }> {
+  const net = toNetworkConfig(contracts)
   const server = getServer()
   const health = await server.getHealth()
   const filters = [
@@ -1320,13 +1081,12 @@ export async function loadScheduledIntents(
   const intents = await Promise.all(
     collectIntentIds(events).map(async (intentId) => {
       try {
-        const result = await simulateContractCall(
+        const intent = await readScheduledIntentOnChain(
+          net,
           sourceAddress,
-          contracts.intentRegistry,
-          'get_intent',
-          [bytesN32ScVal(intentId)]
+          intentIdBytes(intentId)
         )
-        return readScheduledIntent(intentId, result.value)
+        return toScheduledIntentRecord(intentId, intent)
       } catch {
         // The id was announced on-chain, so the row stays: an intent that
         // cannot be read is not the same as one that was never created.
@@ -1392,11 +1152,10 @@ export async function simulatePolicy(
   if (invalid) return invalid
 
   try {
-    await simulateContractCall(
+    await validatePolicy(
+      toNetworkConfig(contracts),
       sourceAddress,
-      contracts.policyEngine,
-      'validate_policy',
-      [policyCheckScVal(draft, 'transfer')]
+      policyCheck(draft, 'transfer')
     )
     return {
       ok: true,
@@ -1434,22 +1193,19 @@ export async function simulateSplitPolicy(
 
   for (const [index, entry] of draft.destinations.entries()) {
     try {
-      await simulateContractCall(
+      await validatePolicy(
+        toNetworkConfig(contracts),
         sourceAddress,
-        contracts.policyEngine,
-        'validate_policy',
-        [
-          policyCheckScVal(
-            {
-              asset: draft.asset,
-              destination: entry.destination,
-              amount: entry.amount,
-              nonce: '1',
-              expectedPolicyVersion: draft.expectedPolicyVersion,
-            },
-            'split'
-          ),
-        ]
+        policyCheck(
+          {
+            asset: draft.asset,
+            destination: entry.destination,
+            amount: entry.amount,
+            nonce: '1',
+            expectedPolicyVersion: draft.expectedPolicyVersion,
+          },
+          'split'
+        )
       )
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -1503,17 +1259,11 @@ export async function simulateTransfer(
       }
     }
 
-    await simulateContractCall(
+    await discoverSmartAccountInvocation(
+      toNetworkConfig(contracts),
       sourceAddress,
-      contracts.smartAccount,
       'execute_transfer_payment',
-      [
-        addressScVal(draft.asset),
-        addressScVal(draft.destination),
-        i128ScVal(draft.amount),
-        u64ScVal(draft.nonce),
-        u32ScVal(draft.expectedPolicyVersion),
-      ]
+      encodeTransferArgs(transferPaymentArgs(draft))
     )
 
     return {
@@ -1557,11 +1307,11 @@ export async function simulateSplit(
       }
     }
 
-    await simulateContractCall(
+    await discoverSmartAccountInvocation(
+      toNetworkConfig(contracts),
       sourceAddress,
-      contracts.smartAccount,
       'execute_split_payment',
-      splitArgs(draft)
+      encodeSplitArgs(splitPaymentArgs(draft))
     )
 
     return {
@@ -1610,11 +1360,11 @@ export async function simulateSchedule(
       }
     }
 
-    await simulateContractCall(
+    await discoverSmartAccountInvocation(
+      toNetworkConfig(contracts),
       sourceAddress,
-      contracts.smartAccount,
       'create_scheduled_payment',
-      [scheduledIntentScVal(draft, contracts)]
+      [encodeScheduledIntent(scheduledIntentArgs(draft, contracts))]
     )
     return {
       ok: true,

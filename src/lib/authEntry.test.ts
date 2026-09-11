@@ -1,10 +1,11 @@
-import { Address, Keypair, hash, xdr } from '@stellar/stellar-sdk'
+import { Keypair, hash, xdr } from '@stellar/stellar-sdk'
 import { Buffer } from 'buffer'
+import { buildClassicAuthEntry, buildInvocation } from 'sta-sdk'
 import { describe, expect, it } from 'vitest'
 
 import type { WalletSigning } from '@/types'
 
-import { signDelegatedAuthEntry, signEnvelope } from './stellarClient'
+import { signEnvelope, walletSigningCallback } from './stellarClient'
 
 const CONTRACT = 'CB4KZJ3I4XANE6GWPAMXCNXQ34PTQWPXVKFBBMLNKV25GAOXQC7RQUMS'
 
@@ -68,82 +69,72 @@ function wrongAccountWallet(
   }
 }
 
-function unsignedDelegatedEntry(
-  signerAddress: string,
-  expirationLedger: number
-) {
-  const invocation = new xdr.SorobanAuthorizedInvocation({
-    function:
-      xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(
-        new xdr.InvokeContractArgs({
-          contractAddress: new Address(CONTRACT).toScAddress(),
-          functionName: '__check_auth',
-          args: [xdr.ScVal.scvU32(1)],
-        })
-      ),
-    subInvocations: [],
-  })
+const NETWORK_PASSPHRASE = 'Test SDF Network ; September 2015'
 
-  return new xdr.SorobanAuthorizationEntry({
-    credentials: xdr.SorobanCredentials.sorobanCredentialsAddress(
-      new xdr.SorobanAddressCredentials({
-        address: new Address(signerAddress).toScAddress(),
-        nonce: xdr.Int64.fromString('12345'),
-        signatureExpirationLedger: expirationLedger,
-        signature: xdr.ScVal.scvVec([]),
-      })
-    ),
-    rootInvocation: invocation,
+/** The nested `__check_auth` call a delegated signer authorizes -- what the
+ * SDK's Entry B is rooted at. */
+function checkAuthInvocation() {
+  return buildInvocation({
+    contractId: CONTRACT,
+    functionName: '__check_auth',
+    args: [xdr.ScVal.scvU32(1)],
   })
 }
 
-describe('signDelegatedAuthEntry', () => {
+/**
+ * The SDK builds and signs the entry; this dApp only supplies the wallet as
+ * a `SigningCallback`. So the callback is exercised through the SDK's own
+ * `buildClassicAuthEntry` -- the same call its Entry B makes -- rather than
+ * in isolation, because what matters is that the pair produces an entry
+ * `authorizeEntry` accepts.
+ */
+describe('walletSigningCallback', () => {
   const keypair = Keypair.random()
   const expirationLedger = 5_000_000
 
   it('hands the wallet a preimage it can parse', async () => {
-    const entry = unsignedDelegatedEntry(keypair.publicKey(), expirationLedger)
-
     await expect(
-      signDelegatedAuthEntry(
-        entry,
-        freighterLikeWallet(keypair),
-        expirationLedger
+      buildClassicAuthEntry(
+        keypair.publicKey(),
+        checkAuthInvocation(),
+        walletSigningCallback(freighterLikeWallet(keypair)),
+        expirationLedger,
+        NETWORK_PASSPHRASE
       )
     ).resolves.toBeDefined()
   })
 
   it('returns an entry carrying a real signature', async () => {
-    const entry = unsignedDelegatedEntry(keypair.publicKey(), expirationLedger)
-
-    const signed = await signDelegatedAuthEntry(
-      entry,
-      freighterLikeWallet(keypair),
-      expirationLedger
+    const signed = await buildClassicAuthEntry(
+      keypair.publicKey(),
+      checkAuthInvocation(),
+      walletSigningCallback(freighterLikeWallet(keypair)),
+      expirationLedger,
+      NETWORK_PASSPHRASE
     )
 
     const credentials = signed.credentials().address()
     expect(credentials.signatureExpirationLedger()).toBe(expirationLedger)
-    // An unsigned entry carries an empty vec; a signed one must not.
+    // An unsigned entry carries a void signature; a signed one carries a vec.
     expect(credentials.signature().vec()?.length ?? 0).toBeGreaterThan(0)
   })
 
   it('preserves the invocation the signer approved', async () => {
-    const entry = unsignedDelegatedEntry(keypair.publicKey(), expirationLedger)
-
-    const signed = await signDelegatedAuthEntry(
-      entry,
-      freighterLikeWallet(keypair),
-      expirationLedger
+    const invocation = checkAuthInvocation()
+    const signed = await buildClassicAuthEntry(
+      keypair.publicKey(),
+      invocation,
+      walletSigningCallback(freighterLikeWallet(keypair)),
+      expirationLedger,
+      NETWORK_PASSPHRASE
     )
 
     expect(signed.rootInvocation().toXDR('base64')).toBe(
-      entry.rootInvocation().toXDR('base64')
+      invocation.toXDR('base64')
     )
   })
 
   it('fails loudly when the wallet returns nothing', async () => {
-    const entry = unsignedDelegatedEntry(keypair.publicKey(), expirationLedger)
     const silentWallet: WalletSigning = {
       address: keypair.publicKey(),
       async signAuthEntry() {
@@ -155,19 +146,28 @@ describe('signDelegatedAuthEntry', () => {
     }
 
     await expect(
-      signDelegatedAuthEntry(entry, silentWallet, expirationLedger)
+      buildClassicAuthEntry(
+        keypair.publicKey(),
+        checkAuthInvocation(),
+        walletSigningCallback(silentWallet),
+        expirationLedger,
+        NETWORK_PASSPHRASE
+      )
     ).rejects.toThrow(/did not return a signed authorization entry/i)
   })
 
   it('fails with an actionable message when the wallet signs with a different account', async () => {
-    const entry = unsignedDelegatedEntry(keypair.publicKey(), expirationLedger)
     const wrongSigner = Keypair.random()
 
     await expect(
-      signDelegatedAuthEntry(
-        entry,
-        wrongAccountWallet(keypair.publicKey(), wrongSigner),
-        expirationLedger
+      buildClassicAuthEntry(
+        keypair.publicKey(),
+        checkAuthInvocation(),
+        walletSigningCallback(
+          wrongAccountWallet(keypair.publicKey(), wrongSigner)
+        ),
+        expirationLedger,
+        NETWORK_PASSPHRASE
       )
     ).rejects.toThrow(
       new RegExp(

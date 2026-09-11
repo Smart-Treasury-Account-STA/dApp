@@ -1,4 +1,3 @@
-import { TransactionBuilder } from '@stellar/stellar-sdk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -15,17 +14,11 @@ import {
   updateRelayerJob,
 } from '@/lib/relayer/store'
 import type { RelayerJobRecord } from '@/lib/relayer/types'
-import {
-  addressCredentialsEntry,
-  contractInvocation,
-} from '@/lib/stellarClient'
 import { getTreasury } from '@/lib/treasuryRegistry/store'
 
 const serverMethods = vi.hoisted(() => ({
   getLatestLedger: vi.fn(),
   getAccount: vi.fn(),
-  simulateTransaction: vi.fn(),
-  prepareTransaction: vi.fn(),
   sendTransaction: vi.fn(),
   getTransaction: vi.fn(),
   getFeeStats: vi.fn(),
@@ -34,14 +27,6 @@ const serverMethods = vi.hoisted(() => ({
 const EXECUTOR_PUBLIC_KEY =
   'GEXECUTOR00000000000000000000000000000000000000000000'
 
-const authorizeEntryMock = vi.hoisted(() =>
-  vi.fn(async (entry: unknown, signer: unknown) => ({
-    __signedEntry: true,
-    entry,
-    signer,
-  }))
-)
-
 vi.mock('@stellar/stellar-sdk', async (importOriginal) => {
   // `Networks` comes from the real module rather than a stub: `@/config`
   // resolves the deployment's network from its passphrase, and a fabricated
@@ -49,7 +34,6 @@ vi.mock('@stellar/stellar-sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@stellar/stellar-sdk')>()
   return {
     Networks: actual.Networks,
-    authorizeEntry: authorizeEntryMock,
     BASE_FEE: '100',
     Contract: vi.fn().mockImplementation(() => ({
       call: vi.fn((method: string, ...args: unknown[]) => ({ method, args })),
@@ -99,27 +83,22 @@ vi.mock('@/lib/relayer/store', () => ({
   updateRelayerJob: vi.fn(),
 }))
 
-vi.mock('@/lib/stellarClient', () => ({
-  contractInvocation: vi.fn(
-    (contractId: string, functionName: string, args: unknown[]) => ({
-      __invocation: true,
-      contractId,
-      functionName,
-      args,
-    })
-  ),
-  addressCredentialsEntry: vi.fn((opts: unknown) => ({
-    __unsignedEntry: true,
-    ...(opts as object),
-  })),
-  randomAuthNonce: vi.fn(() => '424242'),
+// The chain reads and the executor transaction are the SDK's; the executor
+// only decides what to do with their results. Mocked at that boundary.
+const sdkMocks = vi.hoisted(() => ({
+  findEvent: vi.fn(),
+  readScheduledIntent: vi.fn(),
+  isChildExecuted: vi.fn(),
+  prepareRelayerExecution: vi.fn(),
 }))
-
-const findEventMock = vi.hoisted(() => vi.fn())
 vi.mock('sta-sdk', () => ({
   parseContractEvents: vi.fn((events: unknown) => events),
-  findEvent: findEventMock,
+  ...sdkMocks,
 }))
+const findEventMock = sdkMocks.findEvent
+const readScheduledIntentMock = sdkMocks.readScheduledIntent
+const isChildExecutedMock = sdkMocks.isChildExecuted
+const prepareRelayerExecutionMock = sdkMocks.prepareRelayerExecution
 
 vi.mock('@/lib/treasuryRegistry/store', () => ({
   getTreasury: vi.fn(),
@@ -141,8 +120,6 @@ const tryUpdateRelayerJobMock = vi.mocked(tryUpdateRelayerJob)
 const getRelayerJobMock = vi.mocked(getRelayerJob)
 const getTreasuryMock = vi.mocked(getTreasury)
 const listRelayerJobsMock = vi.mocked(listRelayerJobs)
-const contractInvocationMock = vi.mocked(contractInvocation)
-const addressCredentialsEntryMock = vi.mocked(addressCredentialsEntry)
 
 const INTENT_ID = 'a'.repeat(64)
 const TX_HASH =
@@ -183,16 +160,13 @@ function storeHolds(record: RelayerJobRecord) {
 }
 
 /** get_intent then is_child_executed, decoded via the mocked scValToNative. */
+/** What the SDK's get_intent and is_child_executed reads answer. */
 function queueIntentReads(
   intent: Record<string, unknown> | null,
   childExecuted: boolean
 ) {
-  serverMethods.getAccount.mockResolvedValue({
-    accountId: () => EXECUTOR_PUBLIC_KEY,
-  })
-  serverMethods.simulateTransaction
-    .mockResolvedValueOnce({ result: { retval: { __native: intent } } })
-    .mockResolvedValueOnce({ result: { retval: { __native: childExecuted } } })
+  readScheduledIntentMock.mockResolvedValueOnce(intent)
+  isChildExecutedMock.mockResolvedValueOnce(childExecuted)
 }
 
 beforeEach(() => {
@@ -240,7 +214,7 @@ describe('executeRelayerJob — window and limit gating (no chain read needed)',
 
     expect(result.status).toBe('blocked')
     expect(result.note).toMatch(/execution limit/i)
-    expect(serverMethods.simulateTransaction).not.toHaveBeenCalled()
+    expect(readScheduledIntentMock).not.toHaveBeenCalled()
     expect(serverMethods.sendTransaction).not.toHaveBeenCalled()
   })
 
@@ -252,7 +226,7 @@ describe('executeRelayerJob — window and limit gating (no chain read needed)',
 
     expect(result.status).toBe('scheduled')
     expect(result.note).toMatch(/opens at ledger 100/)
-    expect(serverMethods.simulateTransaction).not.toHaveBeenCalled()
+    expect(readScheduledIntentMock).not.toHaveBeenCalled()
   })
 
   it('refuses to execute after the ledger window has expired', async () => {
@@ -263,7 +237,7 @@ describe('executeRelayerJob — window and limit gating (no chain read needed)',
 
     expect(result.status).toBe('blocked')
     expect(result.note).toMatch(/window expired/i)
-    expect(serverMethods.simulateTransaction).not.toHaveBeenCalled()
+    expect(readScheduledIntentMock).not.toHaveBeenCalled()
   })
 })
 
@@ -326,13 +300,14 @@ describe('executeRelayerJob — submission outcomes', () => {
       { cancelled: false, execution_count: 0, max_executions: 5 },
       false
     )
-    serverMethods.prepareTransaction.mockResolvedValue({ sign: vi.fn() })
+    prepareRelayerExecutionMock.mockResolvedValue({ sign: vi.fn() })
   })
 
-  it('bids above the market rate on the transaction it submits', async () => {
+  it('leaves the inclusion bid to the SDK, whose default is the market rate', async () => {
     // The relayer submits to the same congested mainnet as the dApp, so it
-    // needs the same bid. Only the second build is submitted; the first is
-    // the read-only simulation of intent_registry state.
+    // needs the same bid. The SDK's prepareRelayerExecution bids it unless
+    // told otherwise (sta-sdk's own tests pin that); pinning one here would
+    // be the one way to get BASE_FEE back.
     serverMethods.sendTransaction.mockResolvedValue({
       status: 'TRY_AGAIN_LATER',
       hash: TX_HASH,
@@ -340,8 +315,8 @@ describe('executeRelayerJob — submission outcomes', () => {
 
     await executeRelayerJob(job())
 
-    const builds = vi.mocked(TransactionBuilder).mock.calls
-    expect(builds.at(-1)?.[1]?.fee).toBe('2000')
+    expect(prepareRelayerExecutionMock).toHaveBeenCalledTimes(1)
+    expect(prepareRelayerExecutionMock.mock.calls[0][0].fee).toBeUndefined()
   })
 
   it('marks the job failed, without advancing the child sequence, when the RPC rejects the transaction', async () => {
@@ -466,29 +441,25 @@ describe('executeRelayerJob — submission outcomes', () => {
     await vi.advanceTimersByTimeAsync(1500)
     await promise
 
-    // The invocation this entry authorizes must be rooted directly at
-    // mark_child_executed on intent_registry -- not at the outer
-    // execute_scheduled_payment call, since that's where the real
-    // require_auth() actually fires (two levels deep).
-    expect(contractInvocationMock).toHaveBeenCalledWith(
-      'CAFIATSIZQSBILZJWVT4PVDXPVITJHLP6LPAVKDRHCA7I7XPZSLTRPUS',
-      'mark_child_executed',
-      expect.arrayContaining([expect.anything(), expect.anything()])
-    )
-    expect(addressCredentialsEntryMock).toHaveBeenCalledWith(
-      expect.objectContaining({ address: EXECUTOR_PUBLIC_KEY })
-    )
-    // authorizeEntry must be called with the executor's own Keypair as
-    // signer (a plain classic-account credential, no wallet/AuthPayload
-    // involved) and the unsigned entry addressCredentialsEntry produced.
-    expect(authorizeEntryMock).toHaveBeenCalledWith(
+    // The SDK roots the entry at intent_registry.mark_child_executed -- not
+    // at the outer execute_scheduled_payment call, since that's where the
+    // real require_auth() fires (two levels deep) -- and signs it with the
+    // executor's own Keypair: a plain classic-account credential, no
+    // wallet or AuthPayload involved. What the executor owes it is the
+    // right registry, intent, child sequence, executor address and signer.
+    expect(prepareRelayerExecutionMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        __unsignedEntry: true,
-        address: EXECUTOR_PUBLIC_KEY,
-      }),
-      expect.objectContaining({ publicKey: expect.any(Function) }),
-      expect.any(Number),
-      expect.any(String)
+        net: expect.objectContaining({
+          contracts: expect.objectContaining({
+            intentRegistry:
+              'CAFIATSIZQSBILZJWVT4PVDXPVITJHLP6LPAVKDRHCA7I7XPZSLTRPUS',
+          }),
+        }),
+        intentId: expect.objectContaining({ length: 32 }),
+        childSequence: 3,
+        executorAddress: EXECUTOR_PUBLIC_KEY,
+        sign: expect.objectContaining({ publicKey: expect.any(Function) }),
+      })
     )
   })
 
@@ -558,7 +529,7 @@ describe('executeRelayerJob — submission outcomes', () => {
 describe('executeRelayerJob — recovering a run interrupted after submission', () => {
   beforeEach(() => {
     serverMethods.getLatestLedger.mockResolvedValue({ sequence: 150 })
-    serverMethods.prepareTransaction.mockResolvedValue({ sign: vi.fn() })
+    prepareRelayerExecutionMock.mockResolvedValue({ sign: vi.fn() })
   })
 
   it('settles an interrupted submission that succeeded on-chain without submitting again', async () => {
@@ -576,7 +547,7 @@ describe('executeRelayerJob — recovering a run interrupted after submission', 
     expect(result.txHash).toBe(TX_HASH)
     expect(result.note).toMatch(/interrupted/i)
     expect(serverMethods.sendTransaction).not.toHaveBeenCalled()
-    expect(serverMethods.simulateTransaction).not.toHaveBeenCalled()
+    expect(readScheduledIntentMock).not.toHaveBeenCalled()
   })
 
   it('marks the job executed when the interrupted submission was its last allowed execution', async () => {
@@ -662,7 +633,7 @@ describe('executeRelayerJob — one run per job at a time', () => {
   // job's `executed` with `failed`.
   beforeEach(() => {
     serverMethods.getLatestLedger.mockResolvedValue({ sequence: 150 })
-    serverMethods.prepareTransaction.mockResolvedValue({ sign: vi.fn() })
+    prepareRelayerExecutionMock.mockResolvedValue({ sign: vi.fn() })
   })
 
   function inFlight(overrides: Partial<RelayerJobRecord> = {}) {
@@ -728,7 +699,7 @@ describe('executeRelayerJob — one run per job at a time', () => {
     const result = await executeRelayerJob(job())
 
     expect(result).toEqual(claimedElsewhere)
-    expect(serverMethods.prepareTransaction).not.toHaveBeenCalled()
+    expect(prepareRelayerExecutionMock).not.toHaveBeenCalled()
     expect(serverMethods.sendTransaction).not.toHaveBeenCalled()
   })
 
@@ -872,7 +843,7 @@ describe('executeRelayerJob — resolveTreasuryContracts (multi-treasury trackin
     await expect(
       executeRelayerJob(job({ smartAccountId: OTHER_SMART_ACCOUNT_ID }))
     ).rejects.toThrow(/no registered treasury/i)
-    expect(serverMethods.simulateTransaction).not.toHaveBeenCalled()
+    expect(readScheduledIntentMock).not.toHaveBeenCalled()
   })
 })
 
@@ -928,7 +899,8 @@ describe('runDueRelayerJobs', () => {
     // skipped without any chain read.
     expect(result.checked).toBe(4)
     expect(serverMethods.getLatestLedger).toHaveBeenCalledTimes(2)
-    expect(serverMethods.simulateTransaction).toHaveBeenCalledTimes(2)
+    expect(readScheduledIntentMock).toHaveBeenCalledTimes(1)
+    expect(isChildExecutedMock).toHaveBeenCalledTimes(1)
   })
 
   it('leaves a job alone while its executing lease is live', async () => {
@@ -977,9 +949,7 @@ describe('readQueueableScheduledIntent', () => {
     serverMethods.getAccount.mockResolvedValue({
       accountId: () => EXECUTOR_PUBLIC_KEY,
     })
-    serverMethods.simulateTransaction.mockResolvedValueOnce({
-      result: { retval: { __native: null } },
-    })
+    readScheduledIntentMock.mockResolvedValueOnce(null)
 
     await expect(
       readQueueableScheduledIntent(SMART_ACCOUNT_ID, INTENT_ID)
@@ -990,9 +960,7 @@ describe('readQueueableScheduledIntent', () => {
     serverMethods.getAccount.mockResolvedValue({
       accountId: () => EXECUTOR_PUBLIC_KEY,
     })
-    serverMethods.simulateTransaction.mockResolvedValueOnce({
-      result: { retval: { __native: { cancelled: true } } },
-    })
+    readScheduledIntentMock.mockResolvedValueOnce({ cancelled: true })
 
     await expect(
       readQueueableScheduledIntent(SMART_ACCOUNT_ID, INTENT_ID)
@@ -1003,17 +971,11 @@ describe('readQueueableScheduledIntent', () => {
     serverMethods.getAccount.mockResolvedValue({
       accountId: () => EXECUTOR_PUBLIC_KEY,
     })
-    serverMethods.simulateTransaction.mockResolvedValueOnce({
-      result: {
-        retval: {
-          __native: {
-            cancelled: false,
-            start_ledger: 100,
-            end_ledger: 200,
-            max_executions: 3,
-          },
-        },
-      },
+    readScheduledIntentMock.mockResolvedValueOnce({
+      cancelled: false,
+      start_ledger: 100,
+      end_ledger: 200,
+      max_executions: 3,
     })
 
     const result = await readQueueableScheduledIntent(

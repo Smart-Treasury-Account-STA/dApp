@@ -11,4 +11,4 @@ allowBuilds:
   usb: true
   utf-8-validate: true
 minimumReleaseAgeExclude:
-  - sta-sdk@0.1.0
+  - sta-sdk@0.1.0 || 0.2.1

@@ -56,18 +56,33 @@ vi.mock('@stellar/stellar-sdk', () => ({
   },
 }))
 
-const selectAllInvocationsForAddressMock = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/authTree', () => ({
-  selectAllInvocationsForAddress: selectAllInvocationsForAddressMock,
-}))
-
-const stellarClientMocks = vi.hoisted(() => ({
-  addressCredentialsEntry: vi.fn((opts: unknown) => ({
-    __unsignedEntry: true,
-    ...(opts as object),
-  })),
+const sdkMocks = vi.hoisted(() => ({
+  selectAllInvocationsForAddress: vi.fn(),
+  buildClassicAuthEntry: vi.fn(
+    async (address: string, invocation: unknown) => ({
+      __signedEntry: true,
+      address,
+      invocation,
+    })
+  ),
   addressScVal: vi.fn((address: string) => ({ __address: address })),
   bytesN32ScVal: vi.fn((hex: string) => ({ __bytes32: hex })),
+  signerDelegatedScVal: vi.fn((address: string) => ({ __delegated: address })),
+  u32ScVal: vi.fn((value: number) => ({ __u32: value })),
+}))
+
+vi.mock('sta-sdk', async (importOriginal) => {
+  // The fee policy is the SDK's real one: what this test checks is that
+  // deployAccount bids it on the submitted build and not on the throwaway.
+  const actual = await importOriginal<typeof import('sta-sdk')>()
+  return { ...sdkMocks, inclusionFee: actual.inclusionFee }
+})
+
+const selectAllInvocationsForAddressMock =
+  sdkMocks.selectAllInvocationsForAddress
+const buildClassicAuthEntryMock = sdkMocks.buildClassicAuthEntry
+
+const stellarClientMocks = vi.hoisted(() => ({
   getServer: vi.fn(() => serverMethods),
   invokeContractOperation: vi.fn(
     (
@@ -83,22 +98,14 @@ const stellarClientMocks = vi.hoisted(() => ({
       auth,
     })
   ),
-  randomAuthNonce: vi.fn(() => '424242'),
-  signDelegatedAuthEntry: vi.fn(async (entry: unknown) => ({
-    __signedEntry: true,
-    entry,
-  })),
   signEnvelope: vi.fn(async () => 'signed-envelope-xdr'),
-  signerDelegatedScVal: vi.fn((address: string) => ({ __delegated: address })),
   submitSignedTransaction: vi.fn(),
-  u32ScVal: vi.fn((value: number) => ({ __u32: value })),
+  walletSigningCallback: vi.fn(() => 'wallet-signing-callback'),
 }))
 
 vi.mock('@/lib/stellarClient', () => stellarClientMocks)
 
 const {
-  addressCredentialsEntry: addressCredentialsEntryMock,
-  signDelegatedAuthEntry: signDelegatedAuthEntryMock,
   submitSignedTransaction: submitSignedTransactionMock,
   invokeContractOperation: invokeContractOperationMock,
 } = stellarClientMocks
@@ -226,11 +233,16 @@ describe('deployAccount — multi-entry discovery and signing', () => {
 
     await deployAccount(wallet)
 
-    expect(addressCredentialsEntryMock).toHaveBeenCalledTimes(6)
-    expect(signDelegatedAuthEntryMock).toHaveBeenCalledTimes(6)
+    expect(buildClassicAuthEntryMock).toHaveBeenCalledTimes(6)
     for (const inv of invocations) {
-      expect(addressCredentialsEntryMock).toHaveBeenCalledWith(
-        expect.objectContaining({ address: WALLET_ADDRESS, invocation: inv })
+      // Signed as the connected wallet, through its SigningCallback, over
+      // exactly the node the simulation recorded.
+      expect(buildClassicAuthEntryMock).toHaveBeenCalledWith(
+        WALLET_ADDRESS,
+        inv,
+        'wallet-signing-callback',
+        expect.any(Number),
+        'Test SDF Network ; September 2015'
       )
     }
 
@@ -256,8 +268,7 @@ describe('deployAccount — multi-entry discovery and signing', () => {
 
     await deployAccount(wallet)
 
-    expect(addressCredentialsEntryMock).not.toHaveBeenCalled()
-    expect(signDelegatedAuthEntryMock).not.toHaveBeenCalled()
+    expect(buildClassicAuthEntryMock).not.toHaveBeenCalled()
     const finalOpCall = invokeContractOperationMock.mock.calls.at(-1)
     expect(finalOpCall?.[3]).toHaveLength(0)
     expect(submitSignedTransactionMock).toHaveBeenCalled()
@@ -272,7 +283,7 @@ describe('deployAccount — multi-entry discovery and signing', () => {
     await expect(deployAccount(wallet)).rejects.toThrow(
       /no authorization requirement/i
     )
-    expect(signDelegatedAuthEntryMock).not.toHaveBeenCalled()
+    expect(buildClassicAuthEntryMock).not.toHaveBeenCalled()
     expect(submitSignedTransactionMock).not.toHaveBeenCalled()
   })
 

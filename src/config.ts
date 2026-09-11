@@ -1,3 +1,5 @@
+import type { NetworkConfig } from 'sta-sdk'
+
 import type { ContractSet } from '@/lib/env'
 import { readStellarConfig } from '@/lib/env'
 import { describeNetwork } from '@/lib/network'
@@ -37,6 +39,34 @@ export const STELLAR_CONFIG = {
  * deployment cannot label itself mainnet or the reverse.
  */
 export const NETWORK = describeNetwork(STELLAR_CONFIG.networkPassphrase)
+
+/**
+ * The `sta-sdk` view of a treasury: this deployment's RPC and passphrase,
+ * plus one contract set. The SDK reads the factory only for
+ * `readFactoryWasmHashes`, which this dApp never calls, so an environment
+ * without `NEXT_PUBLIC_ACCOUNT_FACTORY_ID` still gets a usable config.
+ * `network` is the SDK's two-way label; it never branches on it, so a
+ * futurenet or custom passphrase is passed through as `testnet` here while
+ * `NETWORK` keeps naming it honestly in the UI.
+ */
+export function toNetworkConfig(
+  contracts: ContractSet = STELLAR_CONFIG.contracts
+): NetworkConfig {
+  return {
+    network: NETWORK.id === 'mainnet' ? 'mainnet' : 'testnet',
+    rpcUrl: STELLAR_CONFIG.rpcUrl,
+    networkPassphrase: STELLAR_CONFIG.networkPassphrase,
+    contracts: {
+      smartAccount: contracts.smartAccount,
+      policyEngine: contracts.policyEngine,
+      intentRegistry: contracts.intentRegistry,
+      recoveryManager: contracts.recoveryManager,
+      transferAdapter: contracts.transferAdapter,
+      splitAdapter: contracts.splitAdapter,
+      accountFactory: STELLAR_CONFIG.accountFactoryId ?? '',
+    },
+  }
+}
 
 export function buildContractList(contracts: ContractSet) {
   return [

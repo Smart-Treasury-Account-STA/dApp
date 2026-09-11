@@ -15,11 +15,11 @@ this system are explained in full in §3.
 
 - **Framework**: Next.js 16 (App Router), TypeScript strict mode.
 - **Wallet connectivity**: Stellar Wallets Kit (`@creit.tech/stellar-wallets-kit`), Freighter and xBull, via `src/lib/wallet.ts` and `src/providers/wallet-provider.tsx`.
-- **Chain interaction**: `@stellar/stellar-sdk ^16.2.0`, hand-built XDR construction throughout (`src/lib/stellarClient.ts`) — no generated per-contract client bindings, deliberately (see the `sta-sdk` package's README).
+- **Chain interaction**: `@stellar/stellar-sdk ^16.2.0` through `sta-sdk` — no generated per-contract client bindings, deliberately (see the `sta-sdk` package's README). `src/lib/stellarClient.ts` keeps only what has no SDK equivalent or is this dApp's own UX policy.
 - **Contracts**: seven Soroban packages — `account_factory`, `smart_account`, `policy_engine`, `intent_registry`, `recovery_manager`, `transfer_adapter`, `split_adapter` — plus the shared, stateless `webauthn_verifier` (not used by this dApp; passkey signers are out of scope).
 - **Relayer**: a self-operated Node service (`src/lib/relayer/`, `src/app/api/relayer/*`, `scripts/run-relayer.mjs`) that executes scheduled payments on behalf of every treasury it's configured as executor for.
 - **Treasury registry**: an off-chain store (`src/lib/treasuryRegistry/`) recording which contract addresses belong to which deployed treasury — the only record of this mapping, since no on-chain getter exposes a `smart_account`'s pinned sub-contract addresses (see §2.2).
-- **SDK**: `sta-sdk` (npm) — auth-entry construction, transaction preparation, typed event parsing, and typed state reads for the Smart Treasury Account contracts. This dApp depends on it rather than keeping a private copy; only `parseContractEvents`/`findEvent` (event decoding) are actually wired into live code paths today.
+- **SDK**: `sta-sdk` (npm, `^0.2.1`) — auth-entry construction, transaction preparation, typed event parsing, and typed state reads for the Smart Treasury Account contracts. This dApp depends on it rather than keeping a private copy: the four payment flows call its `prepare*`, the relayer its `prepareRelayerExecution` and reads, deploy its `buildClassicAuthEntry`, and every state read goes through its `state` module. What stays local: the wallet `SigningCallback` (`walletSigningCallback`), the receipt-shaped submit, context-rule selection, SAC balance reads, instance-storage reads, and the intent event scan.
 
 Every treasury-aware function and component in this dApp takes an optional
 `contracts: ContractSet` parameter (default: the single env-configured
@@ -290,10 +290,14 @@ Any call that does `env.current_contract_address().require_auth()` needs
   the wallet actually signs (`signAuthEntry`), where
   `auth_digest = sha256(signature_payload || context_rule_ids.to_xdr())`.
 
-Built in `src/lib/stellarClient.ts` (the code actually used by every
-component) and, equivalently, in `sta-sdk`'s `auth` module (see that
-module's own doc comment for why it hand-encodes rather than depending on
-generated contract bindings).
+Built by `sta-sdk`'s `auth` module (`buildSmartAccountAuthEntries`, whose
+Entry A/B bytes that package pins by test to the output of this dApp's
+former in-house construction — the code that moved real XLM on mainnet on
+2026-09-10). The dApp discovers the tree the treasury has to authorize by
+recording-mode simulation (`discoverSmartAccountInvocation`), picks the
+context rule the wallet is registered under, and supplies the wallet as the
+`SigningCallback` that signs Entry B (`walletSigningCallback` in
+`src/lib/stellarClient.ts`).
 
 Discovering exactly which invocation nodes need this (a plain transfer is
 one node; one that moves an SAC token is two, since the SAC's own

@@ -36,7 +36,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "sonner": "^2.0.8",
-    "sta-sdk": "^0.1.0",
+    "sta-sdk": "0.2.1",
     "tailwind-merge": "^2.5.5"
   },
   "devDependencies": {
