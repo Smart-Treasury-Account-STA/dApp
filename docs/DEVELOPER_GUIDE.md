@@ -19,7 +19,7 @@ this system are explained in full in §3.
 - **Contracts**: seven Soroban packages — `account_factory`, `smart_account`, `policy_engine`, `intent_registry`, `recovery_manager`, `transfer_adapter`, `split_adapter` — plus the shared, stateless `webauthn_verifier` (not used by this dApp; passkey signers are out of scope).
 - **Relayer**: a self-operated Node service (`src/lib/relayer/`, `src/app/api/relayer/*`, `scripts/run-relayer.mjs`) that executes scheduled payments on behalf of every treasury it's configured as executor for.
 - **Treasury registry**: an off-chain store (`src/lib/treasuryRegistry/`) recording which contract addresses belong to which deployed treasury — the only record of this mapping, since no on-chain getter exposes a `smart_account`'s pinned sub-contract addresses (see §2.2).
-- **SDK**: `sta-sdk` (npm, `^0.2.1`) — auth-entry construction, transaction preparation, typed event parsing, and typed state reads for the Smart Treasury Account contracts. This dApp depends on it rather than keeping a private copy: the four payment flows call its `prepare*`, the relayer its `prepareRelayerExecution` and reads, deploy its `buildClassicAuthEntry`, and every state read goes through its `state` module. What stays local: the wallet `SigningCallback` (`walletSigningCallback`), the receipt-shaped submit, context-rule selection, SAC balance reads, instance-storage reads, and the intent event scan.
+- **SDK**: `sta-sdk` (npm, pinned to `0.2.1`; an SDK release reaches this dApp only through an explicit bump) — auth-entry construction, transaction preparation, typed event parsing, and typed state reads for the Smart Treasury Account contracts. This dApp depends on it rather than keeping a private copy: the four payment flows call its `prepare*`, the relayer its `prepareRelayerExecution` and reads, deploy its `buildClassicAuthEntry`, and every state read goes through its `state` module. What stays local: the wallet `SigningCallback` (`walletSigningCallback`), the receipt-shaped submit, context-rule selection, SAC balance reads, instance-storage reads, and the intent event scan.
 
 Every treasury-aware function and component in this dApp takes an optional
 `contracts: ContractSet` parameter (default: the single env-configured
@@ -299,13 +299,13 @@ context rule the wallet is registered under, and supplies the wallet as the
 `SigningCallback` that signs Entry B (`walletSigningCallback` in
 `src/lib/stellarClient.ts`).
 
-Discovering exactly which invocation nodes need this (a plain transfer is
-one node; one that moves an SAC token is two, since the SAC's own
-`transfer` needs its own declared sub-invocation) is done by simulating
-with **zero** auth entries attached — Soroban's "recording mode" then
-reports the exact tree the host actually needs, rather than the dApp
-having to restate each contract's internal call graph by hand
-(`discoverTreasuryInvocation`).
+Which invocation nodes need this is never restated by hand: the SDK's
+`discoverSmartAccountInvocation` simulates the call with **zero** auth
+entries attached, and Soroban's "recording mode" reports the exact tree the
+host needs — one node for a plain contract call, two for one that moves an
+SAC token, since the SAC's own `transfer` needs its own declared
+sub-invocation. `countAuthContexts` then sizes the `context_rule_ids` list
+the SDK puts in Entry A, one id per node.
 
 ### 4.2 Source-account authorization (`policy_engine`, `recovery_manager`)
 
