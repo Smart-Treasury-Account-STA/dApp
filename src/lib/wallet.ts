@@ -48,6 +48,8 @@ type WalletKit = {
   >
 }
 
+type WalletModuleClass = new () => unknown
+
 type WalletKitModule = {
   StellarWalletsKit: new (input: {
     network: string
@@ -56,7 +58,36 @@ type WalletKitModule = {
   }) => WalletKit
   FREIGHTER_ID?: string
   WalletType?: { freighter?: string }
-  allowAllModules?: () => unknown[]
+  FreighterModule: WalletModuleClass
+  xBullModule: WalletModuleClass
+  AlbedoModule: WalletModuleClass
+  LobstrModule: WalletModuleClass
+  RabetModule: WalletModuleClass
+  HanaModule: WalletModuleClass
+  KleverModule: WalletModuleClass
+}
+
+/**
+ * The wallets offered in the chooser: the kit's Stellar wallet modules that
+ * need no constructor options. Listed here rather than taken from
+ * `allowAllModules()`, so what the app offers is decided in this file.
+ *
+ * HOT Wallet is left out on purpose, and patched out of the kit's entry point
+ * (`patches/`, `pnpm-workspace.yaml`): its module drags the NEAR and Solana
+ * SDKs into the wallet chunk and, with them, most of the advisories `pnpm
+ * audit` used to report. Trezor, Ledger and WalletConnect were never offered
+ * (the kit's entry point does not load them) and are not installed.
+ */
+function walletModules(kitModule: WalletKitModule): unknown[] {
+  return [
+    new kitModule.FreighterModule(),
+    new kitModule.xBullModule(),
+    new kitModule.AlbedoModule(),
+    new kitModule.LobstrModule(),
+    new kitModule.RabetModule(),
+    new kitModule.HanaModule(),
+    new kitModule.KleverModule(),
+  ]
 }
 
 type WalletKitHandle = {
@@ -109,10 +140,7 @@ export async function selectWalletThroughModal(
 export async function connectWallet(): Promise<WalletState> {
   const kitModule =
     (await import('@creit.tech/stellar-wallets-kit')) as unknown as WalletKitModule
-  const modules =
-    typeof kitModule.allowAllModules === 'function'
-      ? kitModule.allowAllModules()
-      : []
+  const modules = walletModules(kitModule)
   const selectedWalletId =
     kitModule.FREIGHTER_ID ?? kitModule.WalletType?.freighter ?? 'freighter'
 

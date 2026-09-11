@@ -164,13 +164,13 @@ STA_NETWORK=mainnet STA_MAINNET_RPC_URL=https://soroban-rpc.mainnet.stellar.gate
 
 ### Open the production dApp
 
-- [smarttreasury.io/app][app] is the Vercel production deployment built from `main` (latest production deployment 2026-09-11 00:52 UTC).
+- [smarttreasury.io/app][app] is the Vercel production deployment built from `main`.
 - The header reads `Stellar mainnet`. The label is derived from the configured network passphrase ([`src/lib/network.ts`][dapp-network]), so a deployment cannot name the wrong network.
 - `/app` opens the documented example treasury; `/app/treasuries` lists the treasuries a wallet owns and offers **Deploy new treasury** (factory `deploy_account`, one transaction).
 
 ### Connect a wallet
 
-- Stellar Wallets Kit, constructed with the configured passphrase, which every `signTransaction`, `signAuthEntry` and `signMessage` call also passes.
+- Stellar Wallets Kit, offering Freighter, xBull, Albedo, LOBSTR, Rabet, Hana and Klever, constructed with the configured passphrase, which every `signTransaction`, `signAuthEntry` and `signMessage` call also passes.
 - Freighter signed every owner transaction below; the relayer execution is signed server-side by the executor key.
 
 ### Operate a mainnet treasury flow
@@ -210,6 +210,10 @@ Treasury `CAAIQLZP…OXSC3` was deployed and operated from the production consol
 
 - **Tests:** 422 in 38 files (relayer executor, store, lease, QStash verification, wallet proof, env validation, network label, …).
 - **CI** on `ddffe06` ([run 34548297439][dapp-ci]) runs format check, lint, typecheck, tests, and a production build with the environment pulled from Vercel: green.
+- **Dependencies:** `pnpm audit` reports no known vulnerabilities since the dependency update merged into `main` after `ddffe06`:
+  - Next.js 16.3.4;
+  - the wallet kit's Trezor, Ledger, WalletConnect and HOT Wallet SDKs (NEAR, Solana), which the app never offered or has patched out, are not installed;
+  - the remaining transitive fixes are pinned by `overrides` in `pnpm-workspace.yaml` (details in the [developer guide][dapp-dev-guide], §2.1).
 
 ### Scope notes — not yet complete, stated publicly
 
@@ -220,15 +224,12 @@ These deliverable-description items are not yet complete. All are stated publicl
 - **Alerting.** A failed run is retried by QStash and reported to its failure callback. There are no dedicated alerts yet for a low executor balance, a missed window or RPC unavailability, and no structured logging beyond QStash's per-run response log. The documented fallback is the two manual paths above (console **Execute**, `pnpm relayer:run`).
 - **Network selection.** One deployment per network (production = mainnet; testnet runs locally), no in-app switch. The wallet's active network is not checked before signing; a signature for the wrong network is refused by the network (`txBadAuth`) and shown by name.
 - **RPC headers.** Supported by the SDK (`NetworkConfig.rpcHeaders`), not yet passed by the dApp; production uses a URL-keyed public RPC.
-- **Dependency advisories.** `pnpm audit` on the dApp lockfile reports 3 critical and 18 high:
-  - critical: two in `next` 16.2.11 (patched in 16.3.3), and one in `protobufjs`, reached through the wallet kit's Trezor module, which `allowAllModules()` pulls in although only Stellar wallets are used;
-  - high: dev tooling (ESLint), Next.js's own dependencies, and the same wallet-kit chain;
-  - planned fix: bump Next.js, pass an explicit wallet-kit module list, add `pnpm.overrides`.
 - **Minor.** The payment form's replay nonce is drawn with `Math.random()` (a repeat is refused by `is_nonce_used`; the SmartAccount authorization nonce comes from the SDK's CSPRNG). `/api/treasuries` has no rate limit (each registration is ownership-checked on chain first).
 
 [dapp-network]: https://github.com/Smart-Treasury-Account-STA/dApp/blob/ddffe066dbc39c16733105da1dc7da1929837034/src/lib/network.ts
 [dapp-qstash]: https://github.com/Smart-Treasury-Account-STA/dApp/blob/ddffe066dbc39c16733105da1dc7da1929837034/src/lib/relayer/qstash.ts
 [dapp-readme]: https://github.com/Smart-Treasury-Account-STA/dApp/blob/ddffe066dbc39c16733105da1dc7da1929837034/README.md
+[dapp-dev-guide]: https://github.com/Smart-Treasury-Account-STA/dApp/blob/main/docs/DEVELOPER_GUIDE.md
 [sdk-parse-events]: https://github.com/Smart-Treasury-Account-STA/sdk/blob/ec56202cb4c3ac7822b81246339763493519f271/examples/parse-events.ts
 [docs-status]: https://smarttreasury.io/docs/status
 [docs-operators]: https://smarttreasury.io/docs/operators/
@@ -293,9 +294,8 @@ All three completion criteria are met on Stellar mainnet:
 
 ### Follow-ups (not blocking, in priority order)
 
-1. Clear the dependency advisories (Next.js ≥ 16.3.3, explicit wallet-kit modules, overrides).
-2. Recovery screens, and an audit-history view built from typed events.
-3. Relayer alerting (executor balance, missed window, RPC), structured logs, a written runbook.
-4. A wallet-network check before signing; RPC headers in the dApp; a CSPRNG for the payment nonce; a rate limit on `/api/treasuries`.
-5. Multi-signer: deploy `threshold_policy` for any-one-of-N, or build the shared Entry A for M-of-N.
-6. An independent audit before treasuries hold significant value.
+1. Recovery screens, and an audit-history view built from typed events.
+2. Relayer alerting (executor balance, missed window, RPC), structured logs, a written runbook.
+3. A wallet-network check before signing; RPC headers in the dApp; a CSPRNG for the payment nonce; a rate limit on `/api/treasuries`.
+4. Multi-signer: deploy `threshold_policy` for any-one-of-N, or build the shared Entry A for M-of-N.
+5. An independent audit before treasuries hold significant value.

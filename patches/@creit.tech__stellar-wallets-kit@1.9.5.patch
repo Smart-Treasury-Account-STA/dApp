@@ -1,0 +1,100 @@
+diff --git a/index.cjs b/index.cjs
+index 004d5b30149ecdedf2080a5460e750fe01deb972..9993dcbc7255ecbbaae7d316ebdbe82eed308b75 100644
+--- a/index.cjs
++++ b/index.cjs
+@@ -12,7 +12,6 @@ var albedo_module = require('./modules/albedo.module.cjs');
+ var rabet_module = require('./modules/rabet.module.cjs');
+ var lobstr_module = require('./modules/lobstr.module.cjs');
+ var hana_module = require('./modules/hana.module.cjs');
+-var hotwallet_module = require('./modules/hotwallet.module.cjs');
+ var klever_module = require('./modules/klever.module.cjs');
+ 
+ 
+@@ -63,8 +62,6 @@ exports.LOBSTR_ID = lobstr_module.LOBSTR_ID;
+ exports.LobstrModule = lobstr_module.LobstrModule;
+ exports.HANA_ID = hana_module.HANA_ID;
+ exports.HanaModule = hana_module.HanaModule;
+-exports.HOTWALLET_ID = hotwallet_module.HOTWALLET_ID;
+-exports.HotWalletModule = hotwallet_module.HotWalletModule;
+ exports.KLEVER_ID = klever_module.KLEVER_ID;
+ exports.KleverModule = klever_module.KleverModule;
+ //# sourceMappingURL=index.cjs.map
+diff --git a/index.d.ts b/index.d.ts
+index 500ead1747ccc1c08d2e0d9ea52f22fb0dbe805f..2668174672d985eae0deed483a0981c369e3d218 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -10,6 +10,5 @@ export * from './modules/albedo.module';
+ export * from './modules/rabet.module';
+ export * from './modules/lobstr.module';
+ export * from './modules/hana.module';
+-export * from './modules/hotwallet.module';
+ export * from './modules/klever.module';
+ //# sourceMappingURL=index.d.ts.map
+\ No newline at end of file
+diff --git a/index.mjs b/index.mjs
+index e4f910643e0fb5b4268564abe064e27483e0b705..17adc3bbdb7cf8f813a4c158671ddd31ac0dd3b1 100644
+--- a/index.mjs
++++ b/index.mjs
+@@ -10,6 +10,5 @@ export { ALBEDO_ID, AlbedoModule, AlbedoNetwork } from './modules/albedo.module.
+ export { RABET_ID, RabetModule, RabetNetwork } from './modules/rabet.module.mjs';
+ export { LOBSTR_ID, LobstrModule } from './modules/lobstr.module.mjs';
+ export { HANA_ID, HanaModule } from './modules/hana.module.mjs';
+-export { HOTWALLET_ID, HotWalletModule } from './modules/hotwallet.module.mjs';
+ export { KLEVER_ID, KleverModule } from './modules/klever.module.mjs';
+ //# sourceMappingURL=index.mjs.map
+diff --git a/utils.cjs b/utils.cjs
+index de2507223839335e21e0deea67d4b9811b077186..5311d461abb8b4812bfbdcefc9f81a08a14bf502 100644
+--- a/utils.cjs
++++ b/utils.cjs
+@@ -5,7 +5,6 @@ var freighter_module = require('./modules/freighter.module.cjs');
+ var lobstr_module = require('./modules/lobstr.module.cjs');
+ var rabet_module = require('./modules/rabet.module.cjs');
+ var xbull_module = require('./modules/xbull.module.cjs');
+-var hotwallet_module = require('./modules/hotwallet.module.cjs');
+ var hana_module = require('./modules/hana.module.cjs');
+ var klever_module = require('./modules/klever.module.cjs');
+ 
+@@ -21,7 +20,6 @@ function allowAllModules(opts) {
+         new xbull_module.xBullModule(),
+         new lobstr_module.LobstrModule(),
+         new hana_module.HanaModule(),
+-        new hotwallet_module.HotWalletModule(),
+         new klever_module.KleverModule(),
+     ];
+     return opts?.filterBy ? modules.filter(opts.filterBy) : modules;
+@@ -31,7 +29,7 @@ function allowAllModules(opts) {
+  * You can provide a filter function if needed
+  */
+ function sep43Modules(opts) {
+-    const modules = [new freighter_module.FreighterModule(), new hotwallet_module.HotWalletModule()];
++    const modules = [new freighter_module.FreighterModule()];
+     return opts?.filterBy ? modules.filter(opts.filterBy) : modules;
+ }
+ function parseError(e) {
+diff --git a/utils.mjs b/utils.mjs
+index 405566919d0ec0377123500a33d9f4c667e4afe3..6e7ca74ed67fbb807149cced95ffda455c361b9c 100644
+--- a/utils.mjs
++++ b/utils.mjs
+@@ -3,7 +3,6 @@ import { FreighterModule } from './modules/freighter.module.mjs';
+ import { LobstrModule } from './modules/lobstr.module.mjs';
+ import { RabetModule } from './modules/rabet.module.mjs';
+ import { xBullModule } from './modules/xbull.module.mjs';
+-import { HotWalletModule } from './modules/hotwallet.module.mjs';
+ import { HanaModule } from './modules/hana.module.mjs';
+ import { KleverModule } from './modules/klever.module.mjs';
+ 
+@@ -15,13 +14,12 @@ function allowAllModules(opts) {
+     new xBullModule(),
+     new LobstrModule(),
+     new HanaModule(),
+-    new HotWalletModule(),
+     new KleverModule()
+   ];
+   return opts?.filterBy ? modules.filter(opts.filterBy) : modules;
+ }
+ function sep43Modules(opts) {
+-  const modules = [new FreighterModule(), new HotWalletModule()];
++  const modules = [new FreighterModule()];
+   return opts?.filterBy ? modules.filter(opts.filterBy) : modules;
+ }
+ function parseError(e) {

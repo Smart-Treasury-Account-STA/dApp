@@ -1,14 +1,39 @@
 allowBuilds:
-  blake-hash: true
-  bufferutil: true
   esbuild: true
-  protobufjs: true
-  secp256k1: true
   sharp: true
   simple-git-hooks: false
-  tiny-secp256k1: true
   unrs-resolver: true
-  usb: true
-  utf-8-validate: true
 minimumReleaseAgeExclude:
   - sta-sdk@0.1.0 || 0.2.1
+# Stellar Wallets Kit 1.9.5 lists the SDK of every wallet module it ships as a
+# dependency, but its entry point never imports the Trezor, Ledger or
+# WalletConnect modules (they need constructor options, so neither `index.mjs`
+# nor `allowAllModules()` touches them), and the patch below takes the HOT
+# Wallet module (NEAR and Solana SDKs) out of the entry point. Nothing this app
+# loads reaches these packages, so they are not installed at all: that is what
+# removes the critical `protobufjs` advisory and the NEAR/Solana chains from
+# `pnpm audit`, and what keeps them out of the wallet chunk.
+#
+# The patch is pinned to the kit's exact version (`package.json` pins it too):
+# a kit upgrade must re-check which modules its entry point imports.
+patchedDependencies:
+  '@creit.tech/stellar-wallets-kit@1.9.5': patches/@creit.tech__stellar-wallets-kit@1.9.5.patch
+overrides:
+  '@creit.tech/stellar-wallets-kit>@hot-wallet/sdk': '-'
+  '@creit.tech/stellar-wallets-kit>@ledgerhq/hw-app-str': '-'
+  '@creit.tech/stellar-wallets-kit>@ledgerhq/hw-transport': '-'
+  '@creit.tech/stellar-wallets-kit>@ledgerhq/hw-transport-webusb': '-'
+  '@creit.tech/stellar-wallets-kit>@trezor/connect-plugin-stellar': '-'
+  '@creit.tech/stellar-wallets-kit>@trezor/connect-web': '-'
+  '@creit.tech/stellar-wallets-kit>@walletconnect/modal': '-'
+  '@creit.tech/stellar-wallets-kit>@walletconnect/sign-client': '-'
+  # Patched releases within the range the parent package already accepts,
+  # for advisories its own latest release has not picked up yet.
+  'nanoid@<3.3.18': ^3.3.18
+  'postcss@<8.5.23': ^8.5.23
+  # Development tooling only (ESLint, drizzle-kit). drizzle-kit's legacy
+  # loader pins esbuild 0.18; drizzle-kit itself already runs on 0.25.
+  'brace-expansion@<1.1.18': ^1.1.18
+  'brace-expansion@>=4.0.0 <5.0.9': ^5.0.9
+  'js-yaml@>=4.0.0 <4.3.2': ^4.3.2
+  '@esbuild-kit/core-utils>esbuild': ^0.25.4

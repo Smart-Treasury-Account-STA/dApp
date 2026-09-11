@@ -32,10 +32,10 @@ const serverMethods = vi.hoisted(() => ({
 
 vi.mock('@stellar/stellar-sdk', () => ({
   BASE_FEE: '100',
-  Transaction: vi
-    .fn()
-    .mockImplementation((xdrString: string) => ({ __tx: true, xdrString })),
-  TransactionBuilder: vi.fn().mockImplementation(() => {
+  Transaction: vi.fn().mockImplementation(function (xdrString: string) {
+    return { __tx: true, xdrString }
+  }),
+  TransactionBuilder: vi.fn().mockImplementation(function () {
     const builder: Record<string, unknown> = {}
     builder.addOperation = vi.fn(() => builder)
     builder.setTimeout = vi.fn(() => builder)

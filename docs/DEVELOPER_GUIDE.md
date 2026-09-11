@@ -14,7 +14,7 @@ this system are explained in full in §3.
 ## 1. Architecture at a glance
 
 - **Framework**: Next.js 16 (App Router), TypeScript strict mode.
-- **Wallet connectivity**: Stellar Wallets Kit (`@creit.tech/stellar-wallets-kit`), Freighter and xBull, via `src/lib/wallet.ts` and `src/providers/wallet-provider.tsx`.
+- **Wallet connectivity**: Stellar Wallets Kit (`@creit.tech/stellar-wallets-kit`, pinned to 1.9.5 and patched, see §2.1), via `src/lib/wallet.ts` and `src/providers/wallet-provider.tsx`. Freighter is the wallet every flow has been validated with; xBull, Albedo, LOBSTR, Rabet, Hana and Klever are offered too.
 - **Chain interaction**: `@stellar/stellar-sdk ^16.2.0` through `sta-sdk` — no generated per-contract client bindings, deliberately (see the `sta-sdk` package's README). `src/lib/stellarClient.ts` keeps only what has no SDK equivalent or is this dApp's own UX policy.
 - **Contracts**: seven Soroban packages — `account_factory`, `smart_account`, `policy_engine`, `intent_registry`, `recovery_manager`, `transfer_adapter`, `split_adapter` — plus the shared, stateless `webauthn_verifier` (not used by this dApp; passkey signers are out of scope).
 - **Relayer**: a self-operated Node service (`src/lib/relayer/`, `src/app/api/relayer/*`, `scripts/run-relayer.mjs`) that executes scheduled payments on behalf of every treasury it's configured as executor for.
@@ -37,6 +37,26 @@ selection modal, and returns `{address, walletName, connected}`. This
 state is provided app-wide (mounted in `AppProviders`), so it's already
 populated whether the user starts on `/`, `/treasuries`, or a specific
 treasury's console.
+
+The modal lists the modules `walletModules()` builds: the kit's Stellar
+wallets that need no constructor options (Freighter, xBull, Albedo, LOBSTR,
+Rabet, Hana, Klever). Two things keep the rest of the kit out of the app:
+
+- **HOT Wallet is patched out.** Its module brings the NEAR and Solana SDKs,
+  and the kit's `utils.mjs` imports it unconditionally, so every other module
+  would load it too. `patches/@creit.tech__stellar-wallets-kit@1.9.5.patch`
+  removes it from the kit's entry point (`index.*`, `utils.*`).
+- **Unused module SDKs are not installed.** The kit declares the SDKs of its
+  Trezor, Ledger, WalletConnect and HOT Wallet modules as dependencies; none
+  is reachable from the entry point once HOT Wallet is gone, so `overrides`
+  in `pnpm-workspace.yaml` drop them from the install. That is what took the
+  critical `protobufjs` advisory, and every NEAR/Solana one, out of
+  `pnpm audit`.
+
+Upgrading the kit therefore means checking which modules its new entry point
+imports, then regenerating the patch (`pnpm patch
+@creit.tech/stellar-wallets-kit@<version>`) — the patch and the exact version
+pin in `package.json` fail the install loudly if they drift apart.
 
 ### 2.2 Deploy a new treasury
 

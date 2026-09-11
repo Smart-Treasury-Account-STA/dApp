@@ -35,9 +35,11 @@ vi.mock('@stellar/stellar-sdk', async (importOriginal) => {
   return {
     Networks: actual.Networks,
     BASE_FEE: '100',
-    Contract: vi.fn().mockImplementation(() => ({
-      call: vi.fn((method: string, ...args: unknown[]) => ({ method, args })),
-    })),
+    Contract: vi.fn().mockImplementation(function () {
+      return {
+        call: vi.fn((method: string, ...args: unknown[]) => ({ method, args })),
+      }
+    }),
     Keypair: {
       fromSecret: vi.fn(() => ({ publicKey: () => EXECUTOR_PUBLIC_KEY })),
     },
@@ -47,7 +49,7 @@ vi.mock('@stellar/stellar-sdk', async (importOriginal) => {
         ...(opts as object),
       })),
     },
-    TransactionBuilder: vi.fn().mockImplementation(() => {
+    TransactionBuilder: vi.fn().mockImplementation(function () {
       const builder: Record<string, unknown> = {}
       builder.addOperation = vi.fn(() => builder)
       builder.setTimeout = vi.fn(() => builder)
@@ -71,7 +73,9 @@ vi.mock('@stellar/stellar-sdk', async (importOriginal) => {
       isValidEd25519PublicKey: vi.fn(() => true),
     },
     rpc: {
-      Server: vi.fn().mockImplementation(() => serverMethods),
+      Server: vi.fn().mockImplementation(function () {
+        return serverMethods
+      }),
     },
   }
 })
