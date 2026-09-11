@@ -5,7 +5,7 @@
 
 ---
 
-## Deliverable 1 — Testnet Smart Contracts Deployment ($7,000) — ✅ Satisfied
+## Deliverable 1 — Testnet Smart Contracts Deployment — ✅ Satisfied
 
 All 7 contracts (`smart_account`, `policy_engine`, `intent_registry`, `recovery_manager`, `transfer_adapter`, `split_adapter`, STA test asset SAC) deployed on Stellar testnet with published addresses and Explorer links (`docs/TESTNET_DEPLOYMENT.md` in the smart-contracts repo). Verified live, not just claimed:
 
@@ -14,7 +14,7 @@ All 7 contracts (`smart_account`, `policy_engine`, `intent_registry`, `recovery_
 - **Invalid actions rejected**: live `validate_policy` calls show `RecipientNotAllowed` (#2004) and `AmountAboveLimit` (#2005) correctly rejected.
 - **Minor nuance**: the live invalid-rejection demo used the permissionless `validate_policy` read, not a second live _signed_ invalid execute — equivalent cases (replay, version mismatch, frozen treasury) are proven by the 120-test local suite rather than a second on-chain transaction.
 
-## Deliverable 2 — Testnet dApp and Wallet Flow ($21,000) — ✅ Satisfied
+## Deliverable 2 — Testnet dApp and Wallet Flow — ✅ Satisfied
 
 Every pipeline stage is real, not stubbed (no TODO/mock markers found in `src`):
 
@@ -24,7 +24,7 @@ Every pipeline stage is real, not stubbed (no TODO/mock markers found in `src`):
 - **Contract addresses**: `.env.example` matches the deployment record exactly.
 - **Scope note (confirmed on follow-up)**: the dApp configures an _existing_ treasury only — signers, policy rules, status. It does **not** create/bootstrap a new `smart_account` (no `initialize` call anywhere in `src/`). This is intentional per `smart-contracts/docs/DAPP_INTEGRATION_SPEC.md` §9, which explicitly scopes "treasury bootstrapping" to ops/CLI tooling (Deliverable 1), not the dApp — not a gap against the deliverable text, which only ever says "configure or inspect **a** treasury account."
 
-## Deliverable 3 — Testnet Scheduled Payment Relayer ($13,500) — ✅ Satisfied
+## Deliverable 3 — Testnet Scheduled Payment Relayer — ✅ Satisfied
 
 - Uses `@stellar/stellar-sdk`'s `rpc.Server` throughout, not a hand-built client.
 - Rechecks `intent_registry.get_intent` / `is_child_executed` on-chain immediately before every submission, and enforces the ledger sequence window — the "exactly once" guarantee the deliverable is specifically about.
